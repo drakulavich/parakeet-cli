@@ -10,7 +10,7 @@ pub struct Capabilities {
 
 pub fn get_capabilities() -> Capabilities {
     #[allow(unused_mut)]
-    let mut features = vec!["transcribe", "detect-lang", "vad"];
+    let mut features = vec!["transcribe", "transcribe.segments", "detect-lang", "vad"];
 
     #[cfg(target_os = "macos")]
     features.push("detect-text-lang");

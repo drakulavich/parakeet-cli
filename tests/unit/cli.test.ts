@@ -28,6 +28,11 @@ describe("CLI help", () => {
     expect(usage).toMatch(/TOON|LLM/i);
   });
 
+  test("main help contains --timestamps flag", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("--timestamps");
+  });
+
   test("main help contains --lang flag", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("--lang");
@@ -80,6 +85,19 @@ describe("output formatting", () => {
     const output = formatJsonOutput([]);
     expect(JSON.parse(output)).toEqual([]);
   });
+
+  test("JSON output preserves timestamped segments", () => {
+    const output = formatJsonOutput([
+      {
+        file: "a.ogg",
+        text: "Hello",
+        lang: "en",
+        segments: [{ start: 0, end: 1.25, text: "Hello" }],
+      },
+    ]);
+    const parsed = JSON.parse(output);
+    expect(parsed[0].segments).toEqual([{ start: 0, end: 1.25, text: "Hello" }]);
+  });
 });
 
 describe("TOON output (#138)", () => {
@@ -113,6 +131,17 @@ describe("TOON output (#138)", () => {
       sttTimeMs: 427,
       audioLanguage: { code: "en", confidence: 0.94 },
       textLanguage: { code: "en", confidence: 0.98 },
+    }];
+    const decoded = decodeToon(formatToonOutput(input));
+    expect(decoded).toEqual(input);
+  });
+
+  test("preserves timestamped segments", () => {
+    const input = [{
+      file: "a.ogg",
+      text: "Hello",
+      lang: "en",
+      segments: [{ start: 0, end: 1.25, text: "Hello" }],
     }];
     const decoded = decodeToon(formatToonOutput(input));
     expect(decoded).toEqual(input);

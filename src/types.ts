@@ -1,4 +1,4 @@
-import type { LangDetectResult } from "./engine";
+import type { LangDetectResult, TranscriptionSegment } from "./engine";
 
 /**
  * One row of `kesha --json` / `kesha --toon` output. Canonical output shape
@@ -11,8 +11,10 @@ export type TranscribeResult = {
   lang: string;
   audioLanguage?: LangDetectResult;
   textLanguage?: LangDetectResult;
+  /** Timestamped transcript segments when requested via `--timestamps`. */
+  segments?: TranscriptionSegment[];
   /** Wall-clock time around the engine subprocess calls for this file, ms. See #139. */
   sttTimeMs?: number;
 };
 
-export type { LangDetectResult };
+export type { LangDetectResult, TranscriptionSegment };

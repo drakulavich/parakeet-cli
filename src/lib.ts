@@ -1,8 +1,13 @@
 import { existsSync } from "fs";
-import { transcribe as internalTranscribe, type TranscribeOptions } from "./transcribe";
+import {
+  transcribe as internalTranscribe,
+  transcribeWithSegments as internalTranscribeWithSegments,
+  type TranscribeOptions,
+} from "./transcribe";
 import { downloadEngine } from "./engine-install";
 
 export type { TranscribeOptions };
+export type { TranscriptionOutput, TranscriptionSegment } from "./engine";
 export { downloadEngine as downloadModel };
 export { say, type SayOptions, SayError } from "./say";
 
@@ -37,4 +42,19 @@ export async function transcribe(
   }
 
   return internalTranscribe(audioPath, { ...options, silent: true });
+}
+
+export async function transcribeWithSegments(
+  audioPath: string,
+  options: TranscribeOptions = {},
+) {
+  if (!existsSync(audioPath)) {
+    throw new Error(`File not found: ${audioPath}`);
+  }
+
+  return internalTranscribeWithSegments(audioPath, {
+    ...options,
+    timestamps: true,
+    silent: true,
+  });
 }

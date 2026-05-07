@@ -8,6 +8,17 @@ export interface LangDetectResult {
   confidence: number;
 }
 
+export interface TranscriptionSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptionOutput {
+  text: string;
+  segments: TranscriptionSegment[];
+}
+
 const DEFAULT_ENGINE_BIN_PATH = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha-engine");
 
 /**
@@ -65,6 +76,57 @@ export async function transcribeEngine(
     throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
   }
   return stdout;
+}
+
+function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
+  const parsed = JSON.parse(stdout);
+  if (typeof parsed?.text !== "string" || !Array.isArray(parsed?.segments)) {
+    throw new Error("Invalid transcription JSON returned by kesha-engine");
+  }
+
+  const segments = parsed.segments.map((segment: unknown) => {
+    const s = segment as Record<string, unknown>;
+    if (
+      typeof s.start !== "number" ||
+      typeof s.end !== "number" ||
+      typeof s.text !== "string"
+    ) {
+      throw new Error("Invalid transcription segment returned by kesha-engine");
+    }
+    return {
+      start: s.start,
+      end: s.end,
+      text: s.text,
+    };
+  });
+
+  return { text: parsed.text, segments };
+}
+
+export async function transcribeEngineWithSegments(
+  audioPath: string,
+  opts: TranscribeEngineOptions = {},
+): Promise<TranscriptionOutput> {
+  const caps = await getEngineCapabilities();
+  if (!caps?.features.includes("transcribe.segments")) {
+    throw new Error(
+      "Timestamped segments require a newer kesha-engine. Run `kesha install` after upgrading Kesha Voice Kit.",
+    );
+  }
+
+  const args = ["transcribe", audioPath, "--json"];
+  if (opts.vad === "on") args.push("--vad");
+  else if (opts.vad === "off") args.push("--no-vad");
+  const { stdout, stderr, exitCode } = await runEngine(args);
+  if (exitCode !== 0) {
+    throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
+  }
+  try {
+    return parseTranscriptionOutput(stdout);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`${message}: ${stdout}`);
+  }
 }
 
 export function parseLangResult(stdout: string): LangDetectResult | null {

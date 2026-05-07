@@ -56,6 +56,26 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(stdout.length).toBeGreaterThan(10);
   }, 60_000);
 
+  test("engine transcribe --json returns text and segments", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+    if (!caps.features.includes("transcribe.segments")) {
+      console.warn("engine lacks transcribe.segments; skipping timestamp e2e");
+      return;
+    }
+
+    const { stdout, exitCode } = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.text.length).toBeGreaterThan(10);
+    expect(Array.isArray(parsed.segments)).toBe(true);
+    if (parsed.segments.length > 0) {
+      expect(parsed.segments[0].start).toBeGreaterThanOrEqual(0);
+      expect(parsed.segments[0].end).toBeGreaterThan(parsed.segments[0].start);
+      expect(parsed.segments[0].text.length).toBeGreaterThan(0);
+    }
+  }, 60_000);
+
   test("engine detect-lang identifies Russian", async () => {
     const { stdout, exitCode } = await runEngine(["detect-lang", FIXTURE_RU]);
     expect(exitCode).toBe(0);
@@ -100,6 +120,27 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
     expect(parsed[0].textLanguage).toBeDefined();
     expect(parsed[0].textLanguage.code).toBeDefined();
     expect(parsed[0].textLanguage.confidence).toBeGreaterThan(0);
+  }, 60_000);
+
+  test("kesha --json --timestamps includes transcript segments", async () => {
+    const capsRun = await runEngine(["--capabilities-json"]);
+    const caps = JSON.parse(capsRun.stdout);
+    if (!caps.features.includes("transcribe.segments")) {
+      console.warn("engine lacks transcribe.segments; skipping timestamp e2e");
+      return;
+    }
+
+    const { stdout, exitCode } = await runCli(["--json", "--timestamps", FIXTURE_EN]);
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].text.length).toBeGreaterThan(0);
+    expect(Array.isArray(parsed[0].segments)).toBe(true);
+    if (parsed[0].segments.length > 0) {
+      expect(parsed[0].segments[0].start).toBeGreaterThanOrEqual(0);
+      expect(parsed[0].segments[0].end).toBeGreaterThan(parsed[0].segments[0].start);
+      expect(parsed[0].segments[0].text.length).toBeGreaterThan(0);
+    }
   }, 60_000);
 
   test("kesha --verbose shows language info", async () => {

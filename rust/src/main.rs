@@ -33,6 +33,9 @@ enum Commands {
     Transcribe {
         /// Path to audio file
         audio_path: String,
+        /// Output structured JSON with text and timestamped segments.
+        #[arg(long)]
+        json: bool,
         /// Force Silero VAD preprocessing. Requires the VAD model to be
         /// installed (`kesha install --vad`). Mutually exclusive with
         /// `--no-vad`. Without either flag, VAD auto-engages on audio
@@ -385,12 +388,18 @@ fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Transcribe {
             audio_path,
+            json,
             vad,
             no_vad,
         }) => {
             let mode = transcribe::VadMode::from_flags(vad, no_vad);
-            let text = transcribe::transcribe(&audio_path, mode)?;
-            println!("{}", text);
+            if json {
+                let output = transcribe::transcribe_output(&audio_path, mode)?;
+                println!("{}", serde_json::to_string(&output)?);
+            } else {
+                let text = transcribe::transcribe(&audio_path, mode)?;
+                println!("{}", text);
+            }
         }
         Some(Commands::DetectLang { audio_path }) => {
             let result = lang_id::detect_audio_language(&audio_path)?;

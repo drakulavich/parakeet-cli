@@ -37,6 +37,7 @@ describe("e2e-cli", () => {
     expect(stdout).toContain("--json");
     expect(stdout).toContain("--verbose");
     expect(stdout).toContain("--lang");
+    expect(stdout).toContain("--timestamps");
   });
 
   test("install --help shows --no-cache flag", async () => {
@@ -85,5 +86,11 @@ describe("e2e-cli", () => {
     const { stderr, exitCode } = await runCli(["--json", "--toon", "a.wav"]);
     expect(exitCode).toBe(2);
     expect(stderr.toLowerCase()).toContain("mutually exclusive");
+  });
+
+  test("--timestamps without machine-readable output exits 2", async () => {
+    const { stderr, exitCode } = await runCli(["--timestamps", "a.wav"]);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("--timestamps requires");
   });
 });

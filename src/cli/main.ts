@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { detect } from "tinyld";
-import { transcribe } from "../lib";
+import { transcribeWithSegments } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
@@ -23,6 +23,7 @@ interface MainCommandArgs {
   debug: boolean;
   vad: boolean;
   "no-vad": boolean;
+  timestamps: boolean;
   format?: string;
   lang?: string;
 }
@@ -55,6 +56,11 @@ export const mainCommand = defineCommand({
     toon: {
       type: "boolean",
       description: "Output results as TOON (compact, LLM-friendly encoding of the same data as --json)",
+      default: false,
+    },
+    timestamps: {
+      type: "boolean",
+      description: "Include timestamped transcript segments in JSON/TOON output",
       default: false,
     },
     verbose: {
@@ -99,6 +105,10 @@ export const mainCommand = defineCommand({
       log.error("--vad and --no-vad are mutually exclusive.");
       process.exit(2);
     }
+    if (args.timestamps && !(args.json || args.toon || args.format === "json")) {
+      log.error("--timestamps requires --json, --toon, or --format json.");
+      process.exit(2);
+    }
     const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
 
     if (files.length === 0) {
@@ -114,11 +124,12 @@ export const mainCommand = defineCommand({
     for (const file of files) {
       const startedAt = performance.now();
       try {
-        // Run audio lang-id and transcription concurrently
-        const [audioResult, text] = await Promise.all([
+        // Run audio lang-id and transcription concurrently.
+        const [audioResult, transcript] = await Promise.all([
           wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
-          transcribe(file, { vad: vadMode }),
+          transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps }),
         ]);
+        const { text, segments } = transcript;
 
         let audioLanguage: LangDetectResult | undefined;
         if (audioResult && audioResult.code) {
@@ -145,14 +156,18 @@ export const mainCommand = defineCommand({
         const mismatchWarning = checkLanguageMismatch(args.lang, lang);
         if (mismatchWarning) log.warn(`${file}: ${mismatchWarning}`);
 
-        results.push({
+        const result: TranscribeResult = {
           file,
           text,
           lang,
           audioLanguage,
           textLanguage: textLanguage ?? (tinyldLang ? { code: tinyldLang, confidence: 0 } : undefined),
           sttTimeMs: Math.round(performance.now() - startedAt),
-        });
+        };
+        if (args.timestamps) {
+          result.segments = segments;
+        }
+        results.push(result);
       } catch (err: unknown) {
         hasError = true;
         const message = err instanceof Error ? err.message : String(err);

@@ -38,6 +38,7 @@ Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-m
 kesha audio.ogg                            # transcribe (plain text)
 kesha --format transcript audio.ogg        # text + language/confidence
 kesha --format json audio.ogg              # full JSON with lang fields
+kesha --json --timestamps audio.ogg        # JSON with timestamped segments
 kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha --verbose audio.ogg                  # show language detection details
 kesha --lang en audio.ogg                  # warn if detected language differs
