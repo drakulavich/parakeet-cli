@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+pub mod en;
 pub mod encode;
 pub mod g2p;
 pub mod kokoro;

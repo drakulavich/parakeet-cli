@@ -52,7 +52,7 @@ Out of scope (this spec):
 | Q6 — letter-table spike | Required: throwaway Kokoro+misaki synth of full alphabet before committing the table | CLAUDE.md "VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE" — letter-name strings as misaki input are an unconfirmed shape. Swap candidates if needed: `H "aych"`, `Q "queue"`, `W "dub-yoo"`. |
 | Architecture | **Direct mirror of `tts/ru/`** (Approach 1) — new `tts/en/` module, called from `say_with_kokoro` exactly as `tts/ru/` is called from `say_with_vosk` | YAGNI on the `LangNormalizer` trait; #212 (multi-language Kokoro) is its own scope and would re-cut a premature trait. |
 | Voice routing | **No prefix-string dispatch** — engine choice = language choice (Kokoro = English, Vosk = Russian) | Mirrors Russian wiring. |
-| `<emphasis>` on Kokoro path | **Strip the tag, pass content through**; no warn-once | Kokoro has no stress mechanism analog of Vosk's `+`. The unsupported tag is silent; the content is preserved. |
+| `<emphasis>` on Kokoro path | **Strip `+` from content + warn-once on first occurrence per process** (key `emphasis-non-ru-vosk`); emit `Text(content)` | Kokoro has no `+`-marker stress mechanism analog of Vosk. Mirrors `ru::normalize_segments` Emphasis handling; preserves v1.8.1 (#237/#238) warn-once UX. |
 | Letter-table position-dependence | **None** (unlike Russian's С) | English letter names are uniform regardless of position. |
 
 ## Architecture
@@ -186,7 +186,7 @@ Identical to Russian: tokenize on Unicode whitespace; peel a leading run of `«(
 |---|---|
 | `<say-as interpret-as="characters">FBI</say-as>` | `Segment::Spell("FBI")` → `letter_table::expand_chars` → "ef bee eye". Always wins; not gated by `--no-expand-abbrev`. |
 | `<say-as interpret-as="cardinal" / "ordinal" / "date" / ...>` | Existing behavior unchanged: warn + strip + pass content through. |
-| `<emphasis>...</emphasis>` | Kokoro has no stress mechanism. Tag stripped, content passed through verbatim (no warn-once — content is preserved, only the tag is unsupported). |
+| `<emphasis>...</emphasis>` | Kokoro has no stress mechanism for `+`-marker stress placement. `en::normalize_segments` strips `+` from content, warns once per process (key: `emphasis-non-ru-vosk`), and emits `Text(content)`. Mirrors `ru::normalize_segments` Emphasis handling; preserves v1.8.1 (#237/#238) warn-once UX. |
 | `<break time="...">` | `Segment::Break(Duration)` → silence frame in synth. Unchanged. |
 | `<phoneme alphabet="ipa" ph="...">` | `Segment::Ipa(String)` → existing engine handling. Unchanged. |
 
