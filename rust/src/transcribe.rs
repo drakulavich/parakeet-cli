@@ -87,17 +87,24 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 }
 
 pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
-    Ok(transcribe_inner(audio_path, mode)?.text)
+    Ok(transcribe_inner(audio_path, mode, false)?.text)
 }
 
 pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
-    transcribe_inner(audio_path, mode)
+    transcribe_inner(audio_path, mode, true)
 }
 
-/// Always returns a populated [`TranscriptionOutput`]: VAD path produces
-/// per-utterance segments; plain path produces a single whole-file segment.
-/// Callers that only need the joined text discard `.segments`.
-fn transcribe_inner(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
+/// `whole_file_segment_required` gates the non-VAD plain path's call to
+/// `whole_file_segment` — text-only callers (`transcribe()`) skip it because
+/// duration probing fails for streaming Ogg/Opus without a frame count, which
+/// would otherwise turn into a hard error for inputs that previously
+/// transcribed cleanly. The VAD path always builds segments cheaply (it
+/// already has per-span boundaries from VAD output).
+fn transcribe_inner(
+    audio_path: &str,
+    mode: VadMode,
+    whole_file_segment_required: bool,
+) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::vad_model_dir();
     let vad_installed = models::is_vad_cached(&vad_dir);
@@ -121,13 +128,23 @@ fn transcribe_inner(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutp
         // doesn't re-open the file (closes #248 item 1). For `On`/`Off`
         // modes we didn't probe, so it's `None` and the segment helper
         // does the work.
-        VadDecision::Plain => transcribe_plain(audio_path, &model_dir, duration),
+        VadDecision::Plain => transcribe_plain(
+            audio_path,
+            &model_dir,
+            duration,
+            whole_file_segment_required,
+        ),
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
             eprintln!(
                 "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
             );
-            transcribe_plain(audio_path, &model_dir, duration)
+            transcribe_plain(
+                audio_path,
+                &model_dir,
+                duration,
+                whole_file_segment_required,
+            )
         }
     }
 }
@@ -136,6 +153,7 @@ fn transcribe_plain(
     audio_path: &str,
     model_dir: &str,
     duration: Option<f32>,
+    whole_file_segment_required: bool,
 ) -> Result<TranscriptionOutput> {
     let t0 = Instant::now();
     let mut be = backend::create_backend(model_dir)?;
@@ -147,7 +165,16 @@ fn transcribe_plain(
         t1.elapsed().as_millis(),
         text.chars().count()
     );
-    let segments = whole_file_segment(audio_path, &text, duration)?;
+    // Skip the duration probe for text-only callers. Streaming Ogg/Opus
+    // (and a few other format edge cases) return `Ok(None)` from
+    // `probe_duration_seconds`, which `whole_file_segment` turns into a
+    // hard error — surfacing it for callers that don't even need segments
+    // would be a regression vs pre-#248 behavior.
+    let segments = if whole_file_segment_required {
+        whole_file_segment(audio_path, &text, duration)?
+    } else {
+        vec![]
+    };
     Ok(TranscriptionOutput { segments, text })
 }
 
