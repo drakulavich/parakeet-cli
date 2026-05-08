@@ -208,12 +208,13 @@ fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
             voice_path,
             speed,
         } => synth_segments_kokoro(
-            &segments,
+            segments,
             opts.lang,
             model_path,
             voice_path,
             *speed,
             opts.format,
+            opts.expand_abbrev,
         ),
         // Vosk + SSML is handled by the early-return in say(); this arm keeps the match exhaustive.
         EngineChoice::Vosk { .. } => unreachable!("handled by early return in say()"),
@@ -226,16 +227,26 @@ fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
 }
 
 fn synth_segments_kokoro(
-    segments: &[ssml::Segment],
+    segments: Vec<ssml::Segment>,
     lang: &str,
     model_path: &Path,
     voice_path: &Path,
     speed: f32,
     format: OutputFormat,
+    expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    // Run en::normalize_segments for en-* voices: maps Spell→Text via the
+    // letter table, Text→acronym-expanded (when expand_abbrev), Emphasis→Text
+    // with `+`-strip + warn-once. Mirror of synth_segments_vosk's call to
+    // ru::normalize_segments. Closes #244.
+    let segments = if lang.starts_with("en") {
+        en::normalize_segments(segments, expand_abbrev)
+    } else {
+        segments
+    };
     let mut sess = sessions::KokoroSession::load(model_path)
         .map_err(|e| TtsError::SynthesisFailed(e.to_string()))?;
-    synth_segments_kokoro_with(&mut sess, segments, lang, voice_path, speed, format)
+    synth_segments_kokoro_with(&mut sess, &segments, lang, voice_path, speed, format)
 }
 
 /// Drive an SSML segment list against an already-constructed Kokoro session.
@@ -271,12 +282,12 @@ pub fn synth_segments_kokoro_with(
             }
             ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
             ssml::Segment::Emphasis { content, suppress } => {
-                // <emphasis> stress markers are honored only on ru-vosk-* voices.
-                // For Kokoro, strip `+` from content (G2P would otherwise choke on
-                // the unfamiliar character) and warn the user once per process.
-                // Skip the warning when suppress=true: the caller used level="none"
-                // to explicitly opt out of stress markers — the warning would be
-                // misleading. Closes #238.
+                // Defensive fallback: en::normalize_segments converts Emphasis→Text
+                // upstream of synth_segments_kokoro_with's say_ssml caller
+                // (synth_segments_kokoro). The arm remains for `--stdin-loop`
+                // callers (#213) that bypass that wrapper and feed segments
+                // directly. Mirrors synth_segments_vosk_with's Emphasis fallback.
+                // Closes #238 (preserved); closes #244.
                 if !suppress {
                     crate::tts::warn::warn_once(
                         "emphasis-non-ru-vosk",

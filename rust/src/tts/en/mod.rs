@@ -27,8 +27,6 @@ pub fn expand_text(text: &str) -> String {
 ///   markers are honored only on `ru-vosk-*` voices.
 /// - `Text(t)` → `Text(acronym::expand_acronyms(t))` if `auto_expand`; else unchanged.
 /// - `Ipa(_)`, `Break(_)` → unchanged.
-// Wired into synth_segments_kokoro / say_loop in T5 (#244). Allow until then.
-#[allow(dead_code)]
 pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment> {
     segs.into_iter()
         .map(|s| match s {
