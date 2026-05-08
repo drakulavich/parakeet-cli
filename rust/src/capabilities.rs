@@ -20,6 +20,8 @@ pub fn get_capabilities() -> Capabilities {
     #[cfg(feature = "tts")]
     features.push("tts.ru_acronym_expansion");
     #[cfg(feature = "tts")]
+    features.push("tts.en_acronym_expansion");
+    #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
 
     Capabilities {

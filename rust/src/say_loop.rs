@@ -83,9 +83,10 @@ struct LoopRequest {
     /// When true, `text` is parsed as SSML. Mirrors the CLI `--ssml` flag.
     #[serde(default)]
     ssml: bool,
-    /// Auto-expand all-uppercase Cyrillic acronyms for `ru-vosk-*` voices
-    /// (#232). Defaults to `true` when absent so legacy clients keep current
-    /// behavior. Mirrors the CLI `--no-expand-abbrev` flag (inverted).
+    /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*`
+    /// (#232), Latin on `en-*` (#244). Defaults to `true` when absent so legacy
+    /// clients keep current behavior. Mirrors the CLI `--no-expand-abbrev` flag
+    /// (inverted). No effect for `macos-*` voices.
     #[serde(default = "default_expand_abbrev")]
     expand_abbrev: bool,
 }
@@ -210,6 +211,32 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 if segments.is_empty() {
                     return Err("SSML had no speakable content".into());
                 }
+                // Apply English acronym normalization (Spell→letter names,
+                // Text→expand when expand_abbrev) for en-* voices. Mirrors
+                // the one-shot path in tts::synth_segments_kokoro (#244).
+                let segments = if tts::en::is_en(espeak_lang) {
+                    tts::en::normalize_segments(segments, req.expand_abbrev)
+                } else {
+                    segments
+                };
+                tts::synth_segments_kokoro_with(
+                    sess,
+                    &segments,
+                    espeak_lang,
+                    &voice_path,
+                    req.rate,
+                    format,
+                )
+                .map_err(|e| e.to_string())
+            } else if tts::en::is_en(espeak_lang) {
+                // English on Kokoro: route plain text through the segment
+                // pipeline so IPA_LEXICON overrides (EPAM, JSON, Anthropic, …)
+                // emit `Segment::Ipa` and bypass G2P. Mirrors tts::say()'s
+                // English plain-text path. Closes #244.
+                let segments = tts::en::normalize_segments(
+                    vec![tts::ssml::Segment::Text(req.text.clone())],
+                    req.expand_abbrev,
+                );
                 tts::synth_segments_kokoro_with(
                     sess,
                     &segments,
@@ -220,6 +247,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 )
                 .map_err(|e| e.to_string())
             } else {
+                // Non-English Kokoro: legacy G2P + infer_ipa path.
                 let ipa = tts::g2p::text_to_ipa(&req.text, espeak_lang)
                     .map_err(|e| format!("g2p: {e}"))?;
                 if ipa.trim().is_empty() {

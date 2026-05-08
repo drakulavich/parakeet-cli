@@ -39,9 +39,9 @@ export interface SayOptions {
    */
   sampleRate?: number;
   /**
-   * Disable Russian acronym auto-expansion for `ru-vosk-*` voices.
+   * Disable acronym auto-expansion for `ru-vosk-*` and `en-*` voices.
    * When true, passes `--no-expand-abbrev` to the engine (requires engine
-   * capability `tts.ru_acronym_expansion`; silently dropped for older engines).
+   * capability `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`; silently dropped for older engines).
    * `<say-as interpret-as="characters">` still works regardless of this flag.
    */
   noExpandAbbrev?: boolean;
@@ -59,12 +59,14 @@ export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | 
   if (o.bitrate !== undefined) args.push("--bitrate", String(o.bitrate));
   if (o.sampleRate !== undefined) args.push("--sample-rate", String(o.sampleRate));
   if (o.noExpandAbbrev) {
-    const supportsRuExpand = capabilities?.features?.includes("tts.ru_acronym_expansion") ?? false;
-    if (supportsRuExpand) {
+    const supportsExpand = capabilities?.features?.some(
+      (f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion",
+    ) ?? false;
+    if (supportsExpand) {
       args.push("--no-expand-abbrev");
     } else {
       log.debug(
-        "kesha-engine does not advertise tts.ru_acronym_expansion; dropping --no-expand-abbrev",
+        "kesha-engine does not advertise tts.ru_acronym_expansion or tts.en_acronym_expansion; dropping --no-expand-abbrev",
       );
     }
   }

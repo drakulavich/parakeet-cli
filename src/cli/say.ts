@@ -86,7 +86,7 @@ export const sayCommand = defineCommand({
       type: "boolean",
       description:
         "Disable Russian acronym auto-expansion (ВОЗ → 'вэ о зэ') for ru-vosk-* voices. " +
-        "<say-as interpret-as='characters'> still works. No effect for non-ru-vosk voices.",
+        "<say-as interpret-as='characters'> still works. Applies to Russian (ru-vosk-*) and English (en-*) voices.",
     },
     verbose: {
       type: "boolean",
