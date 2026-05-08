@@ -100,7 +100,7 @@ kesha say --voice en-am_michael --ssml \
   '<speak><say-as interpret-as="characters">NASA</say-as></speak>'
 ```
 
-Detection rule: auto-expand fires on all-uppercase Latin tokens 2–5 chars (no digits, no mixed case). Tokens on a 31-entry stop-list pass through unchanged: established word pronunciations (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA), brand pronunciations (EPAM), and emphatic short caps that are real words (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+Detection rule: auto-expand fires on all-uppercase Latin tokens 2–5 chars (no digits, no mixed case). A 30-entry stop-list passes natural-English caps words (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA) and emphatic length-2 caps (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO) through unchanged. A separate `KNOWN_PRONUNCIATIONS` table substitutes brand-style pronunciations (EPAM → "epam", JSON → "jay son"). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
 
 **Russian word stress** (`ru-vosk-*` voices):
 

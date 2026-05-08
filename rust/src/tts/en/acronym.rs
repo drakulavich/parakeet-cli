@@ -15,15 +15,26 @@ use std::borrow::Cow;
 
 use super::letter_table::expand_chars;
 
-/// 30-entry seed list. Half are emphatic length-2 caps (OK, IT, IS, …);
-/// half are natural-English caps words read as words (NASA, NATO, AIDS, …).
-/// Maintainer extends as users report mispronunciations — one-line edits.
+/// Stop-list: tokens that should pass through verbatim (Kokoro reads them
+/// as natural English words). 30 entries — emphatic length-2 caps + caps
+/// words established in Kokoro's training. Maintainer extends one line at a
+/// time as users report mispronunciations.
 const STOP_LIST: &[&str] = &[
     // Emphatic length-2 caps
     "OK", "NO", "GO", "IT", "IS", "AS", "AT", "BY", "IN", "ON", "OR", "OF", "TO", "WE", "US", "MY",
-    "ME", "HE", "BE", "DO", // Natural-English caps words + brand pronunciations
-    "NASA", "NATO", "AIDS", "OPEC", "IKEA", "ASCII", "NAFTA", "LASER", "RADAR", "SCUBA", "EPAM",
+    "ME", "HE", "BE", "DO", // Natural-English caps words
+    "NASA", "NATO", "AIDS", "OPEC", "IKEA", "ASCII", "NAFTA", "LASER", "RADAR", "SCUBA",
 ];
+
+/// Per-acronym pronunciation overrides. Substitutes the token with a custom
+/// spelling that misaki-rs G2P + Kokoro pronounce more naturally than either
+/// the all-caps fall-through (which Kokoro often letter-spells internally) or
+/// the deterministic letter-by-letter expansion. Lowercase / mixed-case spell
+/// + space-separated chunks help the G2P bias toward syllable-level reads.
+///
+/// Hit before STOP_LIST is consulted: user-supplied override beats both
+/// natural-English-words and the spell rule.
+const KNOWN_PRONUNCIATIONS: &[(&str, &str)] = &[("EPAM", "epam"), ("JSON", "jay son")];
 
 const TRAILING_PUNCT: &[char] = &[
     '.', ',', ':', ';', '!', '?', '»', ')', '„', '"', '…', '—', '–', '-',
@@ -67,6 +78,16 @@ fn expand_token(token: &str) -> Cow<'_, str> {
     let (head, mid, tail) = split_punct(token);
     if !is_acronym_token(mid) {
         return Cow::Borrowed(token);
+    }
+    if let Some(replacement) = KNOWN_PRONUNCIATIONS
+        .iter()
+        .find(|(k, _)| *k == mid)
+        .map(|(_, v)| *v)
+    {
+        let mut s = String::from(head);
+        s.push_str(replacement);
+        s.push_str(tail);
+        return Cow::Owned(s);
     }
     if STOP_LIST.contains(&mid) {
         return Cow::Borrowed(token);
@@ -114,10 +135,15 @@ mod tests {
             ("CEO", "see ee oh"),
             ("API", "ay pee eye"),
             ("HTTP", "aitch tee tee pee"),
-            ("JSON", "jay ess oh en"),
             ("CSS", "see ess ess"),
             ("URL", "yoo ar el"),
             ("IBM", "eye bee em"),
+            // KNOWN_PRONUNCIATIONS overrides — substituted with custom spelling
+            // before the letter-table fallback.
+            ("EPAM", "epam"),
+            ("JSON", "jay son"),
+            ("EPAM partners", "epam partners"),
+            ("JSON over HTTP", "jay son over aitch tee tee pee"),
             // Spell out — length 2.
             ("AI", "ay eye"),
             ("TV", "tee vee"),
@@ -131,9 +157,6 @@ mod tests {
             ("OK", "OK"),
             ("IT", "IT"),
             ("IS", "IS"),
-            // Brand pronunciation — EPAM passes through (industry name, read as a word).
-            ("EPAM", "EPAM"),
-            ("EPAM partners", "EPAM partners"),
             // Inflected / mixed case / digits / hyphens preserved.
             ("EPAMs", "EPAMs"),
             ("APIs", "APIs"),
@@ -154,8 +177,10 @@ mod tests {
             // Stop-list with punct preserved.
             ("NASA.", "NASA."),
             ("«NATO»", "«NATO»"),
-            ("EPAM.", "EPAM."),
-            ("«EPAM»", "«EPAM»"),
+            // Overrides preserve surrounding punct.
+            ("EPAM.", "epam."),
+            ("«EPAM»", "«epam»"),
+            ("JSON,", "jay son,"),
             // Stop-list followed by other text — the stop-list entry must not consume neighbors.
             ("OK partners", "OK partners"),
             ("NASA briefed", "NASA briefed"),
