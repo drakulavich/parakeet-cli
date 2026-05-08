@@ -100,7 +100,7 @@ kesha say --voice en-am_michael --ssml \
   '<speak><say-as interpret-as="characters">NASA</say-as></speak>'
 ```
 
-Detection rule: auto-expand fires on all-uppercase Latin tokens 2–15 chars (no numbers). Common acronyms with established pronunciations (NASA, NATO, AIDS, SCUBA, OK, UNESCO, COVID, FBI, CIA, etc. — 30-entry stop-list) pass through as words. Stop-list also blocks single letters and common abbreviations (Mr, Dr, Mrs, Dr, etc.). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+Detection rule: auto-expand fires on all-uppercase Latin tokens 2–5 chars (no digits, no mixed case). Tokens with established word pronunciations (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA) and emphatic short caps that are real words (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO) pass through via a 30-entry stop-list. Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
 
 **Russian word stress** (`ru-vosk-*` voices):
 

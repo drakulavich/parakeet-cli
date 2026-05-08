@@ -83,9 +83,10 @@ struct LoopRequest {
     /// When true, `text` is parsed as SSML. Mirrors the CLI `--ssml` flag.
     #[serde(default)]
     ssml: bool,
-    /// Auto-expand all-uppercase Cyrillic acronyms for `ru-vosk-*` voices
-    /// (#232). Defaults to `true` when absent so legacy clients keep current
-    /// behavior. Mirrors the CLI `--no-expand-abbrev` flag (inverted).
+    /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*`
+    /// (#232), Latin on `en-*` (#244). Defaults to `true` when absent so legacy
+    /// clients keep current behavior. Mirrors the CLI `--no-expand-abbrev` flag
+    /// (inverted). No effect for `macos-*` voices.
     #[serde(default = "default_expand_abbrev")]
     expand_abbrev: bool,
 }

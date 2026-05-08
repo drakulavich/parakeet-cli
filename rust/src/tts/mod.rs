@@ -80,9 +80,9 @@ pub struct SayOptions<'a> {
     /// callers (and the historical `kesha say > out.wav` flow) stay
     /// bit-exact. See #223.
     pub format: OutputFormat,
-    /// Auto-expand all-uppercase Cyrillic acronyms before Vosk synth (#232).
-    /// Default `true`. `<say-as interpret-as="characters">` is always honored,
-    /// regardless of this flag. No effect for non-`ru-vosk-*` voices.
+    /// Auto-expand all-uppercase acronyms before synth: Cyrillic on `ru-vosk-*`
+    /// (#232), Latin on `en-*` (#244). Default `true`. `<say-as interpret-as="characters">`
+    /// is always honored regardless of this flag. No effect for `macos-*` voices.
     pub expand_abbrev: bool,
 }
 
