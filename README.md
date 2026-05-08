@@ -86,6 +86,22 @@ kesha say --voice ru-vosk-m02 --ssml \
 
 Detection rule: auto-expand fires when the token cannot be pronounced as a natural Russian syllable — length ≤ 2 (ИП, ЕС), 0 vowels (ФСБ, СНГ), 2+ consecutive vowels (ОАЭ), or 2+ consecutive consonants (США, ЦСКА). Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато", ОПЕК → "опек"). Small stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО, …) and Ъ/Ь-containing tokens are always skipped. See [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
 
+**English acronyms** (`en-*` voices, Kokoro-82M):
+
+```bash
+# Auto-expand on by default — EPAM reads as "ee pee ay em"
+kesha say --voice en-am_michael 'EPAM partners with Anthropic'
+
+# Force a literal reading (Kokoro fuses to one syllable)
+kesha say --voice en-am_michael --no-expand-abbrev 'EPAM.'
+
+# Explicit SSML control (overrides the rule and the stop-list)
+kesha say --voice en-am_michael --ssml \
+  '<speak><say-as interpret-as="characters">NASA</say-as></speak>'
+```
+
+Detection rule: auto-expand fires on all-uppercase Latin tokens 2–15 chars (no numbers). Common acronyms with established pronunciations (NASA, NATO, AIDS, SCUBA, OK, UNESCO, COVID, FBI, CIA, etc. — 30-entry stop-list) pass through as words. Stop-list also blocks single letters and common abbreviations (Mr, Dr, Mrs, Dr, etc.). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+
 **Russian word stress** (`ru-vosk-*` voices):
 
 ```bash
