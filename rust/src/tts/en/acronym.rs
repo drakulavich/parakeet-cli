@@ -47,7 +47,9 @@ const IPA_LEXICON: &[(&str, &str)] = &[
     ("Microsoft", "ˈmaɪkroʊsɔːft"),
     ("Anthropic", "ænˈθrɒpɪk"),
     ("Claude", "klɔːd"),
-    ("NVIDIA", "ɛnˈvɪdiːə"),
+    // NVIDIA: removed from lexicon — Kokoro renders it natively. None of A–N
+    // IPA renderings reproduced the desired "en-VID-ee-ah" pronunciation
+    // accurately enough; default G2P path is the cleanest fallback.
     ("Kubernetes", "ˌkuːbərˈnɛtiːz"),
     ("PostgreSQL", "ˈpoʊstɡrɛs"),
     ("GraphQL", "ˌɡræfˈkjuːɛl"),
