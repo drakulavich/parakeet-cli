@@ -44,7 +44,7 @@ export async function transcribe(
   return internalTranscribe(audioPath, { ...options, silent: true });
 }
 
-export async function transcribeWithSegments(
+export async function transcribeWithTimestamps(
   audioPath: string,
   options: TranscribeOptions = {},
 ) {

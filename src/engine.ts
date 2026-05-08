@@ -1,7 +1,14 @@
 import { join } from "path";
 import { homedir } from "os";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { log } from "./log";
+
+/**
+ * Capability-flag string surfaced via `kesha-engine --capabilities-json`. Single
+ * source of truth so the engine, the TS CLI gate, and the integration tests
+ * can't drift. Mirrors `rust/src/transcribe.rs::TRANSCRIBE_SEGMENTS_FEATURE`.
+ */
+export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
 
 export interface LangDetectResult {
   code: string;
@@ -108,7 +115,7 @@ export async function transcribeEngineWithSegments(
   opts: TranscribeEngineOptions = {},
 ): Promise<TranscriptionOutput> {
   const caps = await getEngineCapabilities();
-  if (!caps?.features.includes("transcribe.segments")) {
+  if (!caps?.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
     throw new Error(
       "Timestamped segments require a newer kesha-engine. Run `kesha install` after upgrading Kesha Voice Kit.",
     );
@@ -162,20 +169,32 @@ export interface EngineCapabilities {
 }
 
 let cachedEngineCapabilities:
-  | { binPath: string; capabilities: EngineCapabilities }
+  | { binPath: string; mtime: number; capabilities: EngineCapabilities }
   | null = null;
 
 export async function getEngineCapabilities(): Promise<EngineCapabilities | null> {
+  if (!isEngineInstalled()) return null;
   const binPath = getEngineBinPath();
-  if (cachedEngineCapabilities?.binPath === binPath) {
+  // Cache key: (binPath, mtimeMs). The mtime check invalidates the cache when
+  // `kesha install` overwrites the binary in-place within a single long-lived
+  // process (closes #248 item 7).
+  let mtime: number;
+  try {
+    mtime = statSync(binPath).mtimeMs;
+  } catch {
+    return null;
+  }
+  if (
+    cachedEngineCapabilities?.binPath === binPath &&
+    cachedEngineCapabilities.mtime === mtime
+  ) {
     return cachedEngineCapabilities.capabilities;
   }
-  if (!existsSync(binPath)) return null;
   const { stdout, exitCode } = await runEngine(["--capabilities-json"]);
   if (exitCode !== 0) return null;
   try {
     const capabilities = JSON.parse(stdout) as EngineCapabilities;
-    cachedEngineCapabilities = { binPath, capabilities };
+    cachedEngineCapabilities = { binPath, mtime, capabilities };
     return capabilities;
   } catch {
     return null;

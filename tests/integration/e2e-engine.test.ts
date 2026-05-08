@@ -1,5 +1,9 @@
 import { describe, test, expect, beforeAll } from "bun:test";
-import { isEngineInstalled, getEngineBinPath } from "../../src/engine";
+import {
+  isEngineInstalled,
+  getEngineBinPath,
+  TRANSCRIBE_SEGMENTS_FEATURE,
+} from "../../src/engine";
 
 const CWD = import.meta.dir + "/../..";
 const FIXTURE_RU = "fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
@@ -59,8 +63,8 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   test("engine transcribe --json returns text and segments", async () => {
     const capsRun = await runEngine(["--capabilities-json"]);
     const caps = JSON.parse(capsRun.stdout);
-    if (!caps.features.includes("transcribe.segments")) {
-      console.warn("engine lacks transcribe.segments; skipping timestamp e2e");
+    if (!caps.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
+      console.warn(`engine lacks ${TRANSCRIBE_SEGMENTS_FEATURE}; skipping timestamp e2e`);
       return;
     }
 
@@ -125,8 +129,8 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
   test("kesha --json --timestamps includes transcript segments", async () => {
     const capsRun = await runEngine(["--capabilities-json"]);
     const caps = JSON.parse(capsRun.stdout);
-    if (!caps.features.includes("transcribe.segments")) {
-      console.warn("engine lacks transcribe.segments; skipping timestamp e2e");
+    if (!caps.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
+      console.warn(`engine lacks ${TRANSCRIBE_SEGMENTS_FEATURE}; skipping timestamp e2e`);
       return;
     }
 

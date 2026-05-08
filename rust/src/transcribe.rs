@@ -9,6 +9,10 @@ use crate::dtrace;
 use crate::models;
 use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
 
+/// Capability-flag string surfaced via `--capabilities-json`. Single source of
+/// truth so the engine, the TS CLI gate, and the integration tests can't drift.
+pub const TRANSCRIBE_SEGMENTS_FEATURE: &str = "transcribe.segments";
+
 /// Duration at which the `Auto` VAD mode flips to VAD preprocessing.
 /// Voice messages (<30 s) and short clips don't benefit; meetings and
 /// lectures (>2 min) do.
@@ -83,18 +87,17 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 }
 
 pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
-    Ok(transcribe_inner(audio_path, mode, false)?.text)
+    Ok(transcribe_inner(audio_path, mode)?.text)
 }
 
 pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
-    transcribe_inner(audio_path, mode, true)
+    transcribe_inner(audio_path, mode)
 }
 
-fn transcribe_inner(
-    audio_path: &str,
-    mode: VadMode,
-    timestamps_required: bool,
-) -> Result<TranscriptionOutput> {
+/// Always returns a populated [`TranscriptionOutput`]: VAD path produces
+/// per-utterance segments; plain path produces a single whole-file segment.
+/// Callers that only need the joined text discard `.segments`.
+fn transcribe_inner(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::vad_model_dir();
     let vad_installed = models::is_vad_cached(&vad_dir);
@@ -114,13 +117,17 @@ fn transcribe_inner(
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
         }
-        VadDecision::Plain => transcribe_plain(audio_path, &model_dir, timestamps_required),
+        // Pass the already-probed duration through so `whole_file_segment`
+        // doesn't re-open the file (closes #248 item 1). For `On`/`Off`
+        // modes we didn't probe, so it's `None` and the segment helper
+        // does the work.
+        VadDecision::Plain => transcribe_plain(audio_path, &model_dir, duration),
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
             eprintln!(
                 "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
             );
-            transcribe_plain(audio_path, &model_dir, timestamps_required)
+            transcribe_plain(audio_path, &model_dir, duration)
         }
     }
 }
@@ -128,7 +135,7 @@ fn transcribe_inner(
 fn transcribe_plain(
     audio_path: &str,
     model_dir: &str,
-    timestamps_required: bool,
+    duration: Option<f32>,
 ) -> Result<TranscriptionOutput> {
     let t0 = Instant::now();
     let mut be = backend::create_backend(model_dir)?;
@@ -140,11 +147,7 @@ fn transcribe_plain(
         t1.elapsed().as_millis(),
         text.chars().count()
     );
-    let segments = if timestamps_required {
-        whole_file_segment(audio_path, &text)?
-    } else {
-        vec![]
-    };
+    let segments = whole_file_segment(audio_path, &text, duration)?;
     Ok(TranscriptionOutput { segments, text })
 }
 
@@ -177,16 +180,16 @@ fn transcribe_via_vad(
     let t_vad = Instant::now();
     let vad_path = Path::new(vad_dir).join("silero_vad.onnx");
     let mut vad = VadDetector::load(&vad_path).context("load Silero VAD")?;
-    let segments = vad.detect_segments(&samples, cfg)?;
+    let spans = vad.detect_segments(&samples, cfg)?;
     dtrace!(
         "vad::detect dt={}ms segments={}",
         t_vad.elapsed().as_millis(),
-        segments.len()
+        spans.len()
     );
 
     let mut be = backend::create_backend(model_dir)?;
 
-    if segments.is_empty() {
+    if spans.is_empty() {
         let min_speech_samples =
             (cfg.min_speech_ms as u64 * VAD_SAMPLE_RATE as u64 / 1000) as usize;
         if samples.len() >= min_speech_samples {
@@ -195,49 +198,17 @@ fn transcribe_via_vad(
             );
         }
         let text = be.transcribe_samples(&samples)?;
+        let end_s = samples.len() as f32 / VAD_SAMPLE_RATE as f32;
         return Ok(TranscriptionOutput {
-            segments: sample_span_segment(0.0, samples.len(), &text),
+            segments: single_segment(0.0, end_s, &text),
             text,
         });
     }
 
-    let sr = VAD_SAMPLE_RATE as f32;
-    let mut output_segments: Vec<TranscriptionSegment> = Vec::with_capacity(segments.len());
-    for (start_s, end_s) in &segments {
-        let start = (*start_s * sr) as usize;
-        let end = ((*end_s * sr) as usize).min(samples.len());
-        if start >= end {
-            continue;
-        }
-        let slice = &samples[start..end];
-        let t = Instant::now();
-        match be.transcribe_samples(slice) {
-            Ok(text) => {
-                dtrace!(
-                    "vad::segment dt={}ms range={:.2}-{:.2}s chars={}",
-                    t.elapsed().as_millis(),
-                    start_s,
-                    end_s,
-                    text.chars().count()
-                );
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    output_segments.push(TranscriptionSegment {
-                        start: *start_s,
-                        end: *end_s,
-                        text: trimmed.to_string(),
-                    });
-                }
-            }
-            Err(e) => {
-                // One failing segment shouldn't kill the whole transcript.
-                eprintln!(
-                    "warning: VAD segment {:.2}-{:.2}s failed: {e}",
-                    start_s, end_s
-                );
-            }
-        }
-    }
+    let output_segments =
+        build_vad_output_segments(&spans, &samples, VAD_SAMPLE_RATE as f32, |slice| {
+            be.transcribe_samples(slice)
+        });
 
     let text = output_segments
         .iter()
@@ -251,33 +222,95 @@ fn transcribe_via_vad(
     })
 }
 
-fn whole_file_segment(audio_path: &str, text: &str) -> Result<Vec<TranscriptionSegment>> {
+/// Build per-span [`TranscriptionSegment`]s from a sequence of VAD spans.
+/// Pure function: takes the spans + a transcribe callback so unit tests can
+/// drive it without spinning up an ONNX model. Empty / failed spans are
+/// dropped (with a stderr warning on failure) so the output preserves both
+/// the monotonic-start invariant of the input and the `end > start` shape.
+fn build_vad_output_segments<F>(
+    spans: &[(f32, f32)],
+    samples: &[f32],
+    sr: f32,
+    mut transcribe_span: F,
+) -> Vec<TranscriptionSegment>
+where
+    F: FnMut(&[f32]) -> Result<String>,
+{
+    let mut out = Vec::with_capacity(spans.len());
+    for &(start_s, end_s) in spans {
+        let start = (start_s * sr) as usize;
+        let end = ((end_s * sr) as usize).min(samples.len());
+        if start >= end {
+            continue;
+        }
+        let slice = &samples[start..end];
+        let t = Instant::now();
+        match transcribe_span(slice) {
+            Ok(text) => {
+                dtrace!(
+                    "vad::segment dt={}ms range={:.2}-{:.2}s chars={}",
+                    t.elapsed().as_millis(),
+                    start_s,
+                    end_s,
+                    text.chars().count()
+                );
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    out.push(TranscriptionSegment {
+                        start: start_s,
+                        end: end_s,
+                        text: trimmed.to_string(),
+                    });
+                }
+            }
+            Err(e) => {
+                // One failing segment shouldn't kill the whole transcript.
+                eprintln!(
+                    "warning: VAD segment {:.2}-{:.2}s failed: {e}",
+                    start_s, end_s
+                );
+            }
+        }
+    }
+    out
+}
+
+/// Build the single-segment vec produced by the non-VAD plain path. Re-uses
+/// the caller-supplied duration when available (closes #248 item 1) — the
+/// `Auto` mode probe-and-decide step already opens the file once.
+fn whole_file_segment(
+    audio_path: &str,
+    text: &str,
+    duration: Option<f32>,
+) -> Result<Vec<TranscriptionSegment>> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Ok(vec![]);
     }
-    let duration = audio::probe_duration_seconds(audio_path)
-        .with_context(|| {
-            format!("failed to probe audio duration for timestamped segments: {audio_path}")
-        })?
-        .with_context(|| {
-            format!("audio duration is unavailable for timestamped segments: {audio_path}")
-        })?;
-    Ok(vec![TranscriptionSegment {
-        start: 0.0,
-        end: duration,
-        text: trimmed.to_string(),
-    }])
+    let duration = match duration {
+        Some(d) => d,
+        None => audio::probe_duration_seconds(audio_path)
+            .with_context(|| {
+                format!("failed to probe audio duration for timestamped segments: {audio_path}")
+            })?
+            .with_context(|| {
+                format!("audio duration is unavailable for timestamped segments: {audio_path}")
+            })?,
+    };
+    Ok(single_segment(0.0, duration, trimmed))
 }
 
-fn sample_span_segment(start_s: f32, sample_count: usize, text: &str) -> Vec<TranscriptionSegment> {
+/// Construct a one-element `Vec<TranscriptionSegment>` (or empty if `text` is
+/// blank after trimming). Shared by both `whole_file_segment` and the
+/// VAD-fallback path in [`transcribe_via_vad`].
+fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return vec![];
     }
     vec![TranscriptionSegment {
-        start: start_s,
-        end: start_s + sample_count as f32 / VAD_SAMPLE_RATE as f32,
+        start,
+        end,
         text: trimmed.to_string(),
     }]
 }
@@ -403,7 +436,24 @@ mod tests {
     }
 
     #[test]
-    fn whole_file_segment_errors_when_duration_is_unavailable() {
+    fn whole_file_segment_uses_caller_supplied_duration_without_probing() {
+        // Item 1: when the caller already probed (Auto mode), the helper
+        // must NOT re-open the file.
+        let tmp = tempfile::Builder::new()
+            .prefix("kesha-no-probe-")
+            .suffix(".raw")
+            .tempfile()
+            .unwrap();
+        std::fs::write(tmp.path(), b"not an audio container").unwrap();
+        let segs = whole_file_segment(tmp.path().to_str().unwrap(), "hello", Some(7.5)).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].start, 0.0);
+        assert_eq!(segs[0].end, 7.5);
+        assert_eq!(segs[0].text, "hello");
+    }
+
+    #[test]
+    fn whole_file_segment_errors_when_duration_is_unavailable_and_no_caller_value() {
         let tmp = tempfile::Builder::new()
             .prefix("kesha-no-duration-")
             .suffix(".raw")
@@ -411,13 +461,79 @@ mod tests {
             .unwrap();
         std::fs::write(tmp.path(), b"not an audio container").unwrap();
 
-        let err = whole_file_segment(tmp.path().to_str().unwrap(), "hello")
-            .expect_err("timestamped output should require a known duration");
+        let err = whole_file_segment(tmp.path().to_str().unwrap(), "hello", None)
+            .expect_err("timestamped output should require a known duration when no caller value");
         assert!(
             err.to_string()
                 .contains("failed to probe audio duration for timestamped segments"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn whole_file_segment_skips_empty_text_regardless_of_duration() {
+        let segs = whole_file_segment("/dev/null", "   ", Some(5.0)).unwrap();
+        assert!(segs.is_empty());
+    }
+
+    #[test]
+    fn single_segment_trims_text_and_drops_empty() {
+        assert_eq!(single_segment(0.0, 1.0, "  hi  ")[0].text, "hi");
+        assert!(single_segment(0.0, 1.0, "  ").is_empty());
+        assert!(single_segment(0.0, 1.0, "").is_empty());
+    }
+
+    #[test]
+    fn vad_output_segments_preserve_input_ordering_and_invariants() {
+        // Item 8: lock the VAD-path contract. For a sorted span list, the
+        // output must satisfy `end > start` per segment and `start[i+1] >=
+        // start[i]` across segments (monotonic).
+        let spans = vec![(0.5, 1.5), (2.0, 3.5), (4.0, 5.2)];
+        let samples = vec![0.0_f32; 16_000 * 6];
+        let mut call = 0;
+        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_slice| {
+            call += 1;
+            Ok(format!("utterance {call}"))
+        });
+        assert_eq!(segs.len(), 3);
+        for s in &segs {
+            assert!(s.end > s.start, "{s:?} violates end > start");
+            assert!(!s.text.is_empty());
+        }
+        for w in segs.windows(2) {
+            assert!(
+                w[1].start >= w[0].start,
+                "monotonic invariant violated: {w:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn vad_output_segments_skip_empty_transcriptions() {
+        let spans = vec![(0.5, 1.5), (2.0, 3.5), (4.0, 5.2)];
+        let samples = vec![0.0_f32; 16_000 * 6];
+        let mut call = 0;
+        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| {
+            call += 1;
+            if call == 2 {
+                Ok(String::new())
+            } else {
+                Ok("hello".to_string())
+            }
+        });
+        assert_eq!(segs.len(), 2, "empty transcription should be skipped");
+        assert_eq!(segs[0].start, 0.5);
+        assert_eq!(segs[1].start, 4.0);
+    }
+
+    #[test]
+    fn vad_output_segments_skip_zero_length_spans() {
+        // Spans where `start_s * sr >= samples_len` should be silently dropped
+        // rather than panicking on the slice bounds.
+        let spans = vec![(0.5, 0.5), (10.0, 11.0)];
+        let samples = vec![0.0_f32; 16_000];
+        let segs = build_vad_output_segments(&spans, &samples, 16_000.0, |_| Ok("ignore".into()));
+        assert_eq!(segs.len(), 0);
     }
 
     #[test]

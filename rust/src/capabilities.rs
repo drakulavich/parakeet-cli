@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::transcribe::TRANSCRIBE_SEGMENTS_FEATURE;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
@@ -10,7 +12,12 @@ pub struct Capabilities {
 
 pub fn get_capabilities() -> Capabilities {
     #[allow(unused_mut)]
-    let mut features = vec!["transcribe", "transcribe.segments", "detect-lang", "vad"];
+    let mut features = vec![
+        "transcribe",
+        TRANSCRIBE_SEGMENTS_FEATURE,
+        "detect-lang",
+        "vad",
+    ];
 
     #[cfg(target_os = "macos")]
     features.push("detect-text-lang");
