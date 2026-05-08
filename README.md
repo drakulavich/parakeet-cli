@@ -89,18 +89,18 @@ Detection rule: auto-expand fires when the token cannot be pronounced as a natur
 **English acronyms** (`en-*` voices, Kokoro-82M):
 
 ```bash
-# Auto-expand on by default — EPAM reads as "ee pee ay em"
-kesha say --voice en-am_michael 'EPAM partners with Anthropic'
+# Auto-expand on by default — FBI reads as "ef bee eye"
+kesha say --voice en-am_michael 'The FBI is investigating.'
 
-# Force a literal reading (Kokoro fuses to one syllable)
-kesha say --voice en-am_michael --no-expand-abbrev 'EPAM.'
+# Force a literal reading (Kokoro fuses unknown caps tokens to one syllable)
+kesha say --voice en-am_michael --no-expand-abbrev 'FBI.'
 
 # Explicit SSML control (overrides the rule and the stop-list)
 kesha say --voice en-am_michael --ssml \
   '<speak><say-as interpret-as="characters">NASA</say-as></speak>'
 ```
 
-Detection rule: auto-expand fires on all-uppercase Latin tokens 2–5 chars (no digits, no mixed case). Tokens with established word pronunciations (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA) and emphatic short caps that are real words (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO) pass through via a 30-entry stop-list. Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+Detection rule: auto-expand fires on all-uppercase Latin tokens 2–5 chars (no digits, no mixed case). Tokens on a 31-entry stop-list pass through unchanged: established word pronunciations (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA), brand pronunciations (EPAM), and emphatic short caps that are real words (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO). Disable per call with `--no-expand-abbrev`. Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always wins, even with `--no-expand-abbrev`). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
 
 **Russian word stress** (`ru-vosk-*` voices):
 

@@ -21,8 +21,8 @@ use super::letter_table::expand_chars;
 const STOP_LIST: &[&str] = &[
     // Emphatic length-2 caps
     "OK", "NO", "GO", "IT", "IS", "AS", "AT", "BY", "IN", "ON", "OR", "OF", "TO", "WE", "US", "MY",
-    "ME", "HE", "BE", "DO", // Natural-English caps words
-    "NASA", "NATO", "AIDS", "OPEC", "IKEA", "ASCII", "NAFTA", "LASER", "RADAR", "SCUBA",
+    "ME", "HE", "BE", "DO", // Natural-English caps words + brand pronunciations
+    "NASA", "NATO", "AIDS", "OPEC", "IKEA", "ASCII", "NAFTA", "LASER", "RADAR", "SCUBA", "EPAM",
 ];
 
 const TRAILING_PUNCT: &[char] = &[
@@ -105,10 +105,6 @@ mod tests {
 
     fn cases() -> Vec<(&'static str, &'static str)> {
         vec![
-            // Spell out — alternating CV (Russian rule would skip; English does not).
-            ("EPAM", "ee pee ay em"),
-            ("EPAM.", "ee pee ay em."),
-            ("EPAM partners", "ee pee ay em partners"),
             // Spell out — 0 vowels.
             ("FBI", "ef bee eye"),
             ("SQL", "ess kyu el"),
@@ -135,6 +131,9 @@ mod tests {
             ("OK", "OK"),
             ("IT", "IT"),
             ("IS", "IS"),
+            // Brand pronunciation — EPAM passes through (industry name, read as a word).
+            ("EPAM", "EPAM"),
+            ("EPAM partners", "EPAM partners"),
             // Inflected / mixed case / digits / hyphens preserved.
             ("EPAMs", "EPAMs"),
             ("APIs", "APIs"),
@@ -147,14 +146,16 @@ mod tests {
             ("hello", "hello"),
             ("A", "A"),
             ("ABCDEF", "ABCDEF"),
-            // Punctuation around acronyms.
-            ("«EPAM»", "«ee pee ay em»"),
-            ("EPAM!", "ee pee ay em!"),
+            // Punctuation around acronyms (using non-stop-list FBI / CEO).
+            ("«FBI»", "«ef bee eye»"),
+            ("FBI!", "ef bee eye!"),
             ("CEO,", "see ee oh,"),
             ("FBI? CIA!", "ef bee eye? see eye ay!"),
             // Stop-list with punct preserved.
             ("NASA.", "NASA."),
             ("«NATO»", "«NATO»"),
+            ("EPAM.", "EPAM."),
+            ("«EPAM»", "«EPAM»"),
             // Stop-list followed by other text — the stop-list entry must not consume neighbors.
             ("OK partners", "OK partners"),
             ("NASA briefed", "NASA briefed"),

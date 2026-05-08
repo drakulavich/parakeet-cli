@@ -65,17 +65,19 @@ mod tests {
 
     #[test]
     fn text_runs_acronym_expansion_when_auto_expand_is_true() {
-        let out = normalize_segments(vec![Segment::Text("EPAM partners".to_string())], true);
+        // FBI is not on STOP_LIST (EPAM is, post-#244 brand-pronunciation tweak),
+        // so this exercises the actual spell-out branch.
+        let out = normalize_segments(vec![Segment::Text("FBI investigation".to_string())], true);
         assert_eq!(
             out,
-            vec![Segment::Text("ee pee ay em partners".to_string())]
+            vec![Segment::Text("ef bee eye investigation".to_string())]
         );
     }
 
     #[test]
     fn text_passes_through_when_auto_expand_is_false() {
-        let out = normalize_segments(vec![Segment::Text("EPAM partners".to_string())], false);
-        assert_eq!(out, vec![Segment::Text("EPAM partners".to_string())]);
+        let out = normalize_segments(vec![Segment::Text("FBI investigation".to_string())], false);
+        assert_eq!(out, vec![Segment::Text("FBI investigation".to_string())]);
     }
 
     #[test]

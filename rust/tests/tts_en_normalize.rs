@@ -147,30 +147,30 @@ impl Drop for KokoroLoopEngine {
 // Tests
 // =============================================================================
 
-/// Auto-expanding "EPAM" (4 all-caps letters, not in stop-list → E-P-A-M) must
-/// produce noticeably more audio than passing "EPAM" straight to Kokoro without
+/// Auto-expanding "FBI" (3 all-caps letters, not in stop-list → F-B-I) must
+/// produce noticeably more audio than passing "FBI" straight to Kokoro without
 /// expansion. Threshold: expanded WAV ≥ 5 KB longer (letters spoken separately
 /// produce more frames than the original token).
 #[test]
-fn epam_spells_letter_by_letter_via_auto_expand() {
+fn fbi_spells_letter_by_letter_via_auto_expand() {
     let mut eng = match KokoroLoopEngine::spawn() {
         Some(e) => e,
         None => {
             eprintln!(
-                "skipping epam_spells_letter_by_letter_via_auto_expand: \
+                "skipping fbi_spells_letter_by_letter_via_auto_expand: \
                  Kokoro models not found (run `kesha install --tts`)"
             );
             return;
         }
     };
 
-    let raw = eng.synth_bytes("EPAM partners", false, false);
-    let expanded = eng.synth_bytes("EPAM partners", false, true);
+    let raw = eng.synth_bytes("FBI investigation", false, false);
+    let expanded = eng.synth_bytes("FBI investigation", false, true);
 
     assert!(
         expanded.len() > raw.len() + 5_000,
         "expanded={} raw={}, expected expanded > raw + 5 KB \
-         (expansion spells E-P-A-M letter by letter)",
+         (expansion spells F-B-I letter by letter)",
         expanded.len(),
         raw.len()
     );
@@ -225,17 +225,17 @@ fn say_as_characters_overrides_no_expand_abbrev() {
         }
     };
 
-    // Plain EPAM with expand_abbrev=false: Kokoro treats it as a single
+    // Plain FBI with expand_abbrev=false: Kokoro treats it as a single
     // unknown word and invents its own pronunciation / duration.
-    let raw_no_expand = eng.synth_bytes("<speak>EPAM</speak>", true, false);
+    let raw_no_expand = eng.synth_bytes("<speak>FBI</speak>", true, false);
 
-    // Auto-expand (expand_abbrev=true) spells E→P→A→M via letter table.
-    let auto_expanded = eng.synth_bytes("<speak>EPAM</speak>", true, true);
+    // Auto-expand (expand_abbrev=true) spells F→B→I via letter table.
+    let auto_expanded = eng.synth_bytes("<speak>FBI</speak>", true, true);
 
-    // <say-as characters> with expand_abbrev=false: must still spell E-P-A-M
+    // <say-as characters> with expand_abbrev=false: must still spell F-B-I
     // because the Spell segment path is not gated by expand_abbrev.
     let say_as = eng.synth_bytes(
-        r#"<speak><say-as interpret-as="characters">EPAM</say-as></speak>"#,
+        r#"<speak><say-as interpret-as="characters">FBI</say-as></speak>"#,
         true,
         false,
     );
