@@ -45,11 +45,21 @@ kesha --json voice.ogg
 
 Use `lang` (or the more detailed `audioLanguage`/`textLanguage`) to decide how to respond.
 
+Need timestamped transcript segments for navigation, chapters, or downstream editing:
+
+```bash
+kesha --json --timestamps voice.ogg > voice.timestamps.json
+jq '.[0].segments' voice.timestamps.json
+```
+
+Each segment has `start`, `end`, and `text` fields. `--timestamps` is available for machine-readable output (`--json`, `--toon`, or `--format json`).
+
 **Formats:** .ogg, .opus, .mp3, .m4a, .wav, .flac, .webm — decoded via symphonia, no ffmpeg required.
 
 **Other output modes:**
 - `kesha audio.ogg` — plain transcript on stdout
 - `kesha --format transcript audio.ogg` — transcript + `[lang: ru, confidence: 0.99]` footer
+- `kesha --json --timestamps audio.ogg` — JSON with timestamped `segments`
 - `kesha --verbose audio.ogg` — human-readable with language info
 - `kesha --lang en audio.ogg` — warn if detected language differs (useful sanity check)
 
