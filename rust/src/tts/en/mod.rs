@@ -16,8 +16,6 @@ use crate::tts::ssml::Segment;
 /// Auto-expand all-uppercase Latin acronyms in plain text. Used by the
 /// non-SSML Kokoro path; the SSML path goes through `normalize_segments`
 /// instead so it can also handle `Segment::Spell` and `Segment::Emphasis`.
-// Wired into say_with_kokoro / say_loop in T4 (#244). Allow until then.
-#[allow(dead_code)]
 pub fn expand_text(text: &str) -> String {
     acronym::expand_acronyms(text)
 }
