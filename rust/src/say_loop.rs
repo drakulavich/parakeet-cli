@@ -210,6 +210,14 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 if segments.is_empty() {
                     return Err("SSML had no speakable content".into());
                 }
+                // Apply English acronym normalization (Spell→letter names,
+                // Text→expand when expand_abbrev) for en-* voices. Mirrors
+                // the one-shot path in tts::synth_segments_kokoro (#244).
+                let segments = if espeak_lang.starts_with("en") {
+                    tts::en::normalize_segments(segments, req.expand_abbrev)
+                } else {
+                    segments
+                };
                 tts::synth_segments_kokoro_with(
                     sess,
                     &segments,
@@ -220,8 +228,16 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 )
                 .map_err(|e| e.to_string())
             } else {
-                let ipa = tts::g2p::text_to_ipa(&req.text, espeak_lang)
-                    .map_err(|e| format!("g2p: {e}"))?;
+                // Apply English acronym expansion for en-* voices when requested.
+                // Mirrors the one-shot path in tts::say() (#244).
+                let text: std::borrow::Cow<'_, str> =
+                    if req.expand_abbrev && espeak_lang.starts_with("en") {
+                        std::borrow::Cow::Owned(tts::en::expand_text(&req.text))
+                    } else {
+                        std::borrow::Cow::Borrowed(&req.text)
+                    };
+                let ipa =
+                    tts::g2p::text_to_ipa(&text, espeak_lang).map_err(|e| format!("g2p: {e}"))?;
                 if ipa.trim().is_empty() {
                     return Err("no phonemes produced for input (empty after G2P)".into());
                 }

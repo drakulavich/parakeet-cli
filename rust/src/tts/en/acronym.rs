@@ -20,9 +20,8 @@ use super::letter_table::expand_chars;
 /// Maintainer extends as users report mispronunciations — one-line edits.
 const STOP_LIST: &[&str] = &[
     // Emphatic length-2 caps
-    "OK", "NO", "GO", "IT", "IS", "AS", "AT", "BY", "IN", "ON", "OR", "OF", "TO", "WE", "US",
-    "MY", "ME", "HE", "BE", "DO",
-    // Natural-English caps words
+    "OK", "NO", "GO", "IT", "IS", "AS", "AT", "BY", "IN", "ON", "OR", "OF", "TO", "WE", "US", "MY",
+    "ME", "HE", "BE", "DO", // Natural-English caps words
     "NASA", "NATO", "AIDS", "OPEC", "IKEA", "ASCII", "NAFTA", "LASER", "RADAR", "SCUBA",
 ];
 
