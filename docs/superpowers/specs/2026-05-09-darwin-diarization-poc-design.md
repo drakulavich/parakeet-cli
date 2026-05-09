@@ -201,13 +201,20 @@ $ ./kesha-diarize-darwin-arm64 /tmp/audio.wav
 
 > **Required before plan-writing.** Per CLAUDE.md "VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE". Spike artifacts at `/tmp/kesha-diarize-spike/`. Replace this section's TODOs with the actual findings before transitioning to writing-plans.
 
-| Step | Question | TODO finding |
+| Step | Question | Finding (2026-05-09) |
 |---|---|---|
-| 1 | Does `import FluidAudio` expose a callable `diarize(...)` returning `[(start, end, speakerId)]` in the latest Swift package release? | TODO: Swift API signature + min FluidAudio version. |
-| 2 | Are diarization models bundled in the .framework, or lazy-downloaded on first call? | TODO: yes/no + cache path. |
-| 3 | On a known 2-speaker 5-min sample, does it produce 2 cluster IDs with reasonable timestamps? | TODO: cluster count + boundary accuracy. |
-| 4 | Wall-clock latency on a 1 h file. | TODO: measured seconds. |
-| 5 | Does it work on Russian audio, or is it English-tuned? | TODO: cluster correctness on a 5-min Russian 2-speaker sample. |
+| 1 | Does `import FluidAudio` expose a callable `diarize(...)` returning `[(start, end, speakerId)]` in the latest Swift package release? | **FAIL.** SwiftPM resolves `FluidAudio` from `0.1.0`, all 257 source files compile (Magpie TTS, PocketTts, SentencePiece, etc.), but `FluidAudio.Diarizer.self` errors with `type 'FluidAudio' has no member 'Diarizer'`. The published 0.1.0 surface does not export a diarization symbol at module scope. |
+| 2 | Are diarization models bundled in the .framework, or lazy-downloaded on first call? | SKIPPED — Q1 hard gate failed. |
+| 3 | On a known 2-speaker 5-min sample, does it produce 2 cluster IDs with reasonable timestamps? | SKIPPED — Q1 hard gate failed. |
+| 4 | Wall-clock latency on a 1 h file. | SKIPPED — Q1 hard gate failed. |
+| 5 | Does it work on Russian audio, or is it English-tuned? | SKIPPED — Q1 hard gate failed. |
+
+**Decision: pivot to ONNX (or wait for upstream).** Q1's hard-gate failure means the FluidAudio Swift sidecar approach in this design is not currently achievable against the published `from: "0.1.0"` package. Two recoveries are open:
+
+1. **Pivot to ONNX backend** — replace the `kesha-diarize-darwin-arm64` Swift sidecar with a cross-platform ONNX pipeline (e.g. `pyannote/speaker-diarization-3.1` ONNX export, or `sherpa-onnx` diarization). This re-opens Q4 of the design questions and removes the darwin-arm64-only restriction as a side benefit. Plan rewrite required (replaces T4, T5, T10, parts of T13).
+2. **Wait for upstream** — block this issue until FluidAudio cuts a release exposing diarization at module scope, then re-run the spike. Lower engineering cost but indefinite timeline.
+
+Recommendation: **pivot to ONNX**. Aligns with the project's existing ONNX investment (`ort` is already unconditional, lang_id is ONNX, ONNX is the default ASR backend on non-darwin) and is the path the original design called out as the deferred fallback. Spike artifacts retained at `/tmp/kesha-199-evidence/T1-spike.notes` and the raw error transcript.
 
 **Decision points exiting the spike**:
 
