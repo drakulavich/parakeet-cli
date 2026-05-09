@@ -55,10 +55,10 @@ Eliminate four-way drift in TTS feature documentation. `docs/tts.md` becomes the
 **Files:**
 - Modify: `BENCHMARK.md`
 
-- [ ] Replace the `IPA_LEXICON` bullet at lines 156-157 with a one-line summary plus link: "- `IPA_LEXICON` (v1.10.0+, [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244)) — case-sensitive token → IPA map for industry-pronunciation acronyms and mixed-case proper nouns. See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion)."
-- [ ] Verify the surrounding `<phoneme alphabet="ipa" ...>` bullet (line 156) is left unchanged.
-- [ ] Verify no remaining mention of "19 entries" or specific token examples (EPAM, JSON, Microsoft, Kubernetes) in BENCHMARK.md.
-- [ ] Render BENCHMARK.md on GitHub and click the new anchor link — confirm navigation works.
+- [x] Replace the `IPA_LEXICON` bullet at lines 156-157 with a one-line summary plus link: "- `IPA_LEXICON` (v1.10.0+, [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244)) — case-sensitive token → IPA map for industry-pronunciation acronyms and mixed-case proper nouns. See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion)."
+- [x] Verify the surrounding `<phoneme alphabet="ipa" ...>` bullet (line 156) is left unchanged.
+- [x] Verify no remaining mention of "19 entries" or specific token examples (EPAM, JSON, Microsoft, Kubernetes) in BENCHMARK.md.
+- [x] Render BENCHMARK.md on GitHub and click the new anchor link — confirm navigation works. (skipped - not automatable in this loop; anchor `#english-acronym-auto-expansion` validated structurally against docs/tts.md heading)
 
 ### Task 4: Verify docs/tts.md canonical content is intact
 
