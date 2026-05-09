@@ -150,13 +150,11 @@ Both engines preserve enough signal for downstream agents to act on the content 
 | macOS runtime dep | `espeak-ng` (brew) | `espeak-ng` (brew, ru only) | none |
 | TTS install size | ~150 MB | ~490 MB | ~990 MB |
 
-The "no system deps" brand promise is restored as of v1.5.0 — `kesha install --tts` is the only step. CharsiuG2P (ByT5-tiny ONNX) and the espeak-ng subprocess fallback were both removed in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213); CharsiuG2P numbers below are kept for historical reference but no longer reflect the shipped engine.
+The "no system deps" brand promise is restored as of v1.5.0 — `kesha install --tts` is the only step. CharsiuG2P (ByT5-tiny ONNX) and the espeak-ng subprocess fallback were both removed in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213). The shipped pipeline (English misaki-rs + Russian Vosk-internal) is in-process; no subprocesses, no separate model files, no per-call session-load overhead.
 
-Latency breakdown (release build, M3 Pro): the 149 ms/word figure is measured with the **current per-call session-load pattern** — each `text_to_ipa` call opens all three ONNX sessions fresh. About 100 ms of that is session-load overhead (ORT init + commit for encoder + two decoders); the remaining ~40 ms is actual inference over a byte-level 128-step max decode. A process-wide session cache would drop throughput to ≈ 40 ms/word — **not shipped in v1.4.0; tracked as a follow-up** alongside similar caching for Kokoro / Piper / VAD (their `load()` calls follow the same per-call pattern).
-
-Quality tradeoff is honest: ByT5-tiny has the same 8.1% PER ceiling everywhere in the stack. Out-of-dict English words (`pneumonia → ˈpnuˈmoʊniˌɑi` — noisy trailing `ˌɑi`) produce audible artifacts. The SSML `<phoneme alphabet="ipa" ph="...">` override (v1.4.1+) is the ergonomic escape hatch. Regression guard: `cargo test --test g2p_parity` locks 40 reference IPA outputs across 11 languages against the pinned FP32 weights.
-
-INT8 quantization (~27 MB total models, ~3-4× faster inference per the upstream README) is tracked as a follow-up — not published by the upstream repo, so we'd host the quantized export on `drakulavich/g2p-byt5-tiny-onnx` with its own pinned SHA.
+Out-of-vocabulary English words letter-spell via misaki's grapheme-rule fallback, which is good enough for ASR transcripts but occasionally awkward for proper nouns. Two ergonomic overrides:
+- `<phoneme alphabet="ipa" ph="...">` (v1.4.1+, [#193](https://github.com/drakulavich/kesha-voice-kit/issues/193)) — bypass G2P, feed IPA directly to Kokoro.
+- `IPA_LEXICON` (v1.10.0+, [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244)) — case-sensitive token map with 19 entries covering industry-pronunciation acronyms and mixed-case proper nouns (EPAM, JSON, Anthropic, Microsoft, Kubernetes, …). Hits emit `Segment::Ipa` so synthesis bypasses G2P entirely.
 
 ## Output size: `--json` vs `--toon` (#138)
 
