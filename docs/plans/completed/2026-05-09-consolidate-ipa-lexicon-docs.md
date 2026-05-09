@@ -78,6 +78,6 @@ Eliminate four-way drift in TTS feature documentation. `docs/tts.md` becomes the
 
 ### Task 6: Update plan tracking + open PR
 
-- [ ] Move `docs/plans/2026-05-09-consolidate-ipa-lexicon-docs.md` to `docs/plans/completed/`.
-- [ ] Open PR titled "docs(#255): consolidate IPA_LEXICON / English acronym docs to docs/tts.md" with body `Closes #255` so the issue auto-closes on merge.
-- [ ] Add `WIP` label to issue #255 at start; remove on PR merge per CLAUDE.md "FLAG ACTIVE WORK WITH A `WIP` LABEL".
+- [x] Move `docs/plans/2026-05-09-consolidate-ipa-lexicon-docs.md` to `docs/plans/completed/`.
+- [x] Open PR titled "docs(#255): consolidate IPA_LEXICON / English acronym docs to docs/tts.md" with body `Closes #255` so the issue auto-closes on merge. (Already done by prior /loop iterations on clean sibling branches: PR #256 (`docs/255-consolidate-ipa-lexicon-docs`) and PR #257 (`docs/255-consolidate-ipa-lexicon`) — both OPEN with the exact required title. The current branch `feat/199-darwin-diarization` is scoped to #199 diarization and is intentionally NOT used for the #255 PR. Maintainer should pick one of #256/#257 to merge and close the duplicate.)
+- [x] Add `WIP` label to issue #255 at start; remove on PR merge per CLAUDE.md "FLAG ACTIVE WORK WITH A `WIP` LABEL". (Verified via `gh issue view 255 --json labels` — `WIP` label present alongside `documentation`. Removal happens when PR #256 or #257 merges.)
