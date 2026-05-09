@@ -61,6 +61,41 @@ const VAD_FILES: &[ModelFile] = &[ModelFile {
     sha256: "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
 }];
 
+/// FluidAudio Sortformer streaming diarizer (`balancedV2` /
+/// `SortformerNvidiaLow_v2.mlpackage`). 4 files totalling ~245 MB. Opt-in
+/// via `kesha install --diarize` (#199) on darwin-arm64 only — the
+/// `system_diarize` cargo feature gates the engine, so non-darwin builds
+/// never reach this manifest.
+///
+/// `.mlpackage` is a directory; CoreML compiles it to `.mlmodelc` at first
+/// load via `MLModel.compileModel(at:)`. We pin the source-of-truth `.mlpackage`
+/// (Manifest.json + model.mlmodel + 2 weight blobs) rather than the
+/// alternative pre-compiled `.mlmodelc` form, since the upstream HF tree
+/// ships both and the .mlpackage is roughly half the bytes.
+#[cfg(feature = "system_diarize")]
+const DIARIZE_FILES: &[ModelFile] = &[
+    ModelFile {
+        rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Manifest.json",
+        sha256: "48005880c54b1b7f5b0ae81a33fead3a36e3e2a773eb3fbf1f61ebe08515bba6",
+    },
+    ModelFile {
+        rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+        sha256: "478267113144c0292a3db41fb22148b6c052d2399ae3dab0ca20cd3687880358",
+    },
+    ModelFile {
+        rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
+        sha256: "ad40d62ccd7a0943d2cd9cc8eeee7f27116e58cf6532ab43196b34142fc86583",
+    },
+    ModelFile {
+        rel_path: "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
+        url: "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/main/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
+        sha256: "e8ebd6767429fd224671b79ad2a3e3cd8bd34f83373ff84fca2f5387414191a0",
+    },
+];
+
 /// SpeechBrain ECAPA-TDNN VoxLingua107 lang-id ONNX. Hashes pinned from
 /// `huggingface.co/drakulavich/SpeechBrain-coreml`.
 const LANG_ID_FILES: &[ModelFile] = &[
@@ -227,6 +262,14 @@ pub fn vad_model_dir() -> String {
         .to_string()
 }
 
+/// Path to the cached Sortformer `.mlpackage` directory. The Swift sidecar
+/// (`kesha-diarize`) takes this directory as `argv[1]` and feeds it to
+/// `MLModel.compileModel(at:)`. (#199)
+#[cfg(feature = "system_diarize")]
+pub fn diarize_model_dir() -> PathBuf {
+    cache_dir().join("models/diarize/SortformerNvidiaLow_v2.mlpackage")
+}
+
 pub fn is_asr_cached(dir: &str) -> bool {
     has_all_files(dir, ASR_FILES)
 }
@@ -237,6 +280,22 @@ pub fn is_lang_id_cached(dir: &str) -> bool {
 
 pub fn is_vad_cached(dir: &str) -> bool {
     has_all_files(dir, VAD_FILES)
+}
+
+/// True iff the Sortformer `.mlpackage` has every runtime-required file.
+/// `has_all_files` flattens to basenames; `.mlpackage` is a directory tree
+/// with two `*-weight.bin` siblings under nested paths, so we check
+/// each canonical relative path explicitly. (#199)
+#[cfg(feature = "system_diarize")]
+pub fn is_diarize_cached(dir: &Path) -> bool {
+    dir.join("Manifest.json").exists()
+        && dir.join("Data/com.apple.CoreML/model.mlmodel").exists()
+        && dir
+            .join("Data/com.apple.CoreML/weights/0-weight.bin")
+            .exists()
+        && dir
+            .join("Data/com.apple.CoreML/weights/1-weight.bin")
+            .exists()
 }
 
 /// Default Vosk-ru model directory under the active cache. Test-only —
@@ -557,6 +616,19 @@ mod tts_tests {
             }
         }
     }
+}
+
+/// Download the Sortformer `.mlpackage`. Opt-in via `kesha install --diarize`
+/// (#199) — feature-gated to `system_diarize`, which build-engine.yml only
+/// turns on for darwin-arm64. Non-darwin builds neither expose the flag nor
+/// reach this function. 4-file manifest, ~245 MB total; goes through the
+/// same hash-verify + retry path as the rest.
+#[cfg(feature = "system_diarize")]
+pub fn download_diarize(no_cache: bool) -> Result<()> {
+    log_mirror_once();
+    let cache = cache_dir();
+    let refs: Vec<&ModelFile> = DIARIZE_FILES.iter().collect();
+    parallel_download(&cache, &refs, no_cache)
 }
 
 /// Download the Silero VAD ONNX. Opt-in via `kesha install --vad` (#128).

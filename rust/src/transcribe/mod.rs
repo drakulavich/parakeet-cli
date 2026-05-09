@@ -416,9 +416,8 @@ fn probe_duration_if_plausible(path: &str) -> Option<f32> {
 
 /// Resolve the diarization model path. Priority:
 /// 1. `KESHA_DIARIZE_MODEL_PATH` env var (must point to an existing path).
-/// 2. Default cache location `~/.cache/kesha/models/diarize/sortformer.mlpackage`
-///    — only accepted when the path already exists (populated by
-///    `kesha install --diarize`, a follow-up task tracked in #199).
+/// 2. Default cache location populated by `kesha install --diarize`
+///    (`~/.cache/kesha/models/diarize/SortformerNvidiaLow_v2.mlpackage`).
 #[cfg(all(feature = "system_diarize", target_os = "macos"))]
 fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
     if let Ok(env_path) = std::env::var("KESHA_DIARIZE_MODEL_PATH") {
@@ -432,16 +431,15 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
         );
     }
 
-    // Fallback: default cache location. Populated by `kesha install --diarize`
-    // (T10/follow-up, tracked in #199). Until then, fail with an actionable hint.
-    let default = crate::models::cache_dir().join("models/diarize/sortformer.mlpackage");
-    if default.exists() {
+    let default = crate::models::diarize_model_dir();
+    if crate::models::is_diarize_cached(&default) {
         return Ok(default);
     }
 
     anyhow::bail!(
-        "diarization model not found. Set KESHA_DIARIZE_MODEL_PATH or run \
-         `kesha install --diarize` (when available; tracked in #199)",
+        "diarization model not found at {}. \
+         Run `kesha install --diarize` (or set KESHA_DIARIZE_MODEL_PATH).",
+        default.display()
     )
 }
 

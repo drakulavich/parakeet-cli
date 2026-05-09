@@ -136,6 +136,9 @@ export interface InstallOptions {
   tts?: boolean;
   /** Also install Silero VAD model for long-audio preprocessing. */
   vad?: boolean;
+  /** Also install the Sortformer streaming-diarization model (~245MB,
+   * darwin-arm64 only — see #199). */
+  diarize?: boolean;
 }
 
 export async function downloadEngine(
@@ -244,6 +247,7 @@ export async function downloadEngine(
     ...(noCache ? ["--no-cache"] : []),
     ...(options.tts ? ["--tts"] : []),
     ...(options.vad ? ["--vad"] : []),
+    ...(options.diarize ? ["--diarize"] : []),
   ];
   const proc = Bun.spawnSync([binPath, ...installArgs], {
     stdout: "pipe",

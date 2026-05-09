@@ -10,6 +10,7 @@ interface InstallCommandArgs {
   "no-cache": boolean;
   tts: boolean;
   vad: boolean;
+  diarize: boolean;
 }
 
 const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
@@ -58,9 +59,22 @@ async function askForStar() {
   log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
 }
 
-async function performInstall(noCache: boolean, backend?: string, tts = false, vad = false) {
+async function performInstall(
+  noCache: boolean,
+  backend?: string,
+  tts = false,
+  vad = false,
+  diarize = false,
+) {
+  if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
+    log.error(
+      "--diarize is currently darwin-arm64 only " +
+        "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
+    );
+    process.exit(1);
+  }
   try {
-    await downloadEngine(noCache, backend, { tts, vad });
+    await downloadEngine(noCache, backend, { tts, vad, diarize });
     await askForStar();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -100,9 +114,14 @@ export const installCommand = defineCommand({
       description: "Also install Silero VAD (~2.3MB) for long-audio preprocessing",
       default: false,
     },
+    diarize: {
+      type: "boolean",
+      description: "Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199)",
+      default: false,
+    },
   },
   async run({ args }: { args: InstallCommandArgs }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    await performInstall(args["no-cache"], backend, args.tts, args.vad);
+    await performInstall(args["no-cache"], backend, args.tts, args.vad, args.diarize);
   },
 });

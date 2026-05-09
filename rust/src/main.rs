@@ -72,6 +72,11 @@ enum Commands {
         /// Also install Silero VAD (~2.3MB) for long-audio preprocessing.
         #[arg(long)]
         vad: bool,
+        /// Also install the Sortformer streaming-diarization model (~245MB,
+        /// darwin-arm64 only, #199).
+        #[cfg(feature = "system_diarize")]
+        #[arg(long)]
+        diarize: bool,
     },
     /// Synthesize speech from text (TTS)
     #[cfg(feature = "tts")]
@@ -425,6 +430,8 @@ fn main() -> Result<()> {
             #[cfg(feature = "tts")]
             tts,
             vad,
+            #[cfg(feature = "system_diarize")]
+            diarize,
         }) => {
             models::install(no_cache)?;
             #[cfg(feature = "tts")]
@@ -435,6 +442,11 @@ fn main() -> Result<()> {
             if vad {
                 models::download_vad(no_cache)?;
                 eprintln!("VAD model installed.");
+            }
+            #[cfg(feature = "system_diarize")]
+            if diarize {
+                models::download_diarize(no_cache)?;
+                eprintln!("Diarization model installed.");
             }
             eprintln!("Install complete.");
         }
