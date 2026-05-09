@@ -87,6 +87,50 @@ async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): 
   }
 }
 
+/**
+ * Fetch the kesha-diarize Swift sidecar (#199) and place it next to the
+ * engine binary on darwin-arm64. The Rust side
+ * (`transcribe::diarize::sidecar_path`) probes for `kesha-diarize-darwin-arm64`
+ * (and `kesha-diarize`) adjacent to the running executable.
+ *
+ * Best-effort, mirroring AVSpeech: 404 (older release predates the sidecar)
+ * and network errors warn and return — `--speakers` simply won't be available,
+ * which the TS-side capability gate surfaces with a #199 link.
+ */
+async function downloadDiarizeSidecar(binPath: string, engineVersion: string): Promise<void> {
+  if (process.platform !== "darwin" || process.arch !== "arm64") return;
+
+  const sidecarPath = join(dirname(binPath), "kesha-diarize-darwin-arm64");
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/kesha-diarize-darwin-arm64`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { redirect: "follow" });
+  } catch (e) {
+    log.warn(
+      `Could not fetch diarization sidecar (${e instanceof Error ? e.message : e}); --speakers unavailable.`,
+    );
+    return;
+  }
+
+  if (!res.ok) {
+    log.warn(
+      `Diarization sidecar not in release v${engineVersion} (HTTP ${res.status}); --speakers unavailable.`,
+    );
+    return;
+  }
+
+  try {
+    await streamResponseToFile(res, sidecarPath, "kesha-diarize sidecar");
+    chmodSync(sidecarPath, 0o755);
+    log.success("Diarization sidecar installed (--speakers available).");
+  } catch (e) {
+    log.warn(
+      `Diarization sidecar install failed (${e instanceof Error ? e.message : e}); --speakers unavailable.`,
+    );
+  }
+}
+
 export interface InstallOptions {
   /** Also install Kokoro + Vosk-TTS models. */
   tts?: boolean;
@@ -124,6 +168,13 @@ export async function downloadEngine(
     if (!existsSync(sidecarPath)) {
       await downloadAVSpeechSidecar(binPath, engineVersion);
     }
+    // Same upgrade-from-older-engine path for the #199 diarization sidecar:
+    // engines prior to v1.12.0 didn't ship it, so a cached but otherwise
+    // current install can still be missing it.
+    const diarizePath = join(dirname(binPath), "kesha-diarize-darwin-arm64");
+    if (!existsSync(diarizePath)) {
+      await downloadDiarizeSidecar(binPath, engineVersion);
+    }
   } else {
     // Log why we're downloading — helps diagnose surprising re-downloads.
     if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
@@ -142,6 +193,7 @@ export async function downloadEngine(
     // cold install. Sidecar is best-effort (404 on older engines, warn +
     // continue) so a failure doesn't cascade into the engine path.
     const sidecarPromise = downloadAVSpeechSidecar(binPath, engineVersion);
+    const diarizePromise = downloadDiarizeSidecar(binPath, engineVersion);
 
     let res: Response;
     try {
@@ -155,6 +207,7 @@ export async function downloadEngine(
       // error is what the user needs to see now; sidecar's own logs
       // will print whenever they finish.
       sidecarPromise.catch(() => {});
+      diarizePromise.catch(() => {});
       throw new Error(
         `Failed to fetch engine binary: ${e instanceof Error ? e.message : e}\n  Fix: Check your network connection and try again`,
       );
@@ -162,6 +215,7 @@ export async function downloadEngine(
 
     if (!res.ok) {
       sidecarPromise.catch(() => {});
+      diarizePromise.catch(() => {});
       throw new Error(
         `Failed to download engine binary (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
       );
@@ -172,6 +226,7 @@ export async function downloadEngine(
     writeInstalledEngineVersion(binPath, engineVersion);
     log.success(`Engine binary downloaded (v${engineVersion}).`);
     await sidecarPromise;
+    await diarizePromise;
   }
 
   if (backend) {
