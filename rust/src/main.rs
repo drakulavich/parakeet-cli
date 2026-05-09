@@ -45,6 +45,10 @@ enum Commands {
         /// Disable VAD preprocessing regardless of duration or install state.
         #[arg(long = "no-vad")]
         no_vad: bool,
+        /// Include speaker labels in transcript segments. Requires --json.
+        /// Currently darwin-arm64 only (#199).
+        #[arg(long)]
+        speakers: bool,
     },
     /// Detect spoken language from audio
     DetectLang {
@@ -391,9 +395,16 @@ fn main() -> Result<()> {
             json,
             vad,
             no_vad,
+            speakers,
         }) => {
             let mode = transcribe::VadMode::from_flags(vad, no_vad);
-            if json {
+            if speakers {
+                if !json {
+                    anyhow::bail!("--speakers requires --json");
+                }
+                let output = transcribe::transcribe_output_with_speakers(&audio_path, mode)?;
+                println!("{}", serde_json::to_string(&output)?);
+            } else if json {
                 let output = transcribe::transcribe_output(&audio_path, mode)?;
                 println!("{}", serde_json::to_string(&output)?);
             } else {

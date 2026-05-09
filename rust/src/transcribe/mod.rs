@@ -113,9 +113,6 @@ pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<Transcriptio
 /// with `speaker: Some(u32)` populated where the diarization timeline
 /// covered the segment's midpoint. Currently darwin-arm64 only — fails
 /// on other platforms with a #199 tracking-issue link.
-// Wired into the engine CLI by the next task (T8 `--speakers` flag);
-// without that caller it tripped `dead_code` under `-D warnings`.
-#[allow(dead_code)]
 pub fn transcribe_output_with_speakers(
     audio_path: &str,
     mode: VadMode,
