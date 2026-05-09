@@ -11,6 +11,13 @@ openclaw config set tools.media.audio.models \
 
 > If audio transcription is not already enabled: `openclaw config set tools.media.audio.enabled true`
 
+For agents that need per-utterance timestamps (chapters, navigation, downstream editing), append `--json --timestamps` instead of `--format transcript` (requires engine v1.9.0+):
+```bash
+openclaw config set tools.media.audio.models \
+  '[{"type":"cli","command":"kesha","args":["--json","--timestamps","{{MediaPath}}"],"timeoutSeconds":30}]'
+```
+Each segment carries `start`, `end`, and `text`. VAD-preprocessed long files yield one segment per utterance; short non-VAD files return one whole-file segment.
+
 Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the agent sees enriched context:
 
 ```

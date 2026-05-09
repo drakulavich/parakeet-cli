@@ -40,9 +40,60 @@ Voice id format: `macos-<id>` where `<id>` is either a full Apple identifier (`c
 
 Quality tradeoff is honest: macOS system voices are notification-grade. Use them when you want zero-install TTS on macOS; keep Kokoro/Vosk for anything that needs to sound good.
 
-## SSML (preview)
+## English acronym auto-expansion
 
-`kesha say --ssml` accepts [SSML](https://www.w3.org/TR/speech-synthesis11/) for pauses and text-structuring. v1 is deliberately small:
+For `en-*` (Kokoro) voices, `kesha say` auto-expands all-uppercase Latin acronyms into a pronunciation Kokoro can render. Three cooperating tables pick the right path per token:
+
+```bash
+kesha say --voice en-am_michael 'The FBI is investigating.'
+# audible: "The ef-bee-eye is investigating."
+
+kesha say --voice en-am_michael 'EPAM partners with Anthropic.'
+# audible: "EE-pam partners with an-THROP-ik."  (IPA injection bypasses G2P)
+
+kesha say --voice en-am_michael 'Send JSON over HTTP.'
+# audible: "Send JAY-son over aitch-tee-tee-pee."  (mixed: IPA + letter-spell)
+
+kesha say --voice en-am_michael --no-expand-abbrev 'EPAM ...'
+# IPA hits still fire (intent-explicit, parallel to <say-as>); letter-spell rule disabled.
+```
+
+- **Letter-spell rule** — uppercase Latin tokens 2–5 chars not on the stop-list and not in the lexicon get expanded letter-by-letter via the embedded letter-name table. Disable per call with `--no-expand-abbrev`.
+- **`STOP_LIST`** (30 entries) — natural-English caps words pass through verbatim: `NASA`, `NATO`, `AIDS`, `OPEC`, `IKEA`, `ASCII`, `NAFTA`, `LASER`, `RADAR`, `SCUBA`, plus 20 emphatic length-2 caps (`OK`, `IT`, `IS`, …).
+- **`IPA_LEXICON`** (19 entries) — case-sensitive token → IPA-phoneme map; hits emit a `Segment::Ipa` and bypass G2P entirely. Covers industry-pronunciation acronyms (`EPAM` /ˈiːpæm/, `JSON` /ˈdʒeɪsən/, `JPEG`, `GIF`, `SQL`, `ASAP`, `CRUD`, `JWT`, `OAuth`) AND mixed-case proper nouns (`Anthropic` /ænˈθrɒpɪk/, `Microsoft`, `Claude`, `Kubernetes`, `PostgreSQL`, `GraphQL`, `Linux`, `Tokio`, `macOS`, `Granola`). IPA hits fire even with `--no-expand-abbrev`.
+
+`<say-as interpret-as="characters">…</say-as>` always wins — letter-spells via the embedded table regardless of `--no-expand-abbrev`. Engine reports `tts.en_acronym_expansion: true` in `--capabilities-json`. Closes [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+
+## Russian abbreviation auto-expansion
+
+For `ru-vosk-*` voices, `kesha say` detects all-uppercase Cyrillic acronyms (length 2–5) and reads them letter-by-letter when the token cannot be pronounced as a natural Russian syllable:
+
+```bash
+kesha say --voice ru-vosk-m02 'ФСБ объявила.'      # audible: "эф эс бэ объявила"
+kesha say --voice ru-vosk-m02 'ВОЗ предупреждает.' # audible: "воз предупреждает" (CVC alternation passes through)
+kesha say --voice ru-vosk-m02 'ОН пришёл.'         # audible: "ОН пришёл" (stop-list)
+```
+
+The rule fires when the token is length ≤ 2 (`ИП` → "и пэ"), has 0 vowels (`ФСБ` → "эф эс бэ"), or has 2+ consecutive vowels / consonants (`ОАЭ` → "о а э", `США` → "сэ шэ а"). Tokens with strict CVC/CVCV alternation pass through (`ВОЗ`, `НАТО`, `ОПЕК`). Letter-name forms tuned to user-validated Vosk pronunciation: `Ф` → "эф", `Ш` → "шэ", `Л` → "эл", `С` → "сэ" at start / "эс" elsewhere. Stop-list of ~25 common short words (`ОН`, `МЫ`, `КАК`, `ЧТО`, …) prevents false positives. Tokens containing `Ъ`/`Ь` are passed through literally.
+
+Opt-out per call with `--no-expand-abbrev`. `<say-as interpret-as="characters">…</say-as>` always wins. Engine reports `tts.ru_acronym_expansion: true`. Closes [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
+
+## Russian word stress (`<emphasis>`)
+
+For `ru-vosk-*` voices, `<emphasis>` lets you place the stress on a specific vowel by prepending `+` to it. Vosk-TTS honors the marker as a stress hint when it shifts stress AWAY from the model's default first-syllable behavior:
+
+```bash
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><emphasis>дом+а</emphasis></speak>'  # genitive до-МА́
+kesha say --voice ru-vosk-m02 --ssml \
+  '<speak><emphasis level="none">дом+а</emphasis></speak>'  # default ДО́ма (suppress)
+```
+
+Once-per-process stderr warning fires when `<emphasis>` content lacks any `+` marker. `<emphasis>` on Kokoro / AVSpeech voices strips `+` and warns once (Kokoro has no `+`-marker analog). Engine reports `tts.ru_emphasis_marker: true`. Closes [#233](https://github.com/drakulavich/kesha-voice-kit/issues/233).
+
+## SSML
+
+`kesha say --ssml` accepts a subset of [SSML](https://www.w3.org/TR/speech-synthesis11/):
 
 ```bash
 kesha say --ssml '<speak>Hello <break time="500ms"/> world.</speak>'
@@ -54,7 +105,11 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 | `<speak>` | ✅ required root |
 | `<break time="Nms"\|"Ns"\|default>` | ✅ inserts silence of the given duration |
 | plain text inside `<speak>` | ✅ synthesized via the selected engine |
-| `<emphasis>`, `<prosody>`, `<phoneme>`, `<say-as>` | ⚠️ stripped with a stderr warning (contained text still synthesized); tracked in [#122](https://github.com/drakulavich/kesha-voice-kit/issues/122) |
+| `<say-as interpret-as="characters">…</say-as>` | ✅ honored on `ru-vosk-*` (#232) and `en-*` (#244) — letter-spells via the embedded table; stripped with stderr warning on AVSpeech |
+| `<say-as interpret-as="cardinal\|ordinal\|date\|telephone\|...">` | ⚠️ stripped with stderr warning (contained text still synthesized); separate concern |
+| `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro / AVSpeech (no `+`-marker analog) |
+| `<phoneme alphabet="ipa" ph="…">` | ✅ honored on Kokoro — bypasses G2P, feeds IPA directly to inference (#193) |
+| `<prosody rate/pitch/volume>` | ⚠️ stripped with stderr warning; tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
 | `<!DOCTYPE>` | ❌ rejected (hardening against XXE) |
 
 SSML is opt-in via the explicit `--ssml` flag — inputs that happen to contain `<angle brackets>` aren't misinterpreted as SSML.

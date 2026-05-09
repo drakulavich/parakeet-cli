@@ -10,13 +10,78 @@ binary.
 
 ## [Unreleased]
 
-## [1.8.2] (unreleased)
+## [1.11.0] — 2026-05-08
+
+Engine release. Polish on the timestamped-segments path shipped in v1.9.0, plus a high-severity Dependabot fix for the Raycast extension dependency tree.
+
+### Added
+- **`build_vad_output_segments` pure helper** in `rust/src/transcribe.rs` — extracted the VAD-loop transcription step into a closure-driven function so unit tests can assert ordering invariants (`end > start` per segment, monotonic `start[i+1] >= start[i]` across segments) without spinning up the ONNX model. Codifies what manual 45-min/817-segment testing in #247 had verified by hand. Closes [#248](https://github.com/drakulavich/kesha-voice-kit/issues/248).
+- **`pub const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments"`** (Rust + TS) — single source of truth for the capability-flag string. Capabilities, the TS CLI gate, and integration tests all import the const.
+- **`single_segment(start, end, text)` shared helper** dedupes the trim-and-construct logic between `whole_file_segment` and the VAD-fallback path.
+- **`@deprecated transcribeWithSegments`** alias on `src/lib.ts` for one minor-version cycle (removed in v1.12.0). The public API renamed to `transcribeWithTimestamps` to disambiguate from the internal `transcribeWithSegments` in `src/transcribe.ts` (which respects the `timestamps` option flag).
+
+### Changed
+- **`--json` Auto path probes duration once, not twice.** `transcribe_inner` now threads its already-probed `Option<f32>` through `transcribe_plain` → `whole_file_segment`, eliminating a redundant symphonia open. Saves <10 ms on the Auto-mode `--json` request.
+- **Capability cache invalidates on in-process binary swap.** `getEngineCapabilities` cache key now includes `mtimeMs`. Long-lived library callers (Granola integration, programmatic SDK use) see fresh capabilities after `kesha install` overwrites the binary mid-process.
+- Renamed internal flag `whole_file_segment_required` → preserved as `timestamps_required` after a Greptile P1 caught a regression: text-only `pub fn transcribe` callers must skip the duration probe entirely (streaming Ogg/Opus return `Ok(None)` from `probe_duration_seconds`, which would have hard-errored). The gate-shape is unchanged from #247; the rename was a wash.
+
+### Security
+- **Dependabot alert [#10](https://github.com/drakulavich/kesha-voice-kit/security/dependabot/10)** — high-severity ReDoS in `minimatch matchOne()` with multiple non-adjacent GLOBSTAR segments. Resolved by `"overrides": { "minimatch": ">=9.0.7" }` in `raycast/package.json`; all 7 transitive minimatch resolutions now dedupe to 10.2.5. `npm audit` clean.
+
+### Shipped PRs
+- [#252](https://github.com/drakulavich/kesha-voice-kit/pull/252) — refactor(#248): timestamped-segments path polish
+- [#253](https://github.com/drakulavich/kesha-voice-kit/pull/253) — chore(release): v1.11.0 + minimatch security fix
+
+## [1.10.1] — 2026-05-08
+
+CLI-only patch release. Engine binary unchanged at v1.10.0. Marker tag `v1.10.1-cli` (the `-cli` suffix excludes it from `build-engine.yml`'s tag filter — no Rust rebuild fires).
+
+### Added
+- **SKILL.md** documents timestamped transcript segments shipped in v1.9.0 ([#247](https://github.com/drakulavich/kesha-voice-kit/pull/247)). Adds `kesha --json --timestamps` example with a `jq` snippet, segment shape (`start`, `end`, `text`), and the `--json`/`--toon`/`--format json` gate.
+
+### Shipped PRs
+- [#249](https://github.com/drakulavich/kesha-voice-kit/pull/249) — docs: document timestamped skill output (Timur Khakhalev)
+- [#251](https://github.com/drakulavich/kesha-voice-kit/pull/251) — chore(release): v1.10.1 (CLI-only)
+
+## [1.10.0] — 2026-05-08
+
+Engine release. Adds English acronym auto-expansion for Kokoro voices via three cooperating tables (letter-spell rule + stop-list + IPA lexicon).
+
+### Added
+- **English acronym auto-expansion for `en-*` (Kokoro) voices**, gated by the existing `--no-expand-abbrev` flag. Three-table mechanism:
+  - **Letter-spell rule** — uppercase Latin tokens 2–5 chars get expanded letter-by-letter (`FBI` → "ef bee eye", `HTTP` → "aitch tee tee pee").
+  - **`STOP_LIST`** (30 entries) — natural-English caps words pass through verbatim (NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA + 20 emphatic length-2 caps).
+  - **`IPA_LEXICON`** (19 entries) — case-sensitive token → IPA-phoneme map that bypasses G2P entirely. Covers industry-pronunciation acronyms (EPAM /ˈiːpæm/, JSON /ˈdʒeɪsən/, JPEG, GIF, SQL, ASAP, CRUD, JWT) AND mixed-case proper nouns (OAuth, Microsoft, Anthropic, Claude, Kubernetes, PostgreSQL, GraphQL, Linux, Tokio, macOS, Granola). IPA hits fire even with `--no-expand-abbrev` (intent-explicit, parallel to `<say-as>`).
+- **Engine `--capabilities-json` reports `tts.en_acronym_expansion: true`** in the `features` array. The TS CLI capability gate ORs this with `tts.ru_acronym_expansion` so older engines still drop `--no-expand-abbrev` correctly.
+- **`<say-as interpret-as="characters">…</say-as>`** on the Kokoro path now letter-spells via the embedded letter-name table; previously it stripped + warned. Closes [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+
+### Internal
+- New `rust/src/tts/en/` module (`mod.rs`, `acronym.rs`, `letter_table.rs`) mirrors the shipped Russian Vosk-TTS module.
+- New `rust/tests/tts_en_normalize.rs` integration test using the warm `--stdin-loop` harness — three cases: FBI letter-spell vs raw byte-length, NASA stop-list pass-through, `<say-as>` overrides `--no-expand-abbrev`.
+- audio-quality-check agent ran on a 27-phrase corpus before publish: 27/27 PASS.
+
+### Shipped PRs
+- [#250](https://github.com/drakulavich/kesha-voice-kit/pull/250) — feat(tts): English acronym auto-expansion for Kokoro
+
+## [1.9.0] — 2026-05-07
+
+Engine release. Adds opt-in timestamped transcript segments for machine-readable transcription output. Default text path (no flag) is unchanged.
+
+### Added
+- **`kesha --json --timestamps audio.ogg`** (and `--toon --timestamps`, `--format json --timestamps`) — returns timestamped transcript segments via `--json`/`--toon`/`--format json`. Each segment has `{ start, end, text }`. With VAD active (default for files >200 KB), per-utterance segments; without VAD, a single whole-file segment.
+- **`kesha-engine transcribe --json`** — engine subcommand that always returns `{ text, segments[] }`. Gated behind a new `transcribe.segments` capability flag in `--capabilities-json`. The TS CLI checks the flag before forwarding `--timestamps`, so older engines fail loudly.
+- **`transcribeWithSegments()`** programmatic API in `@drakulavich/kesha-voice-kit/core` — see #247. (Renamed to `transcribeWithTimestamps` in v1.11.0; deprecated alias kept until v1.12.0.)
+
+### Shipped PRs
+- [#247](https://github.com/drakulavich/kesha-voice-kit/pull/247) — feat: add timestamped transcript segments (Timur Khakhalev)
+
+## [1.8.2] — 2026-05-07
 
 ### Fixed
 
 - **Mono WAV output now plays in both ears, not just the left one** ([#245](https://github.com/drakulavich/kesha-voice-kit/issues/245)). The previous hound-based encoder wrote `WAVE_FORMAT_EXTENSIBLE` (0xFFFE) with `dwChannelMask=0x4`, which Apple's CoreAudio interpreted as "Front Left" for mono streams — Kokoro and Vosk-TTS playback ended up in the left ear only on AirPods / left speaker only on stereo. Replaced with a hand-rolled writer that emits plain `WAVE_FORMAT_IEEE_FLOAT` (0x0003) without the EXTENSIBLE extension. AVSpeech sidecar and OGG/Opus paths were not affected and remain unchanged.
 
-## [1.8.1] (unreleased)
+## [1.8.1] — 2026-05-06
 
 ### Fixed
 
@@ -26,7 +91,7 @@ binary.
 
 - **End-to-end test for warn-once dedup** across multiple `<emphasis>` calls in the same engine process (`emphasis_warn_once_dedups_across_calls` in `rust/tests/tts_ru_normalize.rs`). The `LoopEngine` test wrapper now captures stderr to a tempfile via a new `into_stderr_log()` consuming method so the contract "one warning per process, not per call" is verified at the integration layer. Closes [#237](https://github.com/drakulavich/kesha-voice-kit/issues/237).
 
-## [1.8.0] (unreleased)
+## [1.8.0] — 2026-05-05
 
 ### Added
 
@@ -40,7 +105,7 @@ binary.
 - No auto-stress dictionary. Path B (engine guesses ударение without a `+`) is intentionally deferred — see issue #233 for the design rationale.
 - `<prosody rate/pitch/volume>` is tracked separately in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
 
-## [1.7.0] (unreleased)
+## [1.7.0] — 2026-05-05
 
 ### Added
 - **Russian abbreviation auto-expansion for `ru-vosk-*` voices.** Detects 2–5 letter all-uppercase Cyrillic tokens and reads them letter-by-letter via the embedded letter-name table. The rule fires when the token cannot be pronounced as a natural Russian syllable — length ≤ 2 (ИП → "и пэ"), 0 vowels (ФСБ → "эф эс бэ"), 2+ consecutive vowels (ОАЭ → "о а э"), or 2+ consecutive consonants (США → "сэ шэ а"). Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато", ОПЕК → "опек"). Letter-name forms tuned to user-validated pronunciation: Ф → "эф", Ш → "шэ", Л → "эл", С → "сэ" at start / "эс" elsewhere. Stop-list for common short words (ОН, МЫ, КАК, ЧТО, …) prevents false positives. Tokens containing Ъ/Ь are passed through literally. Opt-out via `--no-expand-abbrev` flag. Closes [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
