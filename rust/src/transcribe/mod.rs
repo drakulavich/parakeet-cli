@@ -102,11 +102,25 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 }
 
 pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
-    Ok(transcribe_inner(audio_path, mode, false)?.text)
+    Ok(transcribe_inner(audio_path, mode, false, false)?.text)
 }
 
 pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
-    transcribe_inner(audio_path, mode, true)
+    transcribe_inner(audio_path, mode, true, false)
+}
+
+/// Transcribe `audio_path` with speaker diarization enabled. Returns segments
+/// with `speaker: Some(u32)` populated where the diarization timeline
+/// covered the segment's midpoint. Currently darwin-arm64 only — fails
+/// on other platforms with a #199 tracking-issue link.
+// Wired into the engine CLI by the next task (T8 `--speakers` flag);
+// without that caller it tripped `dead_code` under `-D warnings`.
+#[allow(dead_code)]
+pub fn transcribe_output_with_speakers(
+    audio_path: &str,
+    mode: VadMode,
+) -> Result<TranscriptionOutput> {
+    transcribe_inner(audio_path, mode, true, true)
 }
 
 /// `timestamps_required` gates the non-VAD plain path's call to
@@ -115,10 +129,16 @@ pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<Transcriptio
 /// Ogg/Opus without a frame count, which would turn into a hard error for
 /// inputs that previously transcribed cleanly. The VAD path always builds
 /// segments cheaply (per-span boundaries already in hand from VAD output).
+///
+/// `speakers_required` triggers the diarization post-step after ASR completes.
+/// On darwin-arm64 with the `system_diarize` feature it invokes
+/// `diarize::run` + `diarize::merge_into`; on all other platforms it returns
+/// a clear error pointing at #199.
 fn transcribe_inner(
     audio_path: &str,
     mode: VadMode,
     timestamps_required: bool,
+    speakers_required: bool,
 ) -> Result<TranscriptionOutput> {
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::vad_model_dir();
@@ -135,7 +155,12 @@ fn transcribe_inner(
         duration
     );
 
-    match decision {
+    // `mut` is only consumed by the diarization post-step below.
+    #[cfg_attr(
+        not(all(feature = "system_diarize", target_os = "macos")),
+        allow(unused_mut)
+    )]
+    let mut output = match decision {
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
         }
@@ -152,7 +177,30 @@ fn transcribe_inner(
             );
             transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
         }
+    }?;
+
+    // --- Speaker diarization post-step ---
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    {
+        if speakers_required {
+            let model_path = resolve_diarize_model_path()
+                .context("speaker diarization requires a model path")?;
+            let spans = diarize::run(std::path::Path::new(audio_path), &model_path)
+                .context("speaker diarization failed")?;
+            output.segments = diarize::merge_into(output.segments, &spans);
+        }
     }
+    #[cfg(not(all(feature = "system_diarize", target_os = "macos")))]
+    {
+        if speakers_required {
+            anyhow::bail!(
+                "speaker diarization is currently darwin-arm64 only.\n\
+                 Tracked at https://github.com/drakulavich/kesha-voice-kit/issues/199.",
+            );
+        }
+    }
+
+    Ok(output)
 }
 
 fn transcribe_plain(
@@ -367,6 +415,37 @@ fn probe_duration_if_plausible(path: &str) -> Option<f32> {
             None
         }
     }
+}
+
+/// Resolve the diarization model path. Priority:
+/// 1. `KESHA_DIARIZE_MODEL_PATH` env var (must point to an existing path).
+/// 2. Default cache location `~/.cache/kesha/models/diarize/sortformer.mlpackage`
+///    — only accepted when the path already exists (populated by
+///    `kesha install --diarize`, a follow-up task tracked in #199).
+#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
+    if let Ok(env_path) = std::env::var("KESHA_DIARIZE_MODEL_PATH") {
+        let p = std::path::PathBuf::from(env_path);
+        if p.exists() {
+            return Ok(p);
+        }
+        anyhow::bail!(
+            "KESHA_DIARIZE_MODEL_PATH set but path does not exist: {}",
+            p.display()
+        );
+    }
+
+    // Fallback: default cache location. Populated by `kesha install --diarize`
+    // (T10/follow-up, tracked in #199). Until then, fail with an actionable hint.
+    let default = crate::models::cache_dir().join("models/diarize/sortformer.mlpackage");
+    if default.exists() {
+        return Ok(default);
+    }
+
+    anyhow::bail!(
+        "diarization model not found. Set KESHA_DIARIZE_MODEL_PATH or run \
+         `kesha install --diarize` (when available; tracked in #199)",
+    )
 }
 
 /// Returns the cached ASR model dir or bails with the install hint.
