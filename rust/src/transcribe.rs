@@ -62,6 +62,12 @@ pub struct TranscriptionSegment {
     pub start: f32,
     pub end: f32,
     pub text: String,
+    /// Cluster ID from speaker diarization. `None` when `--speakers` was not
+    /// requested (default) or when diarization could not assign a speaker
+    /// to this segment. Stable within one `--json --timestamps --speakers`
+    /// invocation; not stable across files.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -284,6 +290,7 @@ where
                         start: start_s,
                         end: end_s,
                         text: trimmed.to_string(),
+                        speaker: None,
                     });
                 }
             }
@@ -336,6 +343,7 @@ fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment>
         start,
         end,
         text: trimmed.to_string(),
+        speaker: None,
     }]
 }
 
@@ -610,5 +618,35 @@ mod tests {
         // Unknown duration → treat as short, never surprise the user with VAD.
         assert_eq!(decide(VadMode::Auto, None, true), VadDecision::Plain);
         assert_eq!(decide(VadMode::Auto, None, false), VadDecision::Plain);
+    }
+
+    #[test]
+    fn transcription_segment_speaker_field_omits_when_none() {
+        let s = TranscriptionSegment {
+            start: 0.0,
+            end: 1.0,
+            text: "hi".into(),
+            speaker: None,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            !json.contains("\"speaker\""),
+            "speaker:None should be omitted, got {json}"
+        );
+    }
+
+    #[test]
+    fn transcription_segment_speaker_field_serializes_when_some() {
+        let s = TranscriptionSegment {
+            start: 0.0,
+            end: 1.0,
+            text: "hi".into(),
+            speaker: Some(2),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains("\"speaker\":2"),
+            "expected speaker:2 in {json}"
+        );
     }
 }
