@@ -55,31 +55,30 @@ kesha-voice-kit/
 │   ├── transcribe.ts           # thin forwarder to the engine; segments shape
 │   ├── say.ts                  # TTS forwarder
 │   ├── status.ts               # `kesha status` (cache disk usage)
-│   ├── log.ts                  # KESHA_DEBUG-aware logger
-│   └── __tests__/              # unit tests
+│   └── log.ts                  # KESHA_DEBUG-aware logger
 ├── rust/                       # kesha-engine Rust binary
 │   ├── Cargo.toml              # `onnx` (default) / `coreml` / `tts` / `system_tts` features
 │   ├── build.rs                # Swift rpath under `coreml`; AVSpeech sidecar bake-in
-│   └── src/
-│       ├── main.rs             # clap: transcribe / detect-lang / say / install / ...
-│       ├── transcribe.rs       # ASR pipeline + VAD routing + timestamped segments
-│       ├── audio.rs            # symphonia decode + rubato resample
-│       ├── lang_id.rs          # ONNX speechbrain audio language detection
-│       ├── text_lang.rs        # macOS NLLanguageRecognizer (macOS only)
-│       ├── vad.rs              # Silero VAD v5 (576-sample rolling context)
-│       ├── capabilities.rs     # `--capabilities-json` feature list
-│       ├── tts/                # Kokoro + Vosk + AVSpeech + SSML
-│       │   ├── kokoro.rs       # ONNX Kokoro-82M
-│       │   ├── vosk.rs         # vosk-tts-rs wrapper
-│       │   ├── avspeech.rs     # macOS AVSpeechSynthesizer Swift sidecar
-│       │   ├── ssml.rs         # ssml-parser → Segment { Text, Spell, Emphasis, Break, Ipa }
-│       │   ├── en/             # English acronym auto-expansion (#244)
-│       │   ├── ru/             # Russian acronym auto-expansion (#232)
-│       │   └── encode.rs       # WAV / OGG-Opus / MP3 encoder
-│       ├── say_loop.rs         # `--stdin-loop` warm session for batch TTS
-│       └── backend/            # transcribe backend trait + onnx + fluidaudio
+│   ├── src/
+│   │   ├── main.rs             # clap: transcribe / detect-lang / say / install / ...
+│   │   ├── transcribe.rs       # ASR pipeline + VAD routing + timestamped segments
+│   │   ├── audio.rs            # symphonia decode + rubato resample
+│   │   ├── lang_id.rs          # ONNX speechbrain audio language detection
+│   │   ├── text_lang.rs        # macOS NLLanguageRecognizer (macOS only)
+│   │   ├── vad.rs              # Silero VAD v5 (576-sample rolling context)
+│   │   ├── capabilities.rs     # `--capabilities-json` feature list
+│   │   ├── tts/                # Kokoro + Vosk + AVSpeech + SSML
+│   │   │   ├── kokoro.rs       # ONNX Kokoro-82M
+│   │   │   ├── vosk.rs         # vosk-tts-rs wrapper
+│   │   │   ├── avspeech.rs     # macOS AVSpeechSynthesizer Swift sidecar
+│   │   │   ├── ssml.rs         # ssml-parser → Segment { Text, Spell, Emphasis, Break, Ipa }
+│   │   │   ├── en/             # English acronym auto-expansion (#244)
+│   │   │   ├── ru/             # Russian acronym auto-expansion (#232)
+│   │   │   └── encode.rs       # WAV / OGG-Opus / MP3 encoder
+│   │   ├── say_loop.rs         # `--stdin-loop` warm session for batch TTS
+│   │   └── backend/            # transcribe backend trait + onnx + fluidaudio
+│   └── tests/                  # cargo integration tests (warm --stdin-loop harness)
 ├── tests/{unit,integration}/   # bun:test
-├── rust/tests/                 # cargo integration tests (warm --stdin-loop harness)
 ├── scripts/                    # benchmark.ts, smoke-test.ts
 ├── .github/workflows/
 │   ├── ci.yml                  # PR: unit + integration + tts-e2e + type check
@@ -125,8 +124,8 @@ kesha-voice-kit/
 
 ## Tests
 
-- Unit tests in `src/__tests__/` and `tests/unit/` — no external deps,
-  run on Linux/Windows/macOS.
+- Unit tests in `tests/unit/` — no external deps, run on
+  Linux/Windows/macOS.
 - Integration tests in `tests/integration/` — exercise the actual engine
   binary, run on macos-14 in CI.
 - Rust integration tests in `rust/tests/` — `cargo test` runs them on

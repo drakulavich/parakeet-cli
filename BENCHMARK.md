@@ -154,7 +154,7 @@ The "no system deps" brand promise is restored as of v1.5.0 — `kesha install -
 
 Out-of-vocabulary English words letter-spell via misaki's grapheme-rule fallback, which is good enough for ASR transcripts but occasionally awkward for proper nouns. Two ergonomic overrides:
 - `<phoneme alphabet="ipa" ph="...">` (v1.4.1+, [#193](https://github.com/drakulavich/kesha-voice-kit/issues/193)) — bypass G2P, feed IPA directly to Kokoro.
-- `IPA_LEXICON` (v1.10.0+, [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244)) — case-sensitive token map covering 19 industry-pronunciation acronyms + mixed-case proper nouns (EPAM, JSON, Anthropic, Microsoft, Kubernetes, …). Hits emit `Segment::Ipa` so synthesis bypasses G2P entirely.
+- `IPA_LEXICON` (v1.10.0+, [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244)) — case-sensitive token map with 19 entries covering industry-pronunciation acronyms and mixed-case proper nouns (EPAM, JSON, Anthropic, Microsoft, Kubernetes, …). Hits emit `Segment::Ipa` so synthesis bypasses G2P entirely.
 
 ## Output size: `--json` vs `--toon` (#138)
 
