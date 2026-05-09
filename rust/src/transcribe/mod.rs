@@ -1,3 +1,6 @@
+#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+pub(crate) mod diarize;
+
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::Path;
