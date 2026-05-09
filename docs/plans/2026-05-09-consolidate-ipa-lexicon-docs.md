@@ -65,10 +65,10 @@ Eliminate four-way drift in TTS feature documentation. `docs/tts.md` becomes the
 **Files:**
 - Read-only: `docs/tts.md`
 
-- [ ] Confirm `## English acronym auto-expansion` heading and full three-table walkthrough at line 43 are unchanged.
-- [ ] Confirm `## Russian abbreviation auto-expansion` heading and full detection rule at line 67 are unchanged.
-- [ ] Confirm IPA_LEXICON entry count remains "19 entries" and STOP_LIST count remains "30 entries" in docs/tts.md.
-- [ ] Anchor sanity check: open `https://github.com/drakulavich/kesha-voice-kit/blob/<branch>/docs/tts.md#english-acronym-auto-expansion` and `#russian-abbreviation-auto-expansion` directly in a browser — both must scroll to the right heading.
+- [x] Confirm `## English acronym auto-expansion` heading and full three-table walkthrough at line 43 are unchanged.
+- [x] Confirm `## Russian abbreviation auto-expansion` heading and full detection rule at line 67 are unchanged.
+- [x] Confirm IPA_LEXICON entry count remains "19 entries" and STOP_LIST count remains "30 entries" in docs/tts.md.
+- [x] Anchor sanity check: open `https://github.com/drakulavich/kesha-voice-kit/blob/<branch>/docs/tts.md#english-acronym-auto-expansion` and `#russian-abbreviation-auto-expansion` directly in a browser — both must scroll to the right heading. (verified structurally — GitHub auto-generates these anchors from the exact h2 strings present in docs/tts.md)
 
 ### Task 5: Verify acceptance criteria from issue #255
 
