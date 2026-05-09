@@ -24,6 +24,9 @@ tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
 # Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
 # non-macOS targets even when enabled.
 system_tts = ["tts"]
+# darwin-arm64 speaker diarization via FluidAudio (#199). Requires FluidAudio's
+# diarization SDK and companion helper binary. Darwin-only.
+system_diarize = []
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

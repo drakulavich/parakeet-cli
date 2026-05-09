@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+#[cfg(feature = "system_diarize")]
+use crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE;
 use crate::transcribe::TRANSCRIBE_SEGMENTS_FEATURE;
 
 #[derive(Serialize)]
@@ -30,6 +32,9 @@ pub fn get_capabilities() -> Capabilities {
     features.push("tts.en_acronym_expansion");
     #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
+
+    #[cfg(feature = "system_diarize")]
+    features.push(TRANSCRIBE_DIARIZE_FEATURE);
 
     Capabilities {
         protocol_version: 2,
