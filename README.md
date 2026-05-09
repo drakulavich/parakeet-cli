@@ -70,42 +70,9 @@ kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
 ```
 
-**Russian abbreviations** (`ru-vosk-*` voices):
+**Russian abbreviations** (`ru-vosk-*`): all-uppercase Cyrillic 2-5-char tokens auto-expand letter-by-letter when not pronounceable as a Russian syllable (ФСБ → "эф-эс-бэ", ВОЗ → "воз"). Disable with `--no-expand-abbrev`. See [docs/tts.md#russian-abbreviation-auto-expansion](docs/tts.md#russian-abbreviation-auto-expansion).
 
-```bash
-# Auto-detect on by default — ФСБ reads as "эф-эс-бэ"
-kesha say --voice ru-vosk-m02 'ФСБ объявила решение.'
-
-# Force a literal reading (Vosk reads as "фсб")
-kesha say --voice ru-vosk-m02 --no-expand-abbrev 'ФСБ.'
-
-# Explicit SSML control (overrides the rule and the stop-list)
-kesha say --voice ru-vosk-m02 --ssml \
-  '<speak><say-as interpret-as="characters">КОТ</say-as></speak>'
-```
-
-Detection rule: auto-expand fires when the token cannot be pronounced as a natural Russian syllable — length ≤ 2 (ИП, ЕС), 0 vowels (ФСБ, СНГ), 2+ consecutive vowels (ОАЭ), or 2+ consecutive consonants (США, ЦСКА). Tokens with strict CVC/CVCV alternation pass through (ВОЗ → "воз", НАТО → "нато", ОПЕК → "опек"). Small stop-list for common short words (ОН, МЫ, ВЫ, КАК, ЧТО, …) and Ъ/Ь-containing tokens are always skipped. See [#232](https://github.com/drakulavich/kesha-voice-kit/issues/232).
-
-**English acronyms** (`en-*` voices, Kokoro-82M):
-
-```bash
-# Auto-expand on by default — FBI reads as "ef bee eye"
-kesha say --voice en-am_michael 'The FBI is investigating.'
-
-# Force a literal reading (Kokoro fuses unknown caps tokens to one syllable)
-kesha say --voice en-am_michael --no-expand-abbrev 'FBI.'
-
-# Explicit SSML control (overrides the rule and the stop-list)
-kesha say --voice en-am_michael --ssml \
-  '<speak><say-as interpret-as="characters">NASA</say-as></speak>'
-```
-
-Three-table mechanism:
-- **Letter-spell** — uppercase Latin tokens 2–5 chars (no digits, no mixed case) get expanded letter-by-letter (FBI → "ef bee eye"). Disable with `--no-expand-abbrev`.
-- **`STOP_LIST`** (30 entries) — natural-English caps words pass through unchanged: NASA, NATO, AIDS, OPEC, IKEA, ASCII, NAFTA, LASER, RADAR, SCUBA + emphatic length-2 caps (OK, NO, GO, IT, IS, AS, AT, BY, IN, ON, OR, OF, TO, WE, US, MY, ME, HE, BE, DO).
-- **`IPA_LEXICON`** (19 entries) — case-sensitive token → IPA-phoneme map that bypasses G2P entirely. Covers all-caps acronyms with industry pronunciations (EPAM, JSON, JPEG, SQL, ASAP, GIF, CRUD, JWT) AND mixed-case proper nouns (Anthropic, Microsoft, Claude, Kubernetes, PostgreSQL, GraphQL, Linux, Tokio, macOS, Granola, OAuth). IPA hits fire even with `--no-expand-abbrev` — they're intent-explicit, parallel to `<say-as>`.
-
-Override per-token via SSML `<say-as interpret-as="characters">…</say-as>` (always letter-spells via the table). See [#244](https://github.com/drakulavich/kesha-voice-kit/issues/244).
+**English acronyms** (`en-*`, Kokoro): three-table mechanism (letter-spell rule + STOP_LIST + IPA_LEXICON) auto-expands FBI → "ef bee eye" and gives EPAM/JSON/Anthropic the right IPA. Disable letter-spell with `--no-expand-abbrev`. See [docs/tts.md#english-acronym-auto-expansion](docs/tts.md#english-acronym-auto-expansion).
 
 **Russian word stress** (`ru-vosk-*` voices):
 
