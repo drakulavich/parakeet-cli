@@ -97,8 +97,19 @@ fn with_silenced_stdout<R>(f: impl FnOnce() -> R) -> R {
                 // SAFETY: saved is a duplicated stdout fd we own; restore
                 // it onto fd 1 and let the OwnedFd close itself afterward
                 // via the move into dup2's first arg.
-                unsafe {
-                    libc::dup2(saved.as_raw_fd(), libc::STDOUT_FILENO);
+                let rc = unsafe { libc::dup2(saved.as_raw_fd(), libc::STDOUT_FILENO) };
+                if rc < 0 {
+                    // Restore failed — fd 1 stays pointed at /dev/null and
+                    // every subsequent `println!` (including our final JSON)
+                    // silently vanishes. Surface the OS error on stderr so the
+                    // caller has any chance of noticing the broken pipe.
+                    // Rare path (fd exhaustion mid-run); we can't do better
+                    // than warn from a Drop impl.
+                    let errno = std::io::Error::last_os_error();
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "warning: failed to restore stdout after FluidAudio call: {errno}"
+                    );
                 }
             }
         }
