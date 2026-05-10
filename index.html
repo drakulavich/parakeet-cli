@@ -6,7 +6,7 @@
     <title>Kesha Voice Kit — Open-source voice toolkit for Apple Silicon</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~15× faster than Whisper on Apple Silicon. Text-to-speech with Kokoro & Vosk. A 20MB Rust binary. No Python."
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Text-to-speech with Kokoro & Vosk-TTS, OGG/Opus voice notes, timestamped transcripts. A 20MB Rust binary. No Python, no ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~15× faster than Whisper on Apple Silicon. STT in 25 languages, TTS, VAD, language detection — all from a single 20MB Rust binary."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. STT in 25 languages, TTS with OGG/Opus voice notes, timestamped transcripts — all from a single 20MB Rust binary."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -24,7 +24,7 @@
     <meta name="twitter:title" content="Kesha Voice Kit" />
     <meta
       name="twitter:description"
-      content="Open-source voice toolkit. ~15× faster than Whisper on Apple Silicon."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon."
     />
     <meta name="twitter:image" content="assets/logo.png" />
 
@@ -111,19 +111,20 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.5 · MIT licensed · CoreML + ONNX</span>
+            <span>v1.11 · MIT licensed · CoreML + ONNX</span>
           </div>
 
           <h1 class="hero__title">
             <span class="serif italic">Voice in,</span>
             <span class="serif italic">text out.</span>
-            <span class="hero__title-rest">A Rust toolkit that's <span class="hl">~15× faster</span> than Whisper on Apple Silicon.</span>
+            <span class="hero__title-rest">A Rust toolkit that's <span class="hl">~19× faster</span> than Whisper on Apple Silicon.</span>
           </h1>
 
           <p class="hero__sub">
-            A collection of small, fast, open-source audio models — speech-to-text, text-to-speech,
-            voice activity detection, language identification — packaged as CLI tools and an
-            OpenClaw skill for LLM agents. <strong>One 20MB binary. No Python. No ffmpeg.</strong>
+            Small, fast, open-source audio models — speech-to-text with timestamped segments,
+            text-to-speech that exports straight to Telegram-ready OGG/Opus voice notes, voice
+            activity detection, and language ID. CLI tools plus an OpenClaw skill for LLM agents.
+            <strong>One 20MB binary. No Python. No ffmpeg.</strong>
           </p>
 
           <!-- Animated waveform -->
@@ -170,8 +171,8 @@
 
           <!-- Quick install pill -->
           <div class="install-pill">
-            <code><span class="prompt">$</span> bun install -g @drakulavich/kesha-voice-kit</code>
-            <button class="copy" data-copy="bun install -g @drakulavich/kesha-voice-kit" aria-label="Copy install command">
+            <code><span class="prompt">$</span> bun add -g @drakulavich/kesha-voice-kit</code>
+            <button class="copy" data-copy="bun add -g @drakulavich/kesha-voice-kit" aria-label="Copy install command">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <rect x="9" y="9" width="13" height="13" rx="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -194,7 +195,7 @@
               <span class="stat-label">Single binary</span>
             </li>
             <li>
-              <span class="stat-num">15×</span>
+              <span class="stat-num">19×</span>
               <span class="stat-label">vs Whisper (M-series)</span>
             </li>
           </ul>
@@ -227,13 +228,14 @@
               </div>
               <h3>Speech-to-text</h3>
               <p>
-                25 languages via NVIDIA Parakeet TDT. ~15× faster than Whisper on Apple Silicon, ~2.5× on
-                CPU. Auto language detection, optional VAD for long audio, plain text or
-                LLM-friendly TOON output.
+                25 languages via NVIDIA Parakeet TDT. ~19× faster than Whisper on Apple Silicon,
+                ~2.5× on CPU. Auto language detection, optional VAD for long audio,
+                timestamped segments, plain text or LLM-friendly TOON output.
               </p>
               <ul class="chip-row" role="list">
                 <li>EN · RU · DE · FR · ES</li>
                 <li>+ 20 more</li>
+                <li>--timestamps</li>
                 <li>VAD opt-in</li>
                 <li>JSON / TOON</li>
               </ul>
@@ -251,8 +253,44 @@
               </div>
               <h3>Text-to-speech</h3>
               <p>
-                Kokoro-82M for English, Vosk-TTS for Russian, plus ~180 macOS system voices.
-                Auto-routes by detected language. SSML preview supported.
+                Kokoro-82M for English with acronym auto-expand (FBI, EPAM, JSON), Vosk-TTS for
+                Russian with stress markers and abbreviation handling, plus ~180 macOS system
+                voices. Auto-routes by detected language. SSML supported.
+              </p>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 14a8 8 0 1 1 8 8" />
+                  <path d="M4 14H1l3-3 3 3" />
+                  <path d="M12 8v5l3 2" />
+                </svg>
+              </div>
+              <h3>OGG/Opus voice notes</h3>
+              <p>
+                Synthesize straight into the format Telegram, WhatsApp, Signal and Discord
+                expect for inline voice messages — ~24× smaller than WAV. Pick a bitrate; the
+                engine handles the OggOpus container, no ffmpeg required.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>--format ogg-opus</li>
+                <li>16 / 32 / 64 kbps</li>
+              </ul>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+              </div>
+              <h3>Timestamped transcripts</h3>
+              <p>
+                <code>--json --timestamps</code> returns segments with <code>start</code> and
+                <code>end</code>. Plays nicely with subtitles, meeting tools, and chunked LLM
+                summarisation. Programmatic API: <code>transcribeWithTimestamps()</code>.
               </p>
             </article>
 
@@ -280,6 +318,22 @@
               <p>
                 Silero VAD v5 trims silence on long, sparse recordings. Auto-enabled past 120
                 seconds of audio.
+              </p>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 4h16v6H4z" />
+                  <path d="M4 14h16v6H4z" />
+                  <path d="M8 7h.01M8 17h.01" />
+                </svg>
+              </div>
+              <h3>Persistent <code>--stdin-loop</code></h3>
+              <p>
+                One TTS process, many requests. Models stay in memory across calls so each
+                synthesis hits ~10 ms cold-start instead of ~800 ms. Ideal for chatbots,
+                live agents, and long agentic loops.
               </p>
             </article>
 
@@ -330,13 +384,13 @@
               </h2>
               <p class="section-sub">
                 Compared against Whisper <code>large-v3-turbo</code> across Russian and English
-                clips — every engine left to auto-detect language. CoreML on M3 Pro lands at roughly
-                15× real-time; the ONNX path on x86 still beats Whisper by ~2.5×.
+                clips — every engine left to auto-detect language. CoreML on M-series lands at roughly
+                19× real-time; the ONNX path on x86 still beats Whisper by ~2.5×.
               </p>
               <ul class="bench-stats" role="list">
                 <li>
-                  <strong>~15×</strong>
-                  <span>vs openai-whisper · M3 Pro</span>
+                  <strong>~19×</strong>
+                  <span>vs openai-whisper · M-series</span>
                 </li>
                 <li>
                   <strong>~2.5×</strong>
@@ -344,7 +398,7 @@
                 </li>
                 <li>
                   <strong>~7×</strong>
-                  <span>vs faster-whisper · M3 Pro</span>
+                  <span>vs faster-whisper · M-series</span>
                 </li>
               </ul>
               <a
@@ -403,9 +457,9 @@
               <h3>Install Kesha</h3>
               <p>Pulls the engine and base STT models.</p>
               <div class="code-block">
-                <pre><code><span class="muted">$</span> bun install -g @drakulavich/kesha-voice-kit
+                <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
 <span class="muted">$</span> kesha install</code></pre>
-                <button class="copy" data-copy="bun install -g @drakulavich/kesha-voice-kit
+                <button class="copy" data-copy="bun add -g @drakulavich/kesha-voice-kit
 kesha install" aria-label="Copy">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                 </button>
@@ -452,6 +506,9 @@ kesha install" aria-label="Copy">
 <span class="cm"># Long / silence-heavy audio (auto past 120s)</span>
 <span class="muted">$</span> kesha --vad lecture.m4a
 
+<span class="cm"># Timestamped segments (start/end per phrase)</span>
+<span class="muted">$</span> kesha --json --timestamps interview.ogg
+
 <span class="cm"># Warn if detected language differs</span>
 <span class="muted">$</span> kesha --lang en interview.wav</code></pre>
               </div>
@@ -465,6 +522,9 @@ kesha install" aria-label="Copy">
 <span class="cm"># Speak — voice auto-picks from text language</span>
 <span class="muted">$</span> kesha say "Hello, world" &gt; hello.wav
 <span class="muted">$</span> kesha say "Привет, мир" &gt; privet.wav
+
+<span class="cm"># OGG/Opus voice notes (drop straight into Telegram)</span>
+<span class="muted">$</span> kesha say --format ogg-opus "Уже бегу!" --out voice.ogg
 
 <span class="cm"># Use a macOS system voice</span>
 <span class="muted">$</span> kesha say --voice Milena "Чао!"</code></pre>
