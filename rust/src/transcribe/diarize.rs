@@ -11,9 +11,6 @@ use super::TranscriptionSegment;
 
 /// One speaker span emitted by the sidecar. Cluster IDs are stable within
 /// one invocation but not across calls.
-// `run` and its supporting types are wired in T7 (--speakers flag); allow
-// dead_code until that wiring lands rather than add speculative call sites.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct DiarizeSpan {
     pub start: f32,
@@ -21,7 +18,6 @@ pub(crate) struct DiarizeSpan {
     pub speaker: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SidecarOutput {
     spans: Vec<DiarizeSpan>,
@@ -55,7 +51,6 @@ fn sidecar_path() -> Result<PathBuf> {
 
 /// Run the sidecar against `audio_path` (16 kHz mono f32 IEEE_FLOAT WAV)
 /// using the diarization model at `model_path`. Returns the parsed span list.
-#[allow(dead_code)] // wired in T7 (--speakers flag)
 pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpan>> {
     let sidecar = sidecar_path()?;
     let output = Command::new(&sidecar)
@@ -95,12 +90,9 @@ pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpa
 }
 
 /// Project each ASR segment onto the diarization timeline by midpoint
-/// overlap. Pure interval arithmetic; no model.
-#[allow(dead_code)] // wired in T7 (--speakers flag); used in tests below
-///
-/// For each ASR segment, find the diarize span whose `[start, end)` covers
-/// the ASR segment's midpoint; assign that span's speaker. If no diarize
-/// span covers the midpoint, leave `speaker = None`.
+/// overlap. For each ASR segment, find the diarize span whose
+/// `[start, end)` covers the ASR segment's midpoint; assign that span's
+/// speaker. If no diarize span covers the midpoint, leave `speaker = None`.
 pub(crate) fn merge_into(
     asr_segs: Vec<TranscriptionSegment>,
     diarize_spans: &[DiarizeSpan],

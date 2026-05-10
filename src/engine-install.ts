@@ -35,36 +35,72 @@ function getEngineBinaryName(): string {
 }
 
 /**
- * Fetch the AVSpeechSynthesizer sidecar (#141) and place it next to the
- * engine binary on darwin-arm64. The Rust side (`avspeech::helper_path`)
- * looks for a `say-avspeech` file adjacent to the running executable, so
- * the filename on disk is always `say-avspeech` regardless of the release
- * asset name.
- *
- * Best-effort: 404s (older engine versions predate the sidecar) and
- * network errors log a warning and return — macos-* voices simply won't
- * be available, which is a graceful degradation. The user keeps Kokoro +
- * Vosk-TTS.
+ * One sidecar's identity. Each shipped Swift sidecar is described by an
+ * entry in `SIDECARS`; the helper below loops over them. Centralising the
+ * spec keeps the AVSpeech (#141) and diarize (#199) install paths in
+ * lockstep — adding a third sidecar is one entry, not a new function.
  */
-async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): Promise<void> {
+interface SidecarSpec {
+  /** Filename written next to the engine binary. The Rust runtime probes
+   * this exact name (sometimes a list — see diarize::sidecar_path). */
+  fileBasename: string;
+  /** Release asset name. Often equals fileBasename, but AVSpeech writes
+   * `say-avspeech` while the asset is `say-avspeech-darwin-arm64`. */
+  assetName: string;
+  /** Human-readable name in log messages. */
+  displayName: string;
+  /** Trailing hint on success: "AVSpeech sidecar installed (<hint>)." */
+  availableHint: string;
+  /** Trailing hint on any failure path: "...; <hint>." */
+  unavailableHint: string;
+}
+
+const SIDECARS: SidecarSpec[] = [
+  {
+    fileBasename: "say-avspeech",
+    assetName: "say-avspeech-darwin-arm64",
+    displayName: "AVSpeech sidecar",
+    availableHint: "macOS voices available",
+    unavailableHint: "macos-* voices unavailable",
+  },
+  {
+    fileBasename: "kesha-diarize-darwin-arm64",
+    assetName: "kesha-diarize-darwin-arm64",
+    displayName: "Diarization sidecar",
+    availableHint: "--speakers available",
+    unavailableHint: "--speakers unavailable",
+  },
+];
+
+/**
+ * Fetch a single Swift sidecar and place it next to the engine binary on
+ * darwin-arm64. Best-effort: 404s (older engine versions predate this
+ * sidecar) and network errors log a warning and return — the corresponding
+ * feature simply won't be available. The user keeps everything else.
+ */
+async function downloadSidecar(
+  spec: SidecarSpec,
+  binPath: string,
+  engineVersion: string,
+): Promise<void> {
   if (process.platform !== "darwin" || process.arch !== "arm64") return;
 
-  const sidecarPath = join(dirname(binPath), "say-avspeech");
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/say-avspeech-darwin-arm64`;
+  const sidecarPath = join(dirname(binPath), spec.fileBasename);
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/${spec.assetName}`;
 
   let res: Response;
   try {
     res = await fetch(url, { redirect: "follow" });
   } catch (e) {
     log.warn(
-      `Could not fetch AVSpeech sidecar (${e instanceof Error ? e.message : e}); macos-* voices unavailable.`,
+      `Could not fetch ${spec.displayName} (${e instanceof Error ? e.message : e}); ${spec.unavailableHint}.`,
     );
     return;
   }
 
   if (!res.ok) {
     log.warn(
-      `AVSpeech sidecar not in release v${engineVersion} (HTTP ${res.status}); macos-* voices unavailable.`,
+      `${spec.displayName} not in release v${engineVersion} (HTTP ${res.status}); ${spec.unavailableHint}.`,
     );
     return;
   }
@@ -72,61 +108,17 @@ async function downloadAVSpeechSidecar(binPath: string, engineVersion: string): 
   // Keep the best-effort contract: streamResponseToFile throws on an empty
   // body and can fail mid-stream, and chmodSync can throw EPERM. Without
   // this catch a stream/chmod failure would propagate through the tail
-  // `await sidecarPromise` in downloadEngine — converting a successful
-  // engine install into a thrown exception after log.success already
-  // announced it, which is exactly the regression the fetch/404 branches
-  // above protect against.
+  // `await Promise.all(sidecarPromises)` in downloadEngine — converting a
+  // successful engine install into a thrown exception after log.success
+  // already announced it, which is exactly the regression the fetch/404
+  // branches above protect against.
   try {
-    await streamResponseToFile(res, sidecarPath, "say-avspeech sidecar");
+    await streamResponseToFile(res, sidecarPath, spec.displayName);
     chmodSync(sidecarPath, 0o755);
-    log.success("AVSpeech sidecar installed (macOS voices available).");
+    log.success(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
     log.warn(
-      `AVSpeech sidecar install failed (${e instanceof Error ? e.message : e}); macos-* voices unavailable.`,
-    );
-  }
-}
-
-/**
- * Fetch the kesha-diarize Swift sidecar (#199) and place it next to the
- * engine binary on darwin-arm64. The Rust side
- * (`transcribe::diarize::sidecar_path`) probes for `kesha-diarize-darwin-arm64`
- * (and `kesha-diarize`) adjacent to the running executable.
- *
- * Best-effort, mirroring AVSpeech: 404 (older release predates the sidecar)
- * and network errors warn and return — `--speakers` simply won't be available,
- * which the TS-side capability gate surfaces with a #199 link.
- */
-async function downloadDiarizeSidecar(binPath: string, engineVersion: string): Promise<void> {
-  if (process.platform !== "darwin" || process.arch !== "arm64") return;
-
-  const sidecarPath = join(dirname(binPath), "kesha-diarize-darwin-arm64");
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${engineVersion}/kesha-diarize-darwin-arm64`;
-
-  let res: Response;
-  try {
-    res = await fetch(url, { redirect: "follow" });
-  } catch (e) {
-    log.warn(
-      `Could not fetch diarization sidecar (${e instanceof Error ? e.message : e}); --speakers unavailable.`,
-    );
-    return;
-  }
-
-  if (!res.ok) {
-    log.warn(
-      `Diarization sidecar not in release v${engineVersion} (HTTP ${res.status}); --speakers unavailable.`,
-    );
-    return;
-  }
-
-  try {
-    await streamResponseToFile(res, sidecarPath, "kesha-diarize sidecar");
-    chmodSync(sidecarPath, 0o755);
-    log.success("Diarization sidecar installed (--speakers available).");
-  } catch (e) {
-    log.warn(
-      `Diarization sidecar install failed (${e instanceof Error ? e.message : e}); --speakers unavailable.`,
+      `${spec.displayName} install failed (${e instanceof Error ? e.message : e}); ${spec.unavailableHint}.`,
     );
   }
 }
@@ -164,20 +156,14 @@ export async function downloadEngine(
 
   if (cacheValid) {
     log.success(`Engine binary already installed (v${engineVersion}).`);
-    // Cover the upgrade path from pre-#141 engines that never had a
-    // sidecar: if the cached engine is current but the sibling sidecar
-    // is missing, fetch it now so macos-* voices start working.
-    const sidecarPath = join(dirname(binPath), "say-avspeech");
-    if (!existsSync(sidecarPath)) {
-      await downloadAVSpeechSidecar(binPath, engineVersion);
-    }
-    // Same upgrade-from-older-engine path for the #199 diarization sidecar:
-    // engines prior to v1.12.0 didn't ship it, so a cached but otherwise
-    // current install can still be missing it.
-    const diarizePath = join(dirname(binPath), "kesha-diarize-darwin-arm64");
-    if (!existsSync(diarizePath)) {
-      await downloadDiarizeSidecar(binPath, engineVersion);
-    }
+    // Top up any sidecars missing from this cached install. Pre-#141 / pre-#199
+    // engines never shipped them, so a cache-valid binary may still need
+    // fetching. Run independent fetches concurrently — same shape as the
+    // cold path below.
+    const missing = SIDECARS.filter(
+      (s) => !existsSync(join(dirname(binPath), s.fileBasename)),
+    );
+    await Promise.all(missing.map((s) => downloadSidecar(s, binPath, engineVersion)));
   } else {
     // Log why we're downloading — helps diagnose surprising re-downloads.
     if (existsSync(binPath) && installedVersion && installedVersion !== engineVersion) {
@@ -190,35 +176,34 @@ export async function downloadEngine(
 
     mkdirSync(dirname(binPath), { recursive: true });
 
-    // Kick off the sidecar fetch concurrently with the engine fetch. Both
-    // target github.com release assets on independent paths with no data
-    // dependency, so overlapping the HTTP round-trips saves ~15-30s on a
-    // cold install. Sidecar is best-effort (404 on older engines, warn +
-    // continue) so a failure doesn't cascade into the engine path.
-    const sidecarPromise = downloadAVSpeechSidecar(binPath, engineVersion);
-    const diarizePromise = downloadDiarizeSidecar(binPath, engineVersion);
+    // Kick off all sidecar fetches concurrently with the engine fetch. They
+    // target independent github.com release assets, so overlapping the HTTP
+    // round-trips saves ~15-30s on a cold install. Each sidecar is
+    // best-effort (404 on older engines, warn + continue) so a failure
+    // doesn't cascade into the engine path.
+    const sidecarPromises = SIDECARS.map((s) =>
+      downloadSidecar(s, binPath, engineVersion),
+    );
+    // Defense-in-depth: if the engine fetch throws below, attach no-op
+    // rejection handlers so we don't surface unhandledRejection errors
+    // from sidecar paths whose internal try/catch ever drifts. Logs from
+    // sidecars whose own work is still in flight will print when they
+    // complete; the engine error is what the user needs to see now.
+    const muteSidecarRejections = () =>
+      sidecarPromises.forEach((p) => p.catch(() => {}));
 
     let res: Response;
     try {
       res = await fetch(url, { redirect: "follow" });
     } catch (e) {
-      // Attach a no-op rejection handler to the sidecar promise as
-      // defense-in-depth. Today it can't reject (downloadAVSpeechSidecar
-      // catches all of its own errors), but if that contract ever drifts
-      // a bare dangling promise would surface as an unhandledRejection
-      // while we're throwing the engine error. Not waiting — the engine
-      // error is what the user needs to see now; sidecar's own logs
-      // will print whenever they finish.
-      sidecarPromise.catch(() => {});
-      diarizePromise.catch(() => {});
+      muteSidecarRejections();
       throw new Error(
         `Failed to fetch engine binary: ${e instanceof Error ? e.message : e}\n  Fix: Check your network connection and try again`,
       );
     }
 
     if (!res.ok) {
-      sidecarPromise.catch(() => {});
-      diarizePromise.catch(() => {});
+      muteSidecarRejections();
       throw new Error(
         `Failed to download engine binary (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
       );
@@ -228,8 +213,7 @@ export async function downloadEngine(
     chmodSync(binPath, 0o755);
     writeInstalledEngineVersion(binPath, engineVersion);
     log.success(`Engine binary downloaded (v${engineVersion}).`);
-    await sidecarPromise;
-    await diarizePromise;
+    await Promise.all(sidecarPromises);
   }
 
   if (backend) {
