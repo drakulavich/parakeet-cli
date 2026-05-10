@@ -33,9 +33,13 @@ jobs:
           # Swift sidecar. kesha install places the sidecar next to the
           # engine binary; runtime lookup is sibling-first (see
           # rust/src/tts/avspeech.rs::helper_path).
+          # system_diarize (#199) adds the Sortformer streaming-diarization
+          # backend via a second Swift sidecar (kesha-diarize). Same
+          # sibling-of-engine resolution as AVSpeech (see
+          # rust/src/transcribe/diarize.rs::sidecar_path).
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml,tts,system_tts
+            features: coreml,tts,system_tts,system_diarize
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -137,6 +141,25 @@ jobs:
           cp "$sidecar" ./say-avspeech              # sibling-next-to-engine for smoke test
           cp "$sidecar" say-avspeech-darwin-arm64    # release artifact name
 
+      # system_diarize (#199): the Swift kesha-diarize sidecar lives in the
+      # same OUT_DIR shape as AVSpeech. Same find-and-stage pattern; sibling
+      # placement is what rust/src/transcribe/diarize.rs::sidecar_path
+      # probes for, both at smoke time and at runtime in shipped releases.
+      - name: Stage kesha-diarize sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-diarize -type f | head -1)
+          if [ -z "$sidecar" ]; then
+            echo "kesha-diarize sidecar not found — system_diarize feature may not have compiled" >&2
+            exit 1
+          fi
+          echo "Sidecar at: $sidecar"
+          cp "$sidecar" ./kesha-diarize-darwin-arm64    # sibling-next-to-engine for smoke test
+          # The runtime probe (sidecar_path) tries kesha-diarize-darwin-arm64
+          # first, then plain kesha-diarize. The release-asset name is the
+          # platform-suffixed one — same convention as say-avspeech-*.
+
       - name: Smoke-test binary
         shell: bash
         # Assert `tts` is in the capabilities — otherwise a future feature-flag
@@ -164,6 +187,13 @@ jobs:
               echo "$voices" >&2
               exit 1
             }
+            # #199: same matrix-drift guard as `tts` above. transcribe.diarize
+            # is gated on system_diarize; if a future matrix edit drops the
+            # feature, this assertion is the last gate before a release.
+            echo "$caps" | grep -q '"transcribe\.diarize"' || {
+              echo "expected transcribe.diarize in capabilities, got: $caps" >&2
+              exit 1
+            }
           fi
 
       - name: Inspect macOS dynamic deps
@@ -184,6 +214,13 @@ jobs:
           name: say-avspeech-darwin-arm64
           path: say-avspeech-darwin-arm64
 
+      - name: Upload kesha-diarize sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kesha-diarize-darwin-arm64
+          path: kesha-diarize-darwin-arm64
+
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
@@ -201,4 +238,5 @@ jobs:
             kesha-engine-linux-x64
             kesha-engine-windows-x64.exe
             say-avspeech-darwin-arm64
+            kesha-diarize-darwin-arm64
           draft: true
