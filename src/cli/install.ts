@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { downloadEngine } from "../engine-install";
 import { getEngineBinPath } from "../engine";
-import { readStarSeen, shouldShowStarPrompt, writeStarSeen } from "../star";
+import { maybeAskForStar } from "../star";
 import { log } from "../log";
 
 interface InstallCommandArgs {
@@ -24,44 +24,11 @@ function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined 
   return undefined;
 }
 
-async function askForStar() {
-  // Gate on major-or-minor bump only — patch releases and re-installs of the
-  // same version shouldn't nag. First-ever install (no marker) still prompts.
-  const currentVersion = typeof pkg.version === "string" ? pkg.version : null;
-  if (!currentVersion) return;
-  const binPath = getEngineBinPath();
-  const seen = readStarSeen(binPath);
-  if (!shouldShowStarPrompt(currentVersion, seen)) {
-    return;
-  }
-  // Record the version up front so a single run never prompts twice, even
-  // if the gh subprocess below throws.
-  try {
-    writeStarSeen(binPath, currentVersion);
-  } catch {
-    // Non-fatal — falling through to the prompt is still OK, just means we
-    // may nag again on the next install if the write failed for IO reasons.
-  }
-
-  const gh = Bun.which("gh");
-  if (!gh) {
-    log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
-    log.info("  https://github.com/drakulavich/kesha-voice-kit");
-    return;
-  }
-  const authCheck = Bun.spawnSync([gh, "auth", "status"], { stdout: "ignore", stderr: "ignore" });
-  if (authCheck.exitCode !== 0) return;
-  const starred = Bun.spawnSync([gh, "api", "user/starred/drakulavich/kesha-voice-kit"], { stdout: "ignore", stderr: "ignore" });
-  if (starred.exitCode === 0) return; // already starred
-  log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
-  log.info("  https://github.com/drakulavich/kesha-voice-kit");
-  log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
-}
-
 async function performInstall(noCache: boolean, backend?: string, tts = false, vad = false) {
   try {
     await downloadEngine(noCache, backend, { tts, vad });
-    await askForStar();
+    const currentVersion = typeof pkg.version === "string" ? pkg.version : null;
+    await maybeAskForStar(getEngineBinPath(), currentVersion, log);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(message);

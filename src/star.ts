@@ -55,3 +55,79 @@ export function shouldShowStarPrompt(current: string, seen: string | null): bool
 export function hasStarMarker(binPath: string): boolean {
   return existsSync(starSeenPath(binPath));
 }
+
+/**
+ * Prompt the user to star the repo if and only if `shouldShowStarPrompt`
+ * agrees (first install + major-or-minor bumps, never on patch). Records
+ * the prompt against the current version up front so a single run never
+ * prompts twice — failures from the gh subprocess below don't reopen the
+ * gate. Shared by `kesha install` and `kesha status` so opt-in installs
+ * (`--tts`, `--diarize`) and `status` reuse the same marker; a user who
+ * saw the prompt on the base install won't see it again on the opt-in or
+ * the status check.
+ *
+ * No-ops when the gate says skip, when `currentVersion` is null, or when
+ * the user has already starred. When `gh` is missing or unauthenticated,
+ * a basic prompt is still printed (so the marker write isn't a silent
+ * slot consumption).
+ *
+ * `shims` lets tests inject deterministic `which` / `spawn` implementations.
+ * Production callers leave it undefined; the defaults route through Bun's
+ * built-ins. Bun.which() caches PATH at process start so swapping
+ * process.env.PATH in tests doesn't work — the shim is the supported way
+ * to fake gh's presence and authentication state from a unit test.
+ */
+export async function maybeAskForStar(
+  binPath: string,
+  currentVersion: string | null,
+  log: { info: (msg: string) => void },
+  shims?: {
+    which?: (name: string) => string | null;
+    spawn?: (cmd: string[]) => { exitCode: number | null };
+  },
+): Promise<void> {
+  const which = shims?.which ?? ((n: string) => Bun.which(n));
+  const spawn =
+    shims?.spawn ??
+    ((cmd: string[]) =>
+      Bun.spawnSync(cmd, { stdout: "ignore", stderr: "ignore" }));
+  if (!currentVersion) return;
+  const seen = readStarSeen(binPath);
+  if (!shouldShowStarPrompt(currentVersion, seen)) {
+    return;
+  }
+  try {
+    writeStarSeen(binPath, currentVersion);
+  } catch {
+    /* Non-fatal — falling through to the prompt is still OK. */
+  }
+
+  // The marker has been recorded — every path from here that reaches
+  // a `return` without printing would silently consume the user's
+  // once-per-major.minor slot. Only the "already starred" path is
+  // allowed to skip the print, since the consumption is the verification
+  // that they're already supporting the project.
+  const printBasicPrompt = () => {
+    log.info("\nIf you enjoy Kesha Voice Kit, consider starring the repo:");
+    log.info("  https://github.com/drakulavich/kesha-voice-kit");
+  };
+
+  const gh = which("gh");
+  if (!gh) {
+    printBasicPrompt();
+    return;
+  }
+  const authCheck = spawn([gh, "auth", "status"]);
+  if (authCheck.exitCode !== 0) {
+    // gh installed but unauthenticated — we can't check star status, but
+    // we can still nudge with the same basic prompt the no-gh path uses.
+    // Without this, the marker write above silently consumes the slot.
+    printBasicPrompt();
+    return;
+  }
+  const starred = spawn([gh, "api", "user/starred/drakulavich/kesha-voice-kit"]);
+  if (starred.exitCode === 0) return; // already starred — slot consumed by verification
+  log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
+  log.info("  https://github.com/drakulavich/kesha-voice-kit");
+  log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
+}

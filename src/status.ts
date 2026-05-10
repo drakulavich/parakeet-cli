@@ -3,7 +3,10 @@ import { homedir } from "os";
 import { join } from "path";
 import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./engine";
 import { log } from "./log";
+import { maybeAskForStar } from "./star";
 import pc from "picocolors";
+
+const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
 
 function humanBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -86,7 +89,16 @@ export async function showStatus(): Promise<void> {
 
   if (!installed) {
     log.warn('Run "kesha install" to download the engine and models.');
+    return;
   }
+
+  // Star prompt at the very end. Same gate + marker as `kesha install`, so a
+  // user prompted by either path won't be re-prompted by the other within the
+  // same major.minor. Headless `kesha install` (no `gh`, or no tty) leaves no
+  // marker only when the prompt path itself errored out — readStarSeen still
+  // sees the marker in the common case.
+  const currentVersion = typeof pkg.version === "string" ? pkg.version : null;
+  await maybeAskForStar(binPath, currentVersion, log);
 }
 
 function showDiskUsage(binPath: string): void {
