@@ -54,6 +54,16 @@ jq '.[0].segments' voice.timestamps.json
 
 Each segment has `start`, `end`, and `text` fields. `--timestamps` is available for machine-readable output (`--json`, `--toon`, or `--format json`).
 
+**Speaker diarization** (darwin-arm64, post-v1.12.0). Add `--speakers` to label each segment with a cluster ID — useful for transcribing multi-person calls / meetings:
+
+```bash
+kesha install --diarize                                  # one-time, ~245MB
+kesha --json --vad --speakers meeting.m4a > out.json
+jq '.[0].segments[] | "\(.speaker)\t\(.text)"' out.json
+```
+
+Each `segment.speaker` is a number (cluster id, stable within one file). On Linux / Windows the engine returns a clear "currently darwin-arm64 only" error — see [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199).
+
 **Formats:** .ogg, .opus, .mp3, .m4a, .wav, .flac, .webm — decoded via symphonia, no ffmpeg required.
 
 **Other output modes:**

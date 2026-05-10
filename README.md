@@ -60,6 +60,16 @@ Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` 
 
 For long / silence-heavy audio, use `--vad` (auto-on past 120 s). Details: [docs/vad.md](docs/vad.md).
 
+**Speaker diarization** (darwin-arm64, post-v1.12.0):
+
+```bash
+kesha install --diarize                        # one-time, ~245MB Sortformer model
+kesha --json --vad --speakers meeting.m4a > out.json
+jq '.[0].segments[] | "\(.speaker)\t\(.text)"' out.json
+```
+
+Each segment gets a `speaker` integer (cluster ID, stable within one file). Linux / Windows: `--speakers` returns a clear "currently darwin-arm64 only" error — see [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199).
+
 ## Text-to-speech
 
 Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian) — voice auto-picks from the text's language:

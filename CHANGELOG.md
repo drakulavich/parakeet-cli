@@ -10,6 +10,20 @@ binary.
 
 ## [Unreleased]
 
+## [1.12.0] (unreleased)
+
+Engine release. Adds speaker diarization on Apple Silicon via a Swift sidecar
+that drives FluidAudio's Sortformer streaming diarizer.
+
+### Added
+- **Speaker diarization on darwin-arm64** via the FluidAudio framework, surfaced as `kesha --json --timestamps --speakers meeting.m4a`. Each segment carries a `speaker: number` cluster ID (stable within one file, not across files). New capability flag `transcribe.diarize` is advertised on darwin-arm64 release builds only. Closes [#199](https://github.com/drakulavich/kesha-voice-kit/issues/199) angle D.
+- **New sidecar binary `kesha-diarize-darwin-arm64`** ships next to the engine; `kesha install` (and the cache-valid upgrade path) fetches it as a best-effort step alongside the existing AVSpeech sidecar. `kesha install --diarize` opt-in fetches the Sortformer `balancedV2` model (~245 MB).
+- **`transcribeWithTimestamps({ speakers: true })`** programmatic API surfaces the new `segment.speaker` field; existing callers see no shape change.
+
+### Notes
+- Linux / Windows: `--speakers` returns a clear "speaker diarization is currently darwin-arm64 only" error pointing at #199 — the feature is gated on the `system_diarize` cargo feature, which build-engine.yml enables only for the macos-14 matrix row.
+- The shipped Sortformer model is `SortformerNvidiaLow_v2.mlpackage` (per-file SHA-256 pinned in `models.rs`); CoreML compiles `.mlpackage` → `.mlmodelc` at first call.
+
 ## [1.11.0] — 2026-05-08
 
 Engine release. Polish on the timestamped-segments path shipped in v1.9.0, plus a high-severity Dependabot fix for the Raycast extension dependency tree.
