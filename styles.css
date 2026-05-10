@@ -726,9 +726,38 @@ button,
   grid-column: span 2;
 }
 /* Layout sequence:
-   row 1: feature--lg (span 6)
-   row 2: 3 features (each span 2 = 6)
-   row 3: feature--rust (4) + feature--openclaw (2) = 6 */
+   row 1: feature--lg — Speech-to-text (span 6)
+   row 2: feature--lg — Speaker diarization (span 6)
+   rows 3–4: 6 features (each span 2 = 12)
+   row 5: feature--rust (4) + feature--openclaw (2) = 6 */
+
+.badge-new {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.3em 0.7em;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 36%, transparent);
+  border-radius: 999px;
+  z-index: 1;
+}
+.badge-new::before {
+  content: '';
+  width: 0.45em;
+  height: 0.45em;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
 .feature__icon {
   width: 48px;
   height: 48px;

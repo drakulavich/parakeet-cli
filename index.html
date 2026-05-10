@@ -6,7 +6,7 @@
     <title>Kesha Voice Kit — Open-source voice toolkit for Apple Silicon</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Text-to-speech with Kokoro & Vosk-TTS, OGG/Opus voice notes, timestamped transcripts. A 20MB Rust binary. No Python, no ffmpeg."
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Speaker diarization, OGG/Opus voice notes, timestamped transcripts, Kokoro & Vosk-TTS. A 20MB Rust binary. No Python, no ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. STT in 25 languages, TTS with OGG/Opus voice notes, timestamped transcripts — all from a single 20MB Rust binary."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. STT in 25 languages, speaker diarization for meetings, TTS with OGG/Opus voice notes — all from a single 20MB Rust binary."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -111,7 +111,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.11 · MIT licensed · CoreML + ONNX</span>
+            <span>v1.12 · MIT licensed · CoreML + ONNX</span>
           </div>
 
           <h1 class="hero__title">
@@ -121,9 +121,10 @@
           </h1>
 
           <p class="hero__sub">
-            Small, fast, open-source audio models — speech-to-text with timestamped segments,
-            text-to-speech that exports straight to Telegram-ready OGG/Opus voice notes, voice
-            activity detection, and language ID. CLI tools plus an OpenClaw skill for LLM agents.
+            Small, fast, open-source audio models — speech-to-text with timestamped segments and
+            speaker diarization for meetings, text-to-speech that exports straight to
+            Telegram-ready OGG/Opus voice notes, voice activity detection, and language ID. CLI
+            tools plus an OpenClaw skill for LLM agents.
             <strong>One 20MB binary. No Python. No ffmpeg.</strong>
           </p>
 
@@ -238,6 +239,30 @@
                 <li>--timestamps</li>
                 <li>VAD opt-in</li>
                 <li>JSON / TOON</li>
+              </ul>
+            </article>
+
+            <article class="feature feature--lg">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="7" cy="9" r="3" />
+                  <circle cx="17" cy="9" r="3" />
+                  <path d="M2 20c0-3 2.5-5 5-5s5 2 5 5" />
+                  <path d="M12 20c0-3 2.5-5 5-5s5 2 5 5" />
+                </svg>
+              </div>
+              <span class="badge-new">New in v1.12</span>
+              <h3>Speaker diarization</h3>
+              <p>
+                Drop a meeting recording in, get back timestamped segments tagged with a stable
+                speaker ID. Powered by FluidAudio’s Sortformer model running on the Apple Neural
+                Engine via a Swift sidecar — ~4.6× real-time on a 71-minute Zoom call.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>--speakers</li>
+                <li>darwin-arm64</li>
+                <li>Sortformer (CoreML)</li>
+                <li>opt-in install</li>
               </ul>
             </article>
 
@@ -509,6 +534,9 @@ kesha install" aria-label="Copy">
 <span class="cm"># Timestamped segments (start/end per phrase)</span>
 <span class="muted">$</span> kesha --json --timestamps interview.ogg
 
+<span class="cm"># Meeting transcript with speaker IDs (darwin-arm64)</span>
+<span class="muted">$</span> kesha --json --vad --speakers meeting.m4a
+
 <span class="cm"># Warn if detected language differs</span>
 <span class="muted">$</span> kesha --lang en interview.wav</code></pre>
               </div>
@@ -574,7 +602,7 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
           <header class="section-head">
             <p class="section-eyebrow">What's inside</p>
             <h2 class="section-title">
-              <span class="serif italic">Six models,</span> one runtime.
+              <span class="serif italic">Seven models,</span> one runtime.
             </h2>
             <p class="section-sub">
               Each model is best-in-class for its task and runs through
@@ -652,6 +680,19 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               <span>
                 <a href="https://github.com/alphacep/vosk-tts" target="_blank" rel="noopener"
                   >alphacep/vosk-tts ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">FluidAudio Sortformer v2 <em>(opt-in, darwin-arm64)</em></span>
+              <span class="model-task">Speaker diarization</span>
+              <span class="model-size">~245 MB</span>
+              <span>
+                <a
+                  href="https://github.com/FluidInference/FluidAudio"
+                  target="_blank"
+                  rel="noopener"
+                  >FluidInference/FluidAudio ↗</a
                 >
               </span>
             </div>
