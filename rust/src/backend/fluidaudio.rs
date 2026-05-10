@@ -1,4 +1,5 @@
 use std::io::{BufWriter, Write};
+use std::os::fd::OwnedFd;
 
 use anyhow::{Context, Result};
 use fluidaudio_rs::FluidAudio;
@@ -16,6 +17,13 @@ const MIN_SAMPLES: usize = 16_000 + 16_000 / 2; // 1.5 s @ 16 kHz
 
 pub struct FluidAudioBackend {
     audio: FluidAudio,
+    /// Pre-opened /dev/null reused across `transcribe_samples` calls so
+    /// the per-segment hot path skips the open syscall (~10K saved on a
+    /// 1 h meeting). `None` when the open at construction time failed,
+    /// in which case `with_silenced_stdout` falls back to running the
+    /// closure with stdout untouched — never worse than the pre-#259
+    /// behaviour, just with the residual print risk back on the table.
+    devnull: Option<OwnedFd>,
 }
 
 impl FluidAudioBackend {
@@ -24,7 +32,12 @@ impl FluidAudioBackend {
         audio
             .init_asr()
             .context("failed to initialize FluidAudio ASR (first run compiles models for ANE)")?;
-        Ok(Self { audio })
+        let devnull = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/null")
+            .ok()
+            .map(OwnedFd::from);
+        Ok(Self { audio, devnull })
     }
 }
 
@@ -59,8 +72,10 @@ impl TranscribeBackend for FluidAudioBackend {
             .context("creating temp WAV for VAD segment")?;
         write_float_wav(tmp.path(), &padded, 16_000).context("writing temp WAV for VAD segment")?;
         let path_str = tmp.path().to_str().context("temp WAV path was non-UTF-8")?;
-        let result = with_silenced_stdout(|| self.audio.transcribe_file(path_str))
-            .context("FluidAudio sample transcription failed")?;
+        let result = with_silenced_stdout(self.devnull.as_ref(), || {
+            self.audio.transcribe_file(path_str)
+        })
+        .context("FluidAudio sample transcription failed")?;
         Ok(result.text)
     }
 }
@@ -78,15 +93,19 @@ fn pad_to_min(samples: &[f32], min_len: usize) -> std::borrow::Cow<'_, [f32]> {
     }
 }
 
-/// Run `f` with the process's stdout temporarily redirected to /dev/null.
+/// Run `f` with the process's stdout temporarily redirected to `devnull`.
 /// FluidAudio's CoreML pipeline writes diagnostic strings (`Transcribe
 /// error: invalidAudioData`) to stdout via Swift's `print(...)` — when
 /// `kesha-engine transcribe --json` is the caller, that noise interleaves
 /// with our JSON serialization and breaks downstream `jq` parsers (#259).
 /// Restoring stdout in a `Drop` impl keeps the redirect short-lived even
 /// if `f` panics.
-fn with_silenced_stdout<R>(f: impl FnOnce() -> R) -> R {
-    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+///
+/// `devnull` is the long-lived fd cached on `FluidAudioBackend`; passing
+/// `None` runs `f` with stdout untouched (best-effort fallback for the
+/// pathological case where opening /dev/null at backend init failed).
+fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce() -> R) -> R {
+    use std::os::fd::{AsRawFd, FromRawFd};
 
     struct StdoutGuard {
         saved: Option<OwnedFd>,
@@ -94,9 +113,10 @@ fn with_silenced_stdout<R>(f: impl FnOnce() -> R) -> R {
     impl Drop for StdoutGuard {
         fn drop(&mut self) {
             if let Some(saved) = self.saved.take() {
-                // SAFETY: saved is a duplicated stdout fd we own; restore
-                // it onto fd 1 and let the OwnedFd close itself afterward
-                // via the move into dup2's first arg.
+                // SAFETY: saved is a dup'd stdout fd we own. as_raw_fd
+                // borrows it for the dup2 call (atomic in the kernel);
+                // `saved` is then dropped at end of this block, closing
+                // the duplicate. dup2 retains its own reference on fd 1.
                 let rc = unsafe { libc::dup2(saved.as_raw_fd(), libc::STDOUT_FILENO) };
                 if rc < 0 {
                     // Restore failed — fd 1 stays pointed at /dev/null and
@@ -116,9 +136,9 @@ fn with_silenced_stdout<R>(f: impl FnOnce() -> R) -> R {
     }
 
     // SAFETY: dup(STDOUT) returns a fresh fd we own; OwnedFd takes
-    // responsibility for closing it on drop. /dev/null open is best-effort —
-    // if either syscall fails we just run f without redirect, never worse
-    // than the pre-#259 behaviour.
+    // responsibility for closing it on drop. dup failure is best-effort —
+    // we just run f without a guard, never worse than the pre-#259
+    // behaviour.
     let saved: Option<OwnedFd> = unsafe {
         let raw = libc::dup(libc::STDOUT_FILENO);
         if raw < 0 {
@@ -129,12 +149,10 @@ fn with_silenced_stdout<R>(f: impl FnOnce() -> R) -> R {
     };
     let _guard = StdoutGuard { saved };
 
-    let devnull = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/null")
-        .ok();
     if let Some(devnull) = devnull {
-        // SAFETY: devnull is an open fd; dup2 atomically replaces fd 1.
+        // SAFETY: devnull is the long-lived fd cached on FluidAudioBackend;
+        // dup2 atomically replaces fd 1 with a duplicate of devnull, and
+        // the cached fd remains valid for subsequent calls.
         unsafe {
             libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO);
         }
