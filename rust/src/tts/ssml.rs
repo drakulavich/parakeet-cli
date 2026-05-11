@@ -48,6 +48,40 @@ pub enum Segment {
 /// Matches SSML 1.1's "medium" strength interpretation in most engines.
 const DEFAULT_BREAK: Duration = Duration::from_millis(250);
 
+/// Parse an SSML `prosody rate` attribute value into a multiplier.
+/// Supports W3C named values, absolute `N%`, and relative `+N%` / `-N%`.
+/// Clamps the result to 0.5..=2.0; returns None on malformed input.
+/// Used by the `Segment::ProsodyRate` dispatcher in task T3.
+#[allow(dead_code)]
+fn parse_rate_value(s: &str) -> Option<f32> {
+    let s = s.trim();
+    let mult = match s {
+        "x-slow" => 0.5_f32,
+        "slow" => 0.75,
+        "medium" => 1.0,
+        "fast" => 1.25,
+        "x-fast" => 1.5,
+        _ => {
+            let pct = s.strip_suffix('%')?;
+            if let Some(rest) = pct.strip_prefix('+') {
+                let n: f32 = rest.parse().ok()?;
+                1.0 + n / 100.0
+            } else if let Some(rest) = pct.strip_prefix('-') {
+                // Reject double signs like "--50%" by checking that rest doesn't start with a sign
+                if rest.starts_with('-') || rest.starts_with('+') {
+                    return None;
+                }
+                let n: f32 = rest.parse().ok()?;
+                1.0 - n / 100.0
+            } else {
+                let n: f32 = pct.parse().ok()?;
+                n / 100.0
+            }
+        }
+    };
+    Some(mult.clamp(0.5, 2.0))
+}
+
 /// Parse an SSML string into a linear segment list.
 /// Unknown tags emit a single stderr warning per name and are otherwise stripped
 /// (their text content is still synthesized).
@@ -689,5 +723,46 @@ mod tests {
             emphasis_count, 0,
             "no Emphasis when <phoneme> nested inside, got: {segs:?}"
         );
+    }
+
+    #[test]
+    fn parse_rate_named_values() {
+        assert_eq!(parse_rate_value("x-slow"), Some(0.5));
+        assert_eq!(parse_rate_value("slow"), Some(0.75));
+        assert_eq!(parse_rate_value("medium"), Some(1.0));
+        assert_eq!(parse_rate_value("fast"), Some(1.25));
+        assert_eq!(parse_rate_value("x-fast"), Some(1.5));
+    }
+
+    #[test]
+    fn parse_rate_percent_absolute() {
+        assert_eq!(parse_rate_value("100%"), Some(1.0));
+        assert_eq!(parse_rate_value("50%"), Some(0.5));
+        assert_eq!(parse_rate_value("150%"), Some(1.5));
+        assert_eq!(parse_rate_value("200%"), Some(2.0));
+    }
+
+    #[test]
+    fn parse_rate_percent_relative() {
+        assert_eq!(parse_rate_value("+25%"), Some(1.25));
+        assert_eq!(parse_rate_value("-25%"), Some(0.75));
+        assert_eq!(parse_rate_value("+0%"), Some(1.0));
+    }
+
+    #[test]
+    fn parse_rate_clamps_to_range() {
+        assert_eq!(parse_rate_value("10%"), Some(0.5));
+        assert_eq!(parse_rate_value("400%"), Some(2.0));
+        assert_eq!(parse_rate_value("+500%"), Some(2.0));
+        assert_eq!(parse_rate_value("-90%"), Some(0.5));
+    }
+
+    #[test]
+    fn parse_rate_malformed_returns_none() {
+        assert_eq!(parse_rate_value(""), None);
+        assert_eq!(parse_rate_value("abc"), None);
+        assert_eq!(parse_rate_value("100"), None);
+        assert_eq!(parse_rate_value("--50%"), None);
+        assert_eq!(parse_rate_value("xx-slow"), None);
     }
 }
