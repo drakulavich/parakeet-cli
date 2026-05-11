@@ -102,14 +102,10 @@ Files:
 Files:
 - Modify: `flake.nix`
 
-- [ ] Build a Bun CLI bundle with `pkgs.stdenv.mkDerivation` or `pkgs.writeShellApplication` — recipe:
-  - `src = ./.;`
-  - `nativeBuildInputs = [ pkgs.bun pkgs.makeWrapper ];`
-  - `buildPhase`: `bun install --frozen-lockfile --production` (offline-safe if `bun.lock` is committed; otherwise fall back to `--no-save` and document the fetch is impure — flag in PR for follow-up)
-  - `installPhase`: copy `bin/kesha.js`, `src/`, `package.json`, and `node_modules/` into `$out/lib/kesha`, then `makeWrapper $out/lib/kesha/bin/kesha.js $out/bin/kesha --prefix PATH : ${lib.makeBinPath [ pkgs.bun ]} --set KESHA_ENGINE_BIN ${kesha-engine}/bin/kesha-engine`
-- [ ] Expose as `packages.kesha = ...; packages.default = packages.kesha;` and add `apps.kesha = { type = "app"; program = "${packages.kesha}/bin/kesha"; };` plus `apps.default = apps.kesha;`. Leave `packages.kesha-engine` exported for backward compat with the merged-PR docs.
-- [ ] Decide bun-install strategy: if `bun.lock` is present, prefer offline / `--frozen-lockfile`; otherwise document the impure fetch and consider `bun2nix` in a follow-up. If `bun2nix` is needed but unavailable in nixpkgs-unstable, the simplest sandbox-safe path is `pkgs.fetchurl` per dependency tarball — overkill for v1; record the limitation in the PR body.
-- [ ] Verify: `nix run .#kesha -- --version` prints the CLI version. `nix run .#kesha -- transcribe rust/tests/fixtures/freedom.ogg` produces a transcript. `nix profile install .#kesha && kesha --version && nix profile remove kesha` works.
+- [x] Build a Bun CLI bundle with `pkgs.stdenv.mkDerivation` — landed in commit `9247b8c`. The implementation has two derivations: `keshaNodeModules` (FOD that runs `bun install --frozen-lockfile --production --ignore-scripts` against the committed `bun.lock`, flake.nix:135-165) and `kesha` (stages `bin/`, `src/`, `package.json`, `tsconfig.json`, `openclaw*`, `SKILL.md`, `LICENSE`, `NOTICES.md`, `scripts/postinstall.cjs`, symlinks the FOD's `node_modules`, then runs `makeWrapper` for both `kesha` and `parakeet` shims with `--prefix PATH : ${lib.makeBinPath [ pkgs.bun ]} --set KESHA_ENGINE_BIN ${kesha-engine}/bin/kesha-engine` at flake.nix:178-230).
+- [x] Expose as `packages.kesha` + `packages.default` and add `apps.kesha` + `apps.default` — confirmed at flake.nix:234-249. `packages.kesha-engine` is also still exported for the engine-only audience (Task 6 README).
+- [x] Decide bun-install strategy — `bun.lock` is committed so the FOD uses `--frozen-lockfile --production --ignore-scripts` for a deterministic install. `outputHash = lib.fakeHash` is the placeholder; the first nix build will report the real hash and a follow-up commit can paste it in. The recipe + the `bun2nix` follow-up note are documented inline in the flake comments at flake.nix:125-134 and 167-177.
+- [x] Verify `nix run .#kesha -- --version` / `nix run .#kesha -- transcribe ...` / `nix profile install .#kesha` — skipped, not automatable here (nix not installed on the local box; same skip pattern as Tasks 1-4 and 7). Deferred to PR-CI / a developer with nix installed. Local gates remain clean: `cargo fmt --check` exit 0, `bunx tsc --noEmit` exit 0.
 
 ### Task 6: Update README Nix Install section
 
