@@ -43,14 +43,21 @@
           then "coreml,tts,system_tts"
           else "onnx,tts";
 
-        # Build-time dependencies (tools needed to compile)
+        # Build-time dependencies (tools needed to compile).
+        # Darwin additions: swift drives `rust/build.rs` for the `system_tts`
+        # feature; the Apple SDK frameworks satisfy the `coreml` link step.
         nativeBuildInputs = with pkgs; [
           protobuf
           llvmPackages.libclang
           pkg-config
           cmake
           makeWrapper
-        ];
+        ] ++ lib.optionals isDarwin (with pkgs; [
+          swift
+          darwin.apple_sdk.frameworks.AVFoundation
+          darwin.apple_sdk.frameworks.CoreML
+          darwin.apple_sdk.frameworks.Foundation
+        ]);
 
         # Runtime dependencies (libraries to link against)
         # protobuf is in nativeBuildInputs already; don't duplicate it here.
@@ -64,7 +71,10 @@
           abseil-cpp
         ]);
 
-        # Environment variables for build - passed directly to mkDerivation
+        # Environment variables for build - passed directly to mkDerivation.
+        # MACOSX_DEPLOYMENT_TARGET=14.0 mirrors build-engine.yml so the
+        # `-Wl,-rpath,/usr/lib/swift` rpath fix-up in rust/build.rs lines up
+        # with the runner SDK; harmless on Linux (ignored by ld).
         buildEnv = {
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           PROTOC = "${pkgs.protobuf}/bin/protoc";
@@ -72,6 +82,7 @@
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
           SYS_OPUS = "1";
           CMAKE_POLICY_VERSION_MINIMUM = "3.5";
+          MACOSX_DEPLOYMENT_TARGET = "14.0";
         };
 
         # Linux-specific env vars for onnxruntime
@@ -116,7 +127,7 @@
         kesha-engine = naersk'.buildPackage {
           src = ./rust;
           root = ./rust;
-          inherit (buildEnv) LIBCLANG_PATH PROTOC OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR SYS_OPUS CMAKE_POLICY_VERSION_MINIMUM;
+          inherit (buildEnv) LIBCLANG_PATH PROTOC OPENSSL_LIB_DIR OPENSSL_INCLUDE_DIR SYS_OPUS CMAKE_POLICY_VERSION_MINIMUM MACOSX_DEPLOYMENT_TARGET;
           inherit nativeBuildInputs buildInputs;
           cargoBuildOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
           cargoTestOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
@@ -159,6 +170,10 @@
               export ORT_LIB_LOCATION="${pkgs.onnxruntime.out}/lib"
               export ORT_PREFER_DYNAMIC_LINK="1"
               export RUSTFLAGS="${linuxEnv.RUSTFLAGS}"
+            ''}
+            ${lib.optionalString isDarwin ''
+              export MACOSX_DEPLOYMENT_TARGET="14.0"
+              export RUSTFLAGS="-L /opt/homebrew/lib"
             ''}
           '';
         };
