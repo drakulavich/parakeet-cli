@@ -265,6 +265,64 @@ fn synth_segments_kokoro(
     synth_segments_kokoro_with(&mut sess, &segments, lang, voice_path, speed, format)
 }
 
+/// Synthesize a single SSML segment through Kokoro and return raw f32 samples.
+/// `ProsodyRate` recursively calls this for each inner segment with the
+/// multiplied+clamped rate; all other arms are leaf productions.
+fn synth_one_kokoro(
+    sess: &mut sessions::KokoroSession,
+    seg: &ssml::Segment,
+    lang: &str,
+    voice_path: &Path,
+    speed: f32,
+) -> Result<Vec<f32>, TtsError> {
+    let sample_rate = kokoro::SAMPLE_RATE;
+    match seg {
+        // Spell: G2P-routed (Vosk path normalizes Spell→Text upstream of synth).
+        ssml::Segment::Text(t) | ssml::Segment::Spell(t) => {
+            let ipa = g2p::text_to_ipa(t, lang)
+                .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+            sess.infer_ipa(&ipa, voice_path, speed)
+                .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))
+        }
+        ssml::Segment::Ipa(ph) => sess
+            .infer_ipa(ph, voice_path, speed)
+            .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}"))),
+        ssml::Segment::Break(dur) => Ok(silence_samples(*dur, sample_rate)),
+        ssml::Segment::Emphasis { content, suppress } => {
+            // Defensive fallback: en::normalize_segments converts Emphasis→Text
+            // upstream of synth_segments_kokoro_with's say_ssml caller
+            // (synth_segments_kokoro). The arm remains for `--stdin-loop`
+            // callers (#213) that bypass that wrapper and feed segments
+            // directly. Mirrors synth_segments_vosk_with's Emphasis fallback.
+            // Closes #238 (preserved); closes #244.
+            if !suppress {
+                crate::tts::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> stress markers are honored only on ru-vosk-* voices; \
+                     stripping `+` from content for non-Vosk path",
+                );
+            }
+            let stripped = if content.contains('+') {
+                content.replace('+', "")
+            } else {
+                content.clone()
+            };
+            let ipa = g2p::text_to_ipa(&stripped, lang)
+                .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+            sess.infer_ipa(&ipa, voice_path, speed)
+                .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))
+        }
+        ssml::Segment::ProsodyRate { rate, content } => {
+            let effective = (speed * rate).clamp(0.5, 2.0);
+            let mut samples = Vec::new();
+            for inner in content {
+                samples.extend(synth_one_kokoro(sess, inner, lang, voice_path, effective)?);
+            }
+            Ok(samples)
+        }
+    }
+}
+
 /// Drive an SSML segment list against an already-constructed Kokoro session.
 /// Used by both the one-shot `tts::say()` SSML path and the long-lived
 /// `--stdin-loop` (#213). Concatenates audio for `<break>` and text/IPA
@@ -280,53 +338,7 @@ pub fn synth_segments_kokoro_with(
     let sample_rate = kokoro::SAMPLE_RATE;
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
-        match seg {
-            // Spell: G2P-routed (Vosk path normalizes Spell→Text upstream of synth).
-            ssml::Segment::Text(t) | ssml::Segment::Spell(t) => {
-                let ipa = g2p::text_to_ipa(t, lang)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-                let audio = sess
-                    .infer_ipa(&ipa, voice_path, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-                out.extend(audio);
-            }
-            ssml::Segment::Ipa(ph) => {
-                let audio = sess
-                    .infer_ipa(ph, voice_path, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-                out.extend(audio);
-            }
-            ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
-            ssml::Segment::Emphasis { content, suppress } => {
-                // Defensive fallback: en::normalize_segments converts Emphasis→Text
-                // upstream of synth_segments_kokoro_with's say_ssml caller
-                // (synth_segments_kokoro). The arm remains for `--stdin-loop`
-                // callers (#213) that bypass that wrapper and feed segments
-                // directly. Mirrors synth_segments_vosk_with's Emphasis fallback.
-                // Closes #238 (preserved); closes #244.
-                if !suppress {
-                    crate::tts::warn::warn_once(
-                        "emphasis-non-ru-vosk",
-                        "<emphasis> stress markers are honored only on ru-vosk-* voices; \
-                         stripping `+` from content for non-Vosk path",
-                    );
-                }
-                let stripped = if content.contains('+') {
-                    content.replace('+', "")
-                } else {
-                    content.clone()
-                };
-                let ipa = g2p::text_to_ipa(&stripped, lang)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
-                let audio = sess
-                    .infer_ipa(&ipa, voice_path, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
-                out.extend(audio);
-            }
-            ssml::Segment::ProsodyRate { .. } => {
-                unimplemented!("Segment::ProsodyRate wiring is T4")
-            }
-        }
+        out.extend(synth_one_kokoro(sess, seg, lang, voice_path, speed)?);
     }
     if out.is_empty() {
         return Err(TtsError::SynthesisFailed(
@@ -396,6 +408,66 @@ fn synth_segments_vosk(
     synth_segments_vosk_with(&mut cache, &segments, model_dir, speaker_id, speed, format)
 }
 
+/// Synthesize a single SSML segment through Vosk and return raw f32 samples.
+/// `ProsodyRate` recursively calls this for each inner segment with the
+/// multiplied+clamped rate; all other arms are leaf productions.
+fn synth_one_vosk(
+    cache: &mut sessions::VoskCache,
+    seg: &ssml::Segment,
+    model_dir: &Path,
+    speaker_id: u32,
+    speed: f32,
+    sample_rate: u32,
+) -> Result<Vec<f32>, TtsError> {
+    match seg {
+        ssml::Segment::Text(t) | ssml::Segment::Ipa(t) | ssml::Segment::Spell(t) => {
+            // Vosk path normalizes Spell→Text upstream; arm kept for match exhaustiveness.
+            let (audio, _sr) = cache
+                .infer(model_dir, t, speaker_id, speed)
+                .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
+            Ok(audio)
+        }
+        ssml::Segment::Break(dur) => Ok(silence_samples(*dur, sample_rate)),
+        ssml::Segment::Emphasis { content, suppress } => {
+            // Defensive fallback: ru::normalize_segments converts Emphasis→Text upstream.
+            // Skip the warning when suppress=true: the caller used level="none"
+            // to explicitly opt out of stress markers — the warning would be
+            // misleading. Closes #238.
+            if !suppress {
+                crate::tts::warn::warn_once(
+                    "emphasis-non-ru-vosk",
+                    "<emphasis> reached the Vosk synth without ru::normalize_segments \
+                     preprocessing; stripping `+` markers as a fallback",
+                );
+            }
+            let stripped = if content.contains('+') {
+                content.replace('+', "")
+            } else {
+                content.clone()
+            };
+            let (audio, _sr) = cache
+                .infer(model_dir, &stripped, speaker_id, speed)
+                .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
+            Ok(audio)
+        }
+        ssml::Segment::ProsodyRate { rate, content } => {
+            let effective = (speed * rate).clamp(0.5, 2.0);
+            let mut samples = Vec::new();
+            for inner in content {
+                samples.extend(synth_one_vosk(
+                    cache,
+                    inner,
+                    model_dir,
+                    speaker_id,
+                    effective,
+                    sample_rate,
+                )?);
+            }
+            Ok(samples)
+        }
+    }
+}
+
 /// Drive an SSML segment list against a Vosk cache. Mirrors
 /// [`synth_segments_kokoro_with`]. The model is loaded once via
 /// `cache.sample_rate()` so a leading `<break>` can size its silence buffer
@@ -413,41 +485,14 @@ pub fn synth_segments_vosk_with(
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     let mut out: Vec<f32> = Vec::new();
     for seg in segments {
-        match seg {
-            ssml::Segment::Text(t) | ssml::Segment::Ipa(t) | ssml::Segment::Spell(t) => {
-                // Vosk path normalizes Spell→Text upstream; arm kept for match exhaustiveness.
-                let (audio, _sr) = cache
-                    .infer(model_dir, t, speaker_id, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
-                out.extend(audio);
-            }
-            ssml::Segment::Break(dur) => out.extend(silence_samples(*dur, sample_rate)),
-            ssml::Segment::Emphasis { content, suppress } => {
-                // Defensive fallback: ru::normalize_segments converts Emphasis→Text upstream.
-                // Skip the warning when suppress=true: the caller used level="none"
-                // to explicitly opt out of stress markers — the warning would be
-                // misleading. Closes #238.
-                if !suppress {
-                    crate::tts::warn::warn_once(
-                        "emphasis-non-ru-vosk",
-                        "<emphasis> reached the Vosk synth without ru::normalize_segments \
-                         preprocessing; stripping `+` markers as a fallback",
-                    );
-                }
-                let stripped = if content.contains('+') {
-                    content.replace('+', "")
-                } else {
-                    content.clone()
-                };
-                let (audio, _sr) = cache
-                    .infer(model_dir, &stripped, speaker_id, speed)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
-                out.extend(audio);
-            }
-            ssml::Segment::ProsodyRate { .. } => {
-                unimplemented!("Segment::ProsodyRate wiring is T4")
-            }
-        }
+        out.extend(synth_one_vosk(
+            cache,
+            seg,
+            model_dir,
+            speaker_id,
+            speed,
+            sample_rate,
+        )?);
     }
     if out.is_empty() {
         return Err(TtsError::SynthesisFailed(
@@ -508,4 +553,26 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
         .chunks_exact(channels)
         .map(|frame| frame.iter().sum::<f32>() / channels as f32)
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn prosody_rate_multiplies_and_clamps() {
+        let cases = [
+            (1.0_f32, 1.0_f32, 1.0_f32), // identity
+            (0.8, 0.75, 0.6),            // 0.8 × 0.75 = 0.6, within range
+            (0.5, 0.5, 0.5),             // 0.25 → clamped up to 0.5
+            (2.0, 2.0, 2.0),             // 4.0 → clamped down to 2.0
+            (1.0, 0.5, 0.5),             // identity × x-slow
+            (1.0, 1.5, 1.5),             // identity × x-fast
+        ];
+        for (cli, ssml, expected) in cases {
+            let effective = (cli * ssml).clamp(0.5, 2.0);
+            assert!(
+                (effective - expected).abs() < 1e-6,
+                "cli={cli}, ssml={ssml}: got {effective}, expected {expected}"
+            );
+        }
+    }
 }
