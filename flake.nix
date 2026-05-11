@@ -44,23 +44,19 @@
           else "onnx,tts";
 
         # Build-time dependencies (tools needed to compile).
-        # Darwin additions: swift drives `rust/build.rs` for the `system_tts`
-        # feature; the Apple SDK frameworks satisfy the `coreml` link step.
+        # `swift` drives `rust/build.rs` for the `system_tts` feature on
+        # darwin and is a build-host toolchain, so it stays here. Apple SDK
+        # frameworks are link-time inputs and live in `buildInputs` below,
+        # where the nixpkgs Darwin linker hook picks them up via `-F`.
         nativeBuildInputs = with pkgs; [
           protobuf
           llvmPackages.libclang
           pkg-config
           cmake
           makeWrapper
-        ] ++ lib.optionals isDarwin (with pkgs; [
-          swift
-          darwin.apple_sdk.frameworks.AVFoundation
-          darwin.apple_sdk.frameworks.CoreML
-          darwin.apple_sdk.frameworks.Foundation
-        ]);
+        ] ++ lib.optionals isDarwin [ pkgs.swift ];
 
-        # Runtime dependencies (libraries to link against)
-        # protobuf is in nativeBuildInputs already; don't duplicate it here.
+        # Runtime / link-time dependencies. `protobuf` is in `nativeBuildInputs`.
         buildInputs = with pkgs; [
           openssl
           opus
@@ -69,6 +65,10 @@
           llvmPackages.llvm
           onnxruntime
           abseil-cpp
+        ]) ++ lib.optionals isDarwin (with pkgs; [
+          darwin.apple_sdk.frameworks.AVFoundation
+          darwin.apple_sdk.frameworks.CoreML
+          darwin.apple_sdk.frameworks.Foundation
         ]);
 
         # Environment variables for build - passed directly to mkDerivation.
@@ -114,6 +114,15 @@
           inherit nativeBuildInputs buildInputs;
           cargoBuildOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
           cargoTestOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
+          # Write the version marker `src/engine-version-marker.ts` reads. Without
+          # it the TS CLI treats the Nix-built engine as version-unknown,
+          # falls into the re-download branch of `downloadEngine`, and
+          # EROFS-fails against the read-only `/nix/store` path. Pinned to
+          # package.json#keshaEngine.version so it matches the version the
+          # CLI checks for.
+          postInstall = ''
+            echo "${cliPkg.keshaEngine.version}" > $out/bin/kesha-engine.version
+          '';
         } // ortEnv // linuxEnv);
 
         # Read CLI version from package.json so the package version stays in
@@ -169,12 +178,10 @@
         # makeWrapper a shim that locks `KESHA_ENGINE_BIN` to the flake-built
         # Rust engine. `parakeet` is exposed as a backward-compatible alias.
         #
-        # Caveat: `kesha install` still calls `downloadEngine`, which writes
-        # to the directory of `KESHA_ENGINE_BIN`. Under Nix that directory is
-        # the read-only store and the call fails with EROFS. Nix users get
-        # the engine pre-installed and only need `kesha install --tts` /
-        # `--vad` / `--diarize` for *model* downloads, which write under
-        # `~/.cache/kesha/models/`. README (Task 6) calls this out.
+        # `kesha install` reads the engine version marker written by the
+        # `kesha-engine` derivation's postInstall and short-circuits the
+        # binary download, going straight to model fetches under
+        # `~/.cache/kesha/models/`.
         kesha = pkgs.stdenv.mkDerivation {
           pname = "kesha";
           version = cliPkg.version;
@@ -232,21 +239,16 @@
       in
       {
         packages = {
-          kesha = kesha;
-          kesha-engine = kesha-engine;
+          inherit kesha kesha-engine;
           default = kesha;
         };
 
-        apps = {
-          kesha = {
-            type = "app";
-            program = "${kesha}/bin/kesha";
+        apps =
+          let keshaApp = { type = "app"; program = "${kesha}/bin/kesha"; };
+          in {
+            kesha = keshaApp;
+            default = keshaApp;
           };
-          default = {
-            type = "app";
-            program = "${kesha}/bin/kesha";
-          };
-        };
 
         devShells.default = pkgs.mkShell ({
           inherit nativeBuildInputs;
