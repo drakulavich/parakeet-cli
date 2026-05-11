@@ -37,6 +37,21 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
     vec![0.0_f32; n]
 }
 
+/// Saturating composition of the CLI `--rate` flag with an SSML
+/// `<prosody rate>` multiplier. Both factors are unit-less multipliers
+/// against the engine's default rate; the result is clamped to the
+/// engine-safe range so downstream `Vosk::infer` / `Kokoro::infer` never
+/// see a 0× or 10× rate that would render unintelligible audio.
+///
+/// Range pinned to `0.5..=2.0` per the #236 spike findings: both Vosk
+/// (`vosk-model-tts-ru-0.9-multi`) and Kokoro (`kokoro-82M`) honor rate
+/// within ~7% of theoretical at these endpoints; past them quality
+/// degrades. Single source of truth for the clamp range — change here
+/// and the two engine arms in `synth_one_*` pick it up.
+fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
+    (cli_rate * ssml_rate).clamp(0.5, 2.0)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
     #[error("text is empty")]
@@ -313,7 +328,7 @@ fn synth_one_kokoro(
                 .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))
         }
         ssml::Segment::ProsodyRate { rate, content } => {
-            let effective = (speed * rate).clamp(0.5, 2.0);
+            let effective = compose_rate(speed, *rate);
             let mut samples = Vec::new();
             for inner in content {
                 samples.extend(synth_one_kokoro(sess, inner, lang, voice_path, effective)?);
@@ -451,7 +466,7 @@ fn synth_one_vosk(
             Ok(audio)
         }
         ssml::Segment::ProsodyRate { rate, content } => {
-            let effective = (speed * rate).clamp(0.5, 2.0);
+            let effective = compose_rate(speed, *rate);
             let mut samples = Vec::new();
             for inner in content {
                 samples.extend(synth_one_vosk(
@@ -568,7 +583,7 @@ mod tests {
             (1.0, 1.5, 1.5),             // identity × x-fast
         ];
         for (cli, ssml, expected) in cases {
-            let effective = (cli * ssml).clamp(0.5, 2.0);
+            let effective = super::compose_rate(cli, ssml);
             assert!(
                 (effective - expected).abs() < 1e-6,
                 "cli={cli}, ssml={ssml}: got {effective}, expected {expected}"

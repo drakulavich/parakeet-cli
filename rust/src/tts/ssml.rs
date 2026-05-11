@@ -58,6 +58,13 @@ pub enum Segment {
 /// Matches SSML 1.1's "medium" strength interpretation in most engines.
 const DEFAULT_BREAK: Duration = Duration::from_millis(250);
 
+/// Warn-once bucket keys for `<prosody>` paths. Hoisted to consts so the
+/// three call sites can't drift on a typo (`HashSet<String>::insert` swallows
+/// any mismatch silently and re-fires the warning forever).
+const WARN_PROSODY_MID_UTTERANCE: &str = "prosody-mid-utterance";
+const WARN_PROSODY_NESTED: &str = "prosody-nested";
+const WARN_PROSODY_NO_SUPPORTED_ATTR: &str = "prosody-no-supported-attr";
+
 /// Parse an SSML `prosody rate` attribute value into a raw multiplier.
 /// Supports W3C named values (`x-slow`/`slow`/`medium`/`fast`/`x-fast`/`default`),
 /// absolute `N%`, and relative `+N%` / `-N%`. Returns `None` on malformed
@@ -410,7 +417,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         cursor = span.end;
                     } else {
                         // Whole-utterance but unparseable rate attribute — warn+strip.
-                        if warned.insert("prosody-no-supported-attr".to_string()) {
+                        if warned.insert(WARN_PROSODY_NO_SUPPORTED_ATTR.to_string()) {
                             eprintln!(
                                 "warning: SSML <prosody> without a parseable rate= attribute \
                                  is not supported (pitch/volume scoped to a follow-up); stripping"
@@ -420,7 +427,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     }
                 } else {
                     // Mid-utterance prosody — warn+strip.
-                    if warned.insert("prosody-mid-utterance".to_string()) {
+                    if warned.insert(WARN_PROSODY_MID_UTTERANCE.to_string()) {
                         eprintln!(
                             "warning: SSML <prosody> mid-utterance is not yet supported \
                              (whole-utterance only); stripping rate, pitch, and volume"
@@ -518,7 +525,7 @@ fn parse_inner_spans(
                 // Nested <prosody> inside another <prosody>: not supported in v1.
                 // Inner attributes are dropped; inner content flows at the outer
                 // rate via the trailing push_text_slice plus any leaf spans below.
-                if warned.insert("prosody-nested".to_string()) {
+                if warned.insert(WARN_PROSODY_NESTED.to_string()) {
                     eprintln!(
                         "warning: SSML <prosody> nested inside another <prosody> is not \
                          supported; inner rate/pitch/volume attributes ignored"
