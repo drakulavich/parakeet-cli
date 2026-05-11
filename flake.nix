@@ -148,13 +148,26 @@
         # Bun's production dependency closure for the CLI. This is a
         # fixed-output derivation: Nix's sandbox blocks network access, but
         # FODs are allowed to fetch as long as `outputHash` matches the
-        # resulting tree. If `bun.lock` changes, the hash must be regenerated:
+        # resulting tree.
+        #
+        # ⚠ KNOWN BROKEN AT MERGE TIME: `outputHash = lib.fakeHash` below is the
+        # canonical Nix placeholder ("tell me the real hash") — it WILL fail
+        # `nix build .#kesha` with a hash-mismatch error every time until a
+        # developer with `nix` installed populates the real value. This is
+        # intentional: the dev workflow is
         #
         #   nix build .#kesha 2>&1 | grep -A1 'hash mismatch'
         #
-        # then paste the `got:` value into `outputHash` below. `bun2nix` would
-        # eliminate this manual step; left as a follow-up (issue mentioned in
+        # then paste the `got:` value into `outputHash` below. PR #242 spec
+        # explicitly deferred `nix build` verification to a nix-equipped
+        # reviewer; CI without nix can't populate the hash either. `bun2nix`
+        # would eliminate this manual step; left as a follow-up (tracked in
         # the PR body) since nixpkgs-unstable doesn't ship it yet.
+        #
+        # Until populated, `packages.default`, `apps.default`, and the
+        # README's `nix run` / `nix profile install` snippets all fail with
+        # the hash-mismatch error. Greptile flags this as P1 on every review;
+        # the answer is "yes, fix at merge".
         keshaNodeModules = pkgs.stdenv.mkDerivation {
           pname = "kesha-node-modules";
           version = cliPkg.version;
