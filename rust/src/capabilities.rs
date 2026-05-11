@@ -38,6 +38,8 @@ pub fn get_capabilities() -> Capabilities {
     features.push("tts.en_acronym_expansion");
     #[cfg(feature = "tts")]
     features.push("tts.ru_emphasis_marker");
+    #[cfg(feature = "tts")]
+    features.push("tts.prosody_rate");
 
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     features.push(TRANSCRIBE_DIARIZE_FEATURE);
