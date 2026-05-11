@@ -20,9 +20,17 @@
           inherit system overlays;
         };
 
-        naersk' = pkgs.callPackage naersk {};
-
         inherit (pkgs) lib;
+
+        # Get Rust toolchain from rust-overlay (declared early so naersk can pick it up)
+        rustToolchain = pkgs.rust-bin.stable.latest.default;
+
+        # Wire the pinned rust-overlay toolchain into naersk so the package build
+        # and the dev shell agree on rustc / cargo.
+        naersk' = pkgs.callPackage naersk {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
 
         # Platform detection
         isLinux = lib.hasSuffix "linux" system;
@@ -45,6 +53,7 @@
         ];
 
         # Runtime dependencies (libraries to link against)
+        # protobuf is in nativeBuildInputs already; don't duplicate it here.
         buildInputs = with pkgs; [
           openssl
           opus
@@ -52,12 +61,8 @@
           clang
           llvmPackages.llvm
           onnxruntime
-          protobuf
           abseil-cpp
         ]);
-
-        darwinBuildInputs = with pkgs; [
-        ];
 
         # Environment variables for build - passed directly to mkDerivation
         buildEnv = {
@@ -76,9 +81,6 @@
           ORT_PREFER_DYNAMIC_LINK = "1";
           RUSTFLAGS = "-L native=${pkgs.onnxruntime}/lib -L native=${pkgs.protobuf}/lib -L native=${pkgs.abseil-cpp}/lib -l onnxruntime -l protobuf -l absl_base -l absl_log_internal_check_op -l absl_log_internal_conditions -l absl_log_internal_message -l absl_log_internal_nullguard -l absl_examine_stack -l absl_log_internal_format -l absl_log_internal_structured_proto -l absl_log_internal_log_sink_set -l absl_log_sink -l absl_log_entry -l absl_log_internal_proto -l absl_flags_internal -l absl_flags_marshalling -l absl_flags_reflection -l absl_flags_config -l absl_flags_program_name -l absl_flags_private_handle_accessor -l absl_statusor -l absl_log_initialize -l absl_die_if_null";
         };
-
-        # Get Rust toolchain from rust-overlay
-        rustToolchain = pkgs.rust-bin.stable.latest.default;
 
         # Environment for ort-sys to use system onnxruntime
         # Need to set these BEFORE cargo runs
@@ -138,11 +140,14 @@
         };
 
         devShells.default = pkgs.mkShell {
+          inherit nativeBuildInputs;
           buildInputs = [ rustToolchain ] ++ buildInputs ++ (with pkgs; [
             cargo-make
             bun
             gnumake
           ]);
+          # Export LIBCLANG_PATH everywhere so bindgen can dlopen libclang in the dev shell.
+          LIBCLANG_PATH = buildEnv.LIBCLANG_PATH;
           shellHook = ''
             echo "✓ Kesha Voice Kit development environment"
             echo "  - Rust: $(rustc --version 2>/dev/null || echo 'not found')"
@@ -152,7 +157,8 @@
             ${lib.optionalString isLinux ''
               export ORT_STRATEGY="system"
               export ORT_LIB_LOCATION="${pkgs.onnxruntime.out}/lib"
-              export RUSTFLAGS="${linuxEnv.RUSTFLAGS or ""}"
+              export ORT_PREFER_DYNAMIC_LINK="1"
+              export RUSTFLAGS="${linuxEnv.RUSTFLAGS}"
             ''}
           '';
         };
