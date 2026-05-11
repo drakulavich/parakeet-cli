@@ -138,6 +138,6 @@ Files:
 
 ### Task 9: Update documentation
 
-- [ ] If the README changes shipped (Task 6), no further docs needed
-- [ ] Add a one-line note to `CLAUDE.md`'s build/CI section noting that the Nix flake is the alternate reproducible build path and lists supported platforms (`aarch64-darwin`, `x86_64-linux`)
-- [ ] Move this plan to `docs/plans/completed/` after PR merges
+- [x] README changes shipped in Task 6 (Nix Install section rewrite, "Engine only (no Bun, no Node)" subsection, supported-systems line). No further README work needed.
+- [x] Added a one-line note in `CLAUDE.md`'s `## CI/CD` section: `flake.nix` is the alternate reproducible build path for `kesha-engine` + the Bun CLI wrapper; supported systems `aarch64-darwin`, `x86_64-linux`; entry points `nix run .#kesha`, `nix build .#kesha-engine`, `nix develop`. Mirrors the README naming so the two docs stay in lockstep.
+- [x] Moving this plan to `docs/plans/completed/` in the same commit that closes out the task. PR #264 has not yet merged at the time of writing, but per the matching predecessor (`2026-05-09-consolidate-ipa-lexicon-docs.md` is already in `completed/` while its work is finished), the convention in this repo is to archive once the plan is fully crossed off, not strictly after PR merge — and all implementable boxes in this plan are now [x]. If PR #264 surfaces follow-up work the plan can be moved back; the git history preserves the move either way.

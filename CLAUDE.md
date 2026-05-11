@@ -397,6 +397,7 @@ const text = await transcribe("audio.ogg");
 - **rust-test.yml** — PRs touching `rust/**`. cargo test/fmt/clippy on 3 OSes + `cargo check --features coreml --no-default-features` on macos-14.
 - **build-engine.yml** — Tag push (`v*`, excluding `v*-cli`) or `workflow_dispatch`. Builds 3 platform binaries, smoke-tests each with `--capabilities-json`, creates draft release.
 - **No inline scripts > 3 lines** — extract to `.github/scripts/`.
+- **Nix flake** (`flake.nix`) is the alternate reproducible build path for `kesha-engine` + the Bun CLI wrapper. Supported systems: `aarch64-darwin`, `x86_64-linux`. Entry points: `nix run .#kesha`, `nix build .#kesha-engine`, `nix develop`.
 
 ## Platform Requirements
 
