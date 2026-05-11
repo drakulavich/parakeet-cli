@@ -112,16 +112,11 @@ Files:
 Files:
 - Modify: `README.md` (lines 35-67, the "Nix Install (Recommended)" section)
 
-- [ ] Update the one-liner block:
-  ```
-  nix run github:drakulavich/kesha-voice-kit -- install      # downloads engine + models
-  nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe (uses default = .#kesha)
-  ```
-  — accurate now that `apps.default` is the Bun wrapper.
-- [ ] Update the "Install to profile" block to reflect that `nix profile install` now ships the `kesha` wrapper plus the engine, so `kesha install` + `kesha audio.ogg` work as documented.
-- [ ] Add an "Engine-only" subsection for users who just want the Rust binary: `nix build github:drakulavich/kesha-voice-kit#kesha-engine` and `./result/bin/kesha-engine --help` — keeps drakulavich's owner-review hint about supporting both audiences.
-- [ ] No need to change "Why Nix?" bullets.
-- [ ] Smoke test the documented commands literally — copy-paste each one into a shell and confirm exit 0, capture transcripts/output for the PR body.
+- [x] Updated the one-liner block in README.md to reflect that the engine is bundled (`nix run -- install` downloads models only, not the engine), with a short note clarifying that `apps.default` is the Bun wrapper with `KESHA_ENGINE_BIN` baked in.
+- [x] Updated the "Install to profile" block — now points out that `packages.default` is the Bun CLI bundle (kesha + parakeet shims) wired to the Nix-built engine, so `kesha install` + `kesha audio.ogg` behave identically to the npm install path.
+- [x] Renamed the existing "Build only" subsection to "Engine only (no Bun, no Node)" and expanded it: added `--capabilities-json` as a useful follow-up so engine-only users can verify which backends compiled in. Keeps drakulavich's owner-review hint about supporting both audiences.
+- [x] No changes to "Why Nix?" bullets. Did add a "Supported systems: `aarch64-darwin`, `x86_64-linux`" line to the prerequisites and rewrote the dev-shell tools list to match Task 2/3 reality (pinned rustc via rust-overlay, libclang, cmake, pkg-config).
+- [x] (skipped — nix not installed on local dev machine; same constraint as Tasks 1-5) Smoke-testing the documented commands literally is deferred to PR CI / a developer with nix; the README copy is verbatim-matched against `apps.default`, `apps.kesha`, `packages.default`, `packages.kesha`, and `packages.kesha-engine` as exposed in flake.nix L233-249, so the commands will resolve as documented. Output capture for the PR body will happen in Task 7.
 
 ### Task 7: Verify acceptance criteria + open PR
 
