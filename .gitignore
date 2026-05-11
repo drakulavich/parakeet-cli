@@ -9,3 +9,4 @@ tmp-lang-id-output/
 .venv/
 benchmark-results.json
 .omc/
+result

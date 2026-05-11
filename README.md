@@ -32,6 +32,40 @@ kesha audio.ogg     # transcript to stdout
 
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
+## Nix Install (Recommended)
+
+**Prerequisites:** [Nix](https://nixos.org/download/) with flakes enabled.
+
+### One-liner run (no install)
+```bash
+nix run github:drakulavich/kesha-voice-kit -- install
+nix run github:drakulavich/kesha-voice-kit -- audio.ogg
+```
+
+### Install to profile (persistent)
+```bash
+nix profile install github:drakulavich/kesha-voice-kit
+kesha install       # downloads engine + models
+kesha audio.ogg     # transcript to stdout
+```
+
+### Development shell
+```bash
+nix develop github:drakulavich/kesha-voice-kit
+# Now you have: rust, cargo, bun, protoc, cargo-make
+```
+
+### Build only
+```bash
+nix build github:drakulavich/kesha-voice-kit#kesha-engine
+./result/bin/kesha-engine --help
+```
+
+**Why Nix?**
+- ✅ Reproducible builds across Linux/macOS
+- ✅ All native deps (onnxruntime, protobuf, abseil) handled automatically
+- ✅ No "works on my machine" — same `flake.nix` = identical results everywhere
+
 ## Speech-to-text
 
 ```bash
