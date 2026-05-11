@@ -85,6 +85,14 @@ Run before T2 implementation work commits to the design.
 
 **If Q2 / Q3 fails at endpoints:** narrow the clamp (e.g. 0.7–1.5×) and warn-once when SSML requests outside the safe range.
 
+### Spike findings (2026-05-11)
+
+Evidence: `/tmp/kesha-236-evidence/T1-spike.notes`. All gates pass; no pivots fired.
+
+- **Q1 PASS, simplified.** Vosk's `Synth::synth_audio(..., speech_rate: Option<f32>, ...)` takes the rate AS A PER-CALL ARGUMENT (`rust/vendor/vosk-tts/src/synth.rs:125-156`); no stateful `set_speech_rate` method exists. Our existing wrapper `Vosk::infer(text, speaker_id, rate)` at `rust/src/tts/vosk.rs:48` already plumbs it. **Implication for T4:** drop the planned `Vosk::set_rate(&mut self, f32)` / `Kokoro::set_rate(&mut self, f32)` shims — multiply `cli_rate * ssml_rate` in `say()` and thread the result into the existing `rate` arg directly.
+- **Q2/Q3 PASS.** Vosk and Kokoro both honor the rate within ~3-7% of theoretical at the clamp endpoints. Vosk: `0.5×→314,436 B`, `1.0×→157,764 B`, `2.0×→83,012 B` (ratios 1.99 / 0.526). Kokoro: `0.5×→722,468 B`, `1.0×→355,268 B`, `2.0×→189,668 B` (ratios 2.03 / 0.534). No silent no-op; clamps are safe.
+- **Q4 MOOT.** Q1 confirmed rate is per-call, not stored on `Synth`. No reset-after-prosody hygiene needed.
+
 ## Out of scope (v2 candidates)
 
 - Mid-utterance `<prosody>` (per-segment splitting + concat). Requires the boundary-cut spike from #236 to verify no audible click/pop.
