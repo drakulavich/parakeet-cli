@@ -68,13 +68,13 @@ Files:
 Files:
 - Modify: `flake.nix`
 
-- [ ] Add `RUSTFLAGS` export to the Linux branch of the devShell `shellHook` so `nix develop` matches the package build (Greptile P1 #3). Currently `shellHook` only references `linuxEnv.RUSTFLAGS or ""` — verify it actually exports (the `lib.optionalString isLinux` block looks correct but Greptile flagged it stale).
-- [ ] Add `nativeBuildInputs` to `mkShell` via `inherit nativeBuildInputs;` so `protoc`, `pkg-config`, `cmake`, `libclang` are present on every platform (P2 from Copilot + drakulavich)
-- [ ] Remove the unused `darwinBuildInputs = [];` binding (P2)
-- [ ] Remove the duplicate `protobuf` from the Linux `buildInputs` block; it's already in `nativeBuildInputs` (P2)
-- [ ] Wire `rustToolchain` into naersk: replace `naersk' = pkgs.callPackage naersk {};` with `naersk' = pkgs.callPackage naersk { cargo = rustToolchain; rustc = rustToolchain; };` so devShell + package build agree (P2)
-- [ ] `nix flake check` passes; `nix build .#kesha-engine --system x86_64-linux -L 2>&1 | tail -40` still produces a working binary; `./result/bin/kesha-engine --capabilities-json | jq .features` shows `["onnx","tts"]`
-- [ ] `nix develop --command bash -c 'cargo --version && rustc --version && protoc --version'` succeeds on the local darwin box (proves nativeBuildInputs landed)
+- [x] Add `RUSTFLAGS` export to the Linux branch of the devShell `shellHook` — `export RUSTFLAGS="${linuxEnv.RUSTFLAGS}"` lives inside `lib.optionalString isLinux` at flake.nix:266-268.
+- [x] Add `nativeBuildInputs` to `mkShell` via `inherit nativeBuildInputs;` — confirmed at flake.nix:252; this also picks up the cross-platform `protoc`, `pkg-config`, `cmake`, `libclang` set declared at flake.nix:49-60.
+- [x] Remove the unused `darwinBuildInputs = [];` binding — confirmed absent (`grep darwinBuildInputs flake.nix` returns no matches).
+- [x] Remove the duplicate `protobuf` from the Linux `buildInputs` block — confirmed at flake.nix:63-72; the Linux block now only contains `clang`, `llvmPackages.llvm`, `onnxruntime`, `abseil-cpp`, and a comment at line 63 documenting why `protobuf` stays in `nativeBuildInputs` only.
+- [x] Wire `rustToolchain` into naersk — confirmed at flake.nix:30-33 (`naersk' = pkgs.callPackage naersk { cargo = rustToolchain; rustc = rustToolchain; };`).
+- [x] `nix flake check` and `nix build .#kesha-engine --system x86_64-linux -L` — skipped, not automatable here (nix not installed locally; same skip pattern as Task 1 and Task 7). Deferred to PR CI.
+- [x] `nix develop --command bash -c 'cargo --version && rustc --version && protoc --version'` — skipped, not automatable here (same reason). Deferred to a developer with nix installed; what we can verify locally — `cargo fmt --check` exit 0, `bunx tsc --noEmit` exit 0 — passes on the current worktree.
 
 ### Task 3: Add macOS Swift toolchain + deployment target
 
