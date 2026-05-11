@@ -18,7 +18,7 @@ Per CLAUDE.md "VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE" + the spike requir
 
 **Files:** Spike-only, no code committed. Spec amended if any spike Q forces a pivot.
 
-- [ ] **Step 1.1: Q1 — Vosk `set_speech_rate` signature**
+- [x] **Step 1.1: Q1 — Vosk `set_speech_rate` signature**
 
 ```bash
 mkdir -p /tmp/kesha-236-evidence
@@ -33,7 +33,7 @@ Look for: `pub fn set_speech_rate(&mut self, rate: f32)` (or similar). Record th
 
 **Pivot trigger:** If `set_speech_rate` is missing OR not callable on `&mut self`, abort and replan to **Kokoro-only v1**. Spec capability flag changes to `tts.prosody_rate.kokoro_only`; Vosk goes into a v2 follow-up issue.
 
-- [ ] **Step 1.2: Q2/Q3 — Endpoint quality on Vosk + Kokoro**
+- [x] **Step 1.2: Q2/Q3 — Endpoint quality on Vosk + Kokoro**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit
@@ -64,7 +64,7 @@ Run the **audio-quality-check** agent on the 6 WAVs. Append to spike notes:
 
 **Pivot trigger:** if 0.5× output on either engine sounds garbled (distortion, dropped phonemes), tighten the clamp lower bound (e.g. 0.7×) in the spec. If 2.0× output sounds garbled, tighten upper bound (e.g. 1.5×). Record the user's verdict.
 
-- [ ] **Step 1.3: Q4 — Vosk persistence across calls**
+- [x] **Step 1.3: Q4 — Vosk persistence across calls**
 
 If Q1 confirmed `set_speech_rate(&mut self, ...)`, write a 5-line Rust test in a scratch file:
 
@@ -86,7 +86,7 @@ Or simpler: read the vosk-tts source for `set_speech_rate`'s implementation — 
 
 **Implementation impact:** if rate is per-call, set it before every `synth_audio` (cheap). If persistent, set it on entry to `ProsodyRate` arm and reset to 1.0× on exit (so subsequent non-prosody segments aren't affected).
 
-- [ ] **Step 1.4: Amend spec Section 5 with findings**
+- [x] **Step 1.4: Amend spec Section 5 with findings**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit
@@ -110,7 +110,7 @@ Pure-function helper. Test-first; no engine changes yet.
 **Files:**
 - Modify: `rust/src/tts/ssml.rs`
 
-- [ ] **Step 2.1: Write failing tests**
+- [x] **Step 2.1: Write failing tests**
 
 Add to the existing `#[cfg(test)] mod tests` block in `ssml.rs`:
 
@@ -165,7 +165,7 @@ cargo test --no-default-features --features onnx,tts --bin kesha-engine parse_ra
 ```
 Expected: 5 fails (function not defined).
 
-- [ ] **Step 2.2: Implement `parse_rate_value`**
+- [x] **Step 2.2: Implement `parse_rate_value`**
 
 Add above `pub fn parse(input: &str) -> ...` in `ssml.rs`:
 
@@ -205,7 +205,7 @@ cargo test --no-default-features --features onnx,tts --bin kesha-engine parse_ra
 ```
 Expected: 5 pass.
 
-- [ ] **Step 2.3: Commit**
+- [x] **Step 2.3: Commit**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit
@@ -228,7 +228,7 @@ Extends the public `Segment` enum and rewires the SSML walker to emit `ProsodyRa
 **Files:**
 - Modify: `rust/src/tts/ssml.rs`
 
-- [ ] **Step 3.1: Add the variant**
+- [x] **Step 3.1: Add the variant**
 
 In the `Segment` enum (after the `Emphasis` variant):
 
@@ -242,7 +242,7 @@ In the `Segment` enum (after the `Emphasis` variant):
 ProsodyRate { rate: f32, content: Vec<Segment> },
 ```
 
-- [ ] **Step 3.2: Walker — detect whole-utterance prosody**
+- [x] **Step 3.2: Walker — detect whole-utterance prosody**
 
 The existing `<prosody>` arm in the walker currently emits a warn-once + flattens. Replace it with the whole-utterance check. Pseudocode (adjust to the actual ssml-parser API used in the file):
 
@@ -276,7 +276,7 @@ ParsedElement::Prosody(p) => {
 
 `is_whole_utterance` is a new helper: returns true when the current ParsedElement is the immediate child of `<speak>` and the `<speak>` has no other sibling content (text, break, emphasis, etc.) outside this prosody. Implementation detail depends on ssml-parser's tree shape — read the existing walker for patterns.
 
-- [ ] **Step 3.3: Tests for whole-utterance vs mid-utterance**
+- [x] **Step 3.3: Tests for whole-utterance vs mid-utterance**
 
 ```rust
 #[test]
@@ -316,7 +316,7 @@ Expected: 2 pass.
 
 Update existing `<prosody>` warn+strip test (line ~356 — `parse(r#"<speak>Hi <prosody rate="fast">there</prosody></speak>"#)`) to assert the new bucket key fires.
 
-- [ ] **Step 3.4: Run full ssml test suite + clippy**
+- [x] **Step 3.4: Run full ssml test suite + clippy**
 
 ```bash
 cargo test --no-default-features --features onnx,tts --bin kesha-engine ssml 2>&1 | tail -3
@@ -324,7 +324,7 @@ cargo clippy --all-targets --no-default-features --features onnx,tts -- -D warni
 ```
 Expected: all pass, clippy clean. (You'll get a `non_exhaustive` warning on every `match Segment` site that doesn't yet cover `ProsodyRate` — Task 4 fixes those, but for now add a `Segment::ProsodyRate { .. } => unimplemented!("Task 4")` arm so the code compiles.)
 
-- [ ] **Step 3.5: Commit**
+- [x] **Step 3.5: Commit**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit
@@ -351,7 +351,7 @@ Wire `ProsodyRate` through to `Synth::set_speech_rate` (Vosk) and the Kokoro spe
 - Modify: `rust/src/tts/vosk.rs` (add `set_rate(f32)` shim)
 - Modify: `rust/src/tts/kokoro.rs` (thread `speed` into the synth call)
 
-- [ ] **Step 4.1: Vosk shim**
+- [x] **Step 4.1: Vosk shim**
 
 Add to `rust/src/tts/vosk.rs`:
 
@@ -368,7 +368,7 @@ impl Vosk {
 
 (If T1 spike Q1 found a different signature — e.g. the rate field needs setting on `Synth::synth_audio` directly — adjust the shim accordingly.)
 
-- [ ] **Step 4.2: Kokoro speed plumbing**
+- [x] **Step 4.2: Kokoro speed plumbing**
 
 In `rust/src/tts/kokoro.rs`, locate the existing `speed` parameter handed into the ONNX session (post-#207 the Kokoro pipeline already accepts `speed: f32`; we just expose it). Add or repurpose a setter:
 
@@ -384,7 +384,7 @@ impl Kokoro {
 
 (Adjust to whatever per-call state struct already exists. If Kokoro's synth fn takes `speed` as an arg, just plumb it through `say()`'s call site.)
 
-- [ ] **Step 4.3: `say()` dispatcher**
+- [x] **Step 4.3: `say()` dispatcher**
 
 In `rust/src/tts/mod.rs::say`, where the segment match handles each `Segment` variant, add:
 
@@ -425,7 +425,7 @@ ssml::Segment::ProsodyRate { rate, content } => {
 
 (Adapt to the actual VoiceKind / dispatcher shape in `tts/mod.rs`.)
 
-- [ ] **Step 4.4: Tests + clippy**
+- [x] **Step 4.4: Tests + clippy**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit/rust
@@ -434,7 +434,7 @@ cargo clippy --all-targets --no-default-features --features onnx,tts -- -D warni
 cargo fmt --check && echo fmt-clean
 ```
 
-- [ ] **Step 4.5: Commit**
+- [x] **Step 4.5: Commit**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit
@@ -458,7 +458,7 @@ git rev-parse HEAD > /tmp/kesha-236-evidence/T4-dispatchers.sha
 - Modify: `rust/src/capabilities.rs`
 - Create: `rust/tests/tts_prosody_rate.rs`
 
-- [ ] **Step 5.1: Capability flag**
+- [x] **Step 5.1: Capability flag**
 
 In `capabilities.rs`, after the existing `tts.ru_emphasis_marker` push:
 
@@ -467,7 +467,7 @@ In `capabilities.rs`, after the existing `tts.ru_emphasis_marker` push:
 features.push("tts.prosody_rate");
 ```
 
-- [ ] **Step 5.2: Integration test — duration ratio**
+- [x] **Step 5.2: Integration test — duration ratio**
 
 ```rust
 //! Closes #236. End-to-end check that `<prosody rate>` actually changes
@@ -570,7 +570,7 @@ fn macos_prosody_rate_warns_and_synthesizes() {
 }
 ```
 
-- [ ] **Step 5.3: Run + commit**
+- [x] **Step 5.3: Run + commit**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit/rust
@@ -604,7 +604,7 @@ git rev-parse HEAD > /tmp/kesha-236-evidence/T5-capability-tests.sha
 - Modify: `docs/tts.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 6.1: README.md — add a `<prosody rate>` example**
+- [x] **Step 6.1: README.md — add a `<prosody rate>` example**
 
 After the existing Russian word stress block:
 
@@ -622,11 +622,11 @@ kesha say --voice en-am_michael --ssml \
 Honored when `<prosody rate>` wraps the whole utterance. Mid-utterance prosody warns and synthesizes at default rate (whole-segment-only is a v1 limitation; mid-utterance support tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236)). `--rate` and `<prosody rate>` compose multiplicatively. Range clamped to 0.5×–2.0×.
 ```
 
-- [ ] **Step 6.2: SKILL.md + docs/tts.md — same pattern**
+- [x] **Step 6.2: SKILL.md + docs/tts.md — same pattern**
 
 Append a one-paragraph `<prosody rate>` block to both, mirroring the Russian-emphasis section.
 
-- [ ] **Step 6.3: CHANGELOG.md**
+- [x] **Step 6.3: CHANGELOG.md**
 
 After `## [Unreleased]`:
 
@@ -643,7 +643,7 @@ Engine release. Adds SSML `<prosody rate>` support for Vosk + Kokoro voices.
 - AVSpeech (`macos-*`) voices warn `prosody-rate-non-vosk-kokoro` and synthesize at default rate; sidecar protocol bump for native AVSpeech rate is also a v2 follow-up.
 ```
 
-- [ ] **Step 6.4: Commit**
+- [x] **Step 6.4: Commit**
 
 ```bash
 git add README.md SKILL.md docs/tts.md CHANGELOG.md
@@ -662,7 +662,7 @@ git rev-parse HEAD > /tmp/kesha-236-evidence/T6-docs.sha
 - Modify: `rust/Cargo.toml`
 - Modify: `rust/Cargo.lock`
 
-- [ ] **Step 7.1: Bumps**
+- [x] **Step 7.1: Bumps**
 
 ```bash
 cd /Users/anton/Personal/repos/kesha-voice-kit
@@ -671,7 +671,7 @@ sed -i '' 's/^version = "1.12.0"/version = "1.13.0"/' rust/Cargo.toml
 cd rust && cargo check --no-default-features --features onnx,tts 2>&1 | tail -3
 ```
 
-- [ ] **Step 7.2: Verify version + tests**
+- [x] **Step 7.2: Verify version + tests**
 
 ```bash
 cd rust
@@ -684,7 +684,7 @@ cd .. && bunx tsc --noEmit && echo tsc-clean
 bun test --exclude tests/integration/ 2>&1 | tail -3
 ```
 
-- [ ] **Step 7.3: Commit**
+- [x] **Step 7.3: Commit**
 
 ```bash
 git add package.json rust/Cargo.toml rust/Cargo.lock
@@ -700,7 +700,7 @@ git rev-parse HEAD > /tmp/kesha-236-evidence/T7-bump.sha
 
 Per CLAUDE.md "RELEASE PROCESS". Do NOT auto-tag, auto-build, or auto-publish.
 
-- [ ] **Step 8.1: Push + open release PR**
+- [x] **Step 8.1: Push + open release PR**
 
 Branch is named `release/v1.13.0` so `integration-tests` skips on the chicken-and-egg version. If currently on a different branch name, rename via `gh api -X POST '/repos/.../branches/<old>/rename' -f new_name=release/v1.13.0`.
 
@@ -711,7 +711,7 @@ gh pr create -R drakulavich/kesha-voice-kit \
   --body "Closes #236 (rate-only conservative scope). ..."
 ```
 
-- [ ] **Step 8.2: STOP — wait for user authorization**
+- [x] **Step 8.2: STOP — wait for user authorization**
 
 Do NOT auto-execute without explicit go-ahead:
 - Squash-merge PR

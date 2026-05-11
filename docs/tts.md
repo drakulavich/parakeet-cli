@@ -108,16 +108,19 @@ kesha say --voice en-am_michael --ssml \
 
 | Form | Examples | Effective multiplier |
 |---|---|---|
-| Named | `x-slow` `slow` `medium` `fast` `x-fast` | 0.5 / 0.75 / 1.0 / 1.25 / 1.5 |
+| Named | `x-slow` `slow` `medium` `fast` `x-fast` `default` | 0.5 / 0.75 / 1.0 / 1.25 / 1.5 / 1.0 |
 | Absolute percent | `100%` `150%` `200%` | `N / 100` |
-| Relative percent | `+25%` `-25%` | `1.0 ± N/100` |
 
 Range clamped to 0.5×–2.0×; values outside the range are clamped silently. `--rate <float>` (CLI flag) and `<prosody rate>` (SSML) compose multiplicatively — final speed = `cli_rate × ssml_rate`, then clamped.
 
 **Limitations (v1):**
-- Mid-utterance prosody (`<speak>Hi <prosody rate="fast">there</prosody> bye</speak>`) emits a `prosody-mid-utterance` stderr warning and synthesizes the full text at default rate. Per-segment splitting is a v2 follow-up — requires verifying boundary cuts don't produce click/pop. Tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
+- Relative percent (`+25%` / `-25%`) is NOT supported. The upstream `ssml-parser` strips the sign on parse, so `+N%` would silently produce the absolute `N%` rate. `kesha say --ssml` rejects relative-percent input with a clear error pointing users at absolute percent or named values. Tracked as a v2 follow-up on [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
+- Mid-utterance prosody (`<speak>Hi <prosody rate="fast">there</prosody> bye</speak>`) emits a `prosody-mid-utterance` stderr warning and synthesizes the full text at default rate. A leading or trailing structural sibling (`<break/>`, `<say-as>`, `<phoneme>`) outside the `<prosody>` also triggers the mid-utterance path. Per-segment splitting is a v2 follow-up — requires verifying boundary cuts don't produce click/pop. Tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
+- Nested `<prosody>` warns once (`prosody-nested`) and drops the inner attributes; inner content flows at the outer rate.
 - AVSpeech (`macos-*`) voices don't accept SSML yet (#141 follow-up); `--ssml` on a `macos-*` voice errors out before any prosody handling runs.
 - `<prosody pitch>` and `<prosody volume>` are NOT supported in v1 — they warn-once and strip. See #236 for the v2 design considerations.
+
+Engine reports `tts.prosody_rate: true` in `--capabilities-json`. Closes [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) (rate-only conservative scope; pitch + volume deferred).
 
 ## SSML
 
@@ -137,7 +140,8 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 | `<say-as interpret-as="cardinal\|ordinal\|date\|telephone\|...">` | ⚠️ stripped with stderr warning (contained text still synthesized); separate concern |
 | `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro / AVSpeech (no `+`-marker analog) |
 | `<phoneme alphabet="ipa" ph="…">` | ✅ honored on Kokoro — bypasses G2P, feeds IPA directly to inference (#193) |
-| `<prosody rate/pitch/volume>` | ⚠️ stripped with stderr warning; tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
+| `<prosody rate>` | ✅ honored on `ru-vosk-*` and `en-*` voices when wrapping the whole utterance — see the section above (#236). Mid-utterance / sibling-flanked: warned + stripped. |
+| `<prosody pitch/volume>` | ⚠️ stripped with stderr warning; v2 follow-up tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
 | `<!DOCTYPE>` | ❌ rejected (hardening against XXE) |
 
 SSML is opt-in via the explicit `--ssml` flag — inputs that happen to contain `<angle brackets>` aren't misinterpreted as SSML.

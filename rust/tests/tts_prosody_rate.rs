@@ -135,7 +135,11 @@ fn macos_prosody_rate_ssml_rejected() {
         eprintln!("skipping: macos voice not available ({stderr})");
         return;
     }
-    // If we somehow get here AVSpeech accepted SSML — that's a behavior
-    // change worth flagging in a future iteration.
-    eprintln!("note: AVSpeech accepted SSML; ProsodyRate warn-strip arm should be added");
+    // AVSpeech now accepts SSML — that's a behavior change. The prosody
+    // warn-strip arm called out in #236 needs to ship before this test can
+    // be relaxed; fail loudly so the regression isn't missed.
+    panic!(
+        "AVSpeech accepted SSML <prosody rate>; add the prosody warn-strip arm \
+         (see #236 plan T4) before allowing this path to succeed silently"
+    );
 }

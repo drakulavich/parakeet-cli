@@ -22,7 +22,9 @@
   | `fast` | 1.25× |
   | `x-fast` | 1.5× |
 
-  `N%` → `N/100`. `+N%` / `-N%` → relative to `medium` (so `+25%` = 1.25×, `-25%` = 0.75×).
+  `N%` → `N/100`. `default` → 1.0× (alias for `medium`).
+
+  Relative percent `+N%` / `-N%` was in the original scope but **deferred to v2**: `ssml-parser 0.1.4` strips the `+` sign before our code sees it (Display of `RateRange::Percentage(25)` is `"25%"`) and bails on `-N%` with a cryptic upstream message. Implementing relative percent requires either patching the upstream crate or pre-scanning the raw input for the rate attribute. v1 rejects relative-percent inputs at parse time with a clear error pointing users at absolute / named forms.
 - **Clamp range:** `0.5..=2.0`. Values outside the range are clamped silently — past 2.0× both engines produce noticeably distorted output, below 0.5× prosody falls apart.
 - **`--rate` × SSML interaction:** **multiply.** Final speed = `cli_rate * ssml_rate`, then clamp. Matches AWS Polly + Google TTS behaviour and composes naturally for the "I want everything 0.9× because the default is too fast" case.
 - **Capability flag:** `tts.prosody_rate` (boolean), advertised whenever the `tts` cargo feature is on. Mirrors the existing `tts.ru_emphasis_marker` / `tts.en_acronym_expansion` shape.
@@ -105,7 +107,7 @@ Evidence: `/tmp/kesha-236-evidence/T1-spike.notes`. All gates pass; no pivots fi
 - [ ] `<speak><prosody rate="slow">Hello</prosody></speak>` on `ru-vosk-m02` produces audibly slower output than `<speak>Hello</speak>` (RMS approximately equal, byte length ~33% longer).
 - [ ] Same on `en-am_michael` for Kokoro.
 - [ ] `<speak>Hi <prosody rate="fast">there</prosody></speak>` (mid-utterance) emits a single `prosody-mid-utterance` stderr warning and synthesizes the full text at the default rate.
-- [ ] `<speak><prosody rate="fast">Hello</prosody></speak>` on a `macos-*` voice emits `prosody-rate-non-vosk-kokoro` warning and synthesizes at default rate.
+- [ ] `<speak><prosody rate="fast">Hello</prosody></speak>` on a `macos-*` voice — DEFERRED. AVSpeech rejects all SSML up-front (`tts/mod.rs` early return) until the sidecar protocol bump in #141 lands, so the dedicated `prosody-rate-non-vosk-kokoro` warning bucket isn't implemented. Tracked alongside the AVSpeech SSML follow-up.
 - [ ] `--rate 0.8` + `<prosody rate="slow">` produces audio with effective speed ~0.6× (clamped if outside 0.5–2.0×).
 - [ ] `--capabilities-json` lists `tts.prosody_rate` when `tts` feature is on.
 - [ ] `cargo clippy --all-targets -- -D warnings` clean for both `onnx,tts` and `coreml,tts,system_tts,system_diarize` matrices.
