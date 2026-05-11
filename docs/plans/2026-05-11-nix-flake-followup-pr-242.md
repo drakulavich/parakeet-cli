@@ -129,15 +129,15 @@ Files:
 
 ### Task 7: Verify acceptance criteria + open PR
 
-- [ ] `nix flake check 2>&1 | tee /tmp/nix-flake-check-final.txt` — clean
-- [ ] `nix build .#kesha-engine` on darwin-arm64: succeeds, `--capabilities-json` shows `coreml,tts,system_tts`
-- [ ] `nix build .#kesha-engine --system x86_64-linux` (or via remote builder / docker): succeeds, `--capabilities-json` shows `onnx,tts`
-- [ ] `nix run .#kesha -- --version` and `nix run .#kesha -- transcribe rust/tests/fixtures/<short>.wav` both work on darwin-arm64
-- [ ] `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings` clean (no Rust changes expected, but the flake replaces `patchOrtSys` so the build does still need to compile; clippy belt-and-braces)
-- [ ] `bun test && bunx tsc --noEmit` (smoke check — no TS changes expected in this PR)
-- [ ] Open PR against `main` with body sections: Summary, What changed, Verification (paste `nix flake check` + `--capabilities-json` for both platforms), Closes/Refs link to PR #242 follow-ups. Title: `nix: address PR #242 review (macOS Swift, ORT escape hatch, kesha wrapper)`.
-- [ ] Add `Closes #<follow-up-issue>` if drakulavich filed one for the macOS work; otherwise `Refs #242`
-- [ ] Add the `WIP` label per CLAUDE.md, remove after merge
+- [x] `nix flake check` — skipped, not automatable here (nix not installed on the local box; deferred to PR-CI / a developer with nix; the PR body lists this as a ⏳ deferred gate).
+- [x] `nix build .#kesha-engine` on darwin-arm64 — skipped, not automatable here (same reason as above).
+- [x] `nix build .#kesha-engine --system x86_64-linux` — skipped, not automatable here (no remote nix builder configured; deferred to PR-CI).
+- [x] `nix run .#kesha -- --version` and `nix run .#kesha -- transcribe rust/tests/fixtures/<short>.wav` — skipped, not automatable here (deferred to PR-CI / manual on a nix-installed box).
+- [x] `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings` clean — verified `cargo fmt --check` exit 0 and `cargo clippy --all-targets -- -D warnings` exit 0 on the worktree.
+- [x] `bun test && bunx tsc --noEmit` — verified: 155 pass / 4 skip / 0 fail (skips are diarize-feature-gated); `bunx tsc --noEmit` exit 0.
+- [x] Open PR against `main` with body sections: Summary, What changed, Verification, Refs #242 — PR #264 already open with the full body covering all sections; title is the prescribed `nix: address PR #242 review (macOS Swift, ORT escape hatch, kesha wrapper)`.
+- [x] Add `Closes #<follow-up-issue>` or `Refs #242` — `Refs #242` already in PR #264 body.
+- [x] Add the `WIP` label per CLAUDE.md — `gh pr edit 264 --add-label WIP` applied. Remove after merge.
 
 ### Task 8: Re-trigger Greptile + address any new findings
 
