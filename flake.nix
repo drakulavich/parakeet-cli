@@ -116,11 +116,136 @@
           cargoTestOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
         } // ortEnv // linuxEnv);
 
+        # Read CLI version from package.json so the package version stays in
+        # lockstep with npm publishes (CLI version, not keshaEngine.version —
+        # the engine is shipped via `kesha-engine` above which has its own
+        # rust/Cargo.toml version).
+        cliPkg = lib.importJSON ./package.json;
+
+        # Bun's production dependency closure for the CLI. This is a
+        # fixed-output derivation: Nix's sandbox blocks network access, but
+        # FODs are allowed to fetch as long as `outputHash` matches the
+        # resulting tree. If `bun.lock` changes, the hash must be regenerated:
+        #
+        #   nix build .#kesha 2>&1 | grep -A1 'hash mismatch'
+        #
+        # then paste the `got:` value into `outputHash` below. `bun2nix` would
+        # eliminate this manual step; left as a follow-up (issue mentioned in
+        # the PR body) since nixpkgs-unstable doesn't ship it yet.
+        keshaNodeModules = pkgs.stdenv.mkDerivation {
+          pname = "kesha-node-modules";
+          version = cliPkg.version;
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./package.json
+              ./bun.lock
+              ./scripts/postinstall.cjs
+            ];
+          };
+          nativeBuildInputs = with pkgs; [ bun cacert nodejs ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR
+            # --frozen-lockfile pins to bun.lock; --production drops devDeps;
+            # --ignore-scripts skips the package.json postinstall (which is a
+            # PATH-probe warning for end users, irrelevant inside the
+            # sandbox).
+            bun install --frozen-lockfile --production --ignore-scripts --no-progress
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mv node_modules $out
+            runHook postInstall
+          '';
+          outputHash = lib.fakeHash;
+          outputHashMode = "recursive";
+        };
+
+        # Bun-based `kesha` CLI bundle. Bun executes TypeScript directly so
+        # there is no transpile step — we just stage the source tree and
+        # makeWrapper a shim that locks `KESHA_ENGINE_BIN` to the flake-built
+        # Rust engine. `parakeet` is exposed as a backward-compatible alias.
+        #
+        # Caveat: `kesha install` still calls `downloadEngine`, which writes
+        # to the directory of `KESHA_ENGINE_BIN`. Under Nix that directory is
+        # the read-only store and the call fails with EROFS. Nix users get
+        # the engine pre-installed and only need `kesha install --tts` /
+        # `--vad` / `--diarize` for *model* downloads, which write under
+        # `~/.cache/kesha/models/`. README (Task 6) calls this out.
+        kesha = pkgs.stdenv.mkDerivation {
+          pname = "kesha";
+          version = cliPkg.version;
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./bin
+              ./src
+              ./package.json
+              ./tsconfig.json
+              ./openclaw.plugin.json
+              ./openclaw-plugin.cjs
+              ./SKILL.md
+              ./LICENSE
+              ./NOTICES.md
+              ./scripts/postinstall.cjs
+            ];
+          };
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          dontBuild = true;
+          installPhase = ''
+            runHook preInstall
+
+            mkdir -p $out/lib/kesha $out/bin
+            cp -r bin src scripts package.json tsconfig.json \
+                  openclaw-plugin.cjs openclaw.plugin.json SKILL.md LICENSE NOTICES.md \
+                  $out/lib/kesha/
+            ln -s ${keshaNodeModules} $out/lib/kesha/node_modules
+
+            # bin/kesha.js has a `#!/usr/bin/env bun` shebang and imports
+            # ../src/cli.ts directly — Bun resolves the TS at runtime.
+            # makeWrapper sets PATH so the shebang's `env bun` resolves to
+            # the Nix-built Bun, and pins KESHA_ENGINE_BIN to the flake's
+            # engine output so the CLI never falls back to the
+            # ~/.cache/kesha download path.
+            chmod +x $out/lib/kesha/bin/kesha.js
+            for shim in kesha parakeet; do
+              makeWrapper $out/lib/kesha/bin/kesha.js $out/bin/$shim \
+                --prefix PATH : ${lib.makeBinPath [ pkgs.bun ]} \
+                --set KESHA_ENGINE_BIN ${kesha-engine}/bin/kesha-engine
+            done
+
+            runHook postInstall
+          '';
+
+          meta = with lib; {
+            description = "Fast multilingual voice toolkit (Bun CLI + Rust engine)";
+            homepage = "https://github.com/drakulavich/kesha-voice-kit";
+            license = licenses.mit;
+            mainProgram = "kesha";
+            platforms = [ "x86_64-linux" "aarch64-darwin" ];
+          };
+        };
+
       in
       {
         packages = {
+          kesha = kesha;
           kesha-engine = kesha-engine;
-          default = kesha-engine;
+          default = kesha;
+        };
+
+        apps = {
+          kesha = {
+            type = "app";
+            program = "${kesha}/bin/kesha";
+          };
+          default = {
+            type = "app";
+            program = "${kesha}/bin/kesha";
+          };
         };
 
         devShells.default = pkgs.mkShell ({
