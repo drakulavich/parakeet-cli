@@ -112,16 +112,16 @@ Files:
 Files:
 - Modify: `README.md` (lines 35-67, the "Nix Install (Recommended)" section)
 
-- [ ] Update the one-liner block:
+- [x] Update the one-liner block:
   ```
   nix run github:drakulavich/kesha-voice-kit -- install      # downloads engine + models
   nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe (uses default = .#kesha)
   ```
-  — accurate now that `apps.default` is the Bun wrapper.
-- [ ] Update the "Install to profile" block to reflect that `nix profile install` now ships the `kesha` wrapper plus the engine, so `kesha install` + `kesha audio.ogg` work as documented.
-- [ ] Add an "Engine-only" subsection for users who just want the Rust binary: `nix build github:drakulavich/kesha-voice-kit#kesha-engine` and `./result/bin/kesha-engine --help` — keeps drakulavich's owner-review hint about supporting both audiences.
-- [ ] No need to change "Why Nix?" bullets.
-- [ ] Smoke test the documented commands literally — copy-paste each one into a shell and confirm exit 0, capture transcripts/output for the PR body.
+  — landed in commit `003ab61`. README.md:39-45 shows the `install` + `audio.ogg` form (no `transcribe` subcommand prefix needed — the Bun CLI handles positional args), with a follow-up sentence explaining that `apps.default` resolves to the Bun wrapper which has the engine baked in via `KESHA_ENGINE_BIN`, so there's no separate engine download step.
+- [x] Update the "Install to profile" block to reflect that `nix profile install` now ships the `kesha` wrapper plus the engine — landed in commit `003ab61`. README.md:47-54 shows `nix profile install github:drakulavich/kesha-voice-kit` followed by `kesha install` + `kesha audio.ogg`, with the explanatory sentence "`packages.default` ships the Bun CLI (`kesha`, `parakeet`) wired to the Nix-built engine. After `nix profile install`, both shims are on `PATH` and behave identically to the npm install."
+- [x] Add an "Engine-only" subsection for users who just want the Rust binary — landed in commit `003ab61`. README.md:56-62 has the new "Engine only (no Bun, no Node)" subsection: `nix build github:drakulavich/kesha-voice-kit#kesha-engine`, `./result/bin/kesha-engine --help`, and `./result/bin/kesha-engine --capabilities-json` (added the capabilities check as a bonus — answers drakulavich's owner-review hint about supporting the engine-only audience while still letting them confirm which backends compiled in).
+- [x] No need to change "Why Nix?" bullets — confirmed at README.md:70-73 (unchanged from PR #242).
+- [x] Smoke test the documented commands literally — skipped, not automatable here (nix not installed on the local dev box; same skip pattern as Tasks 1-5 and 7). Deferred to PR-CI / a developer with nix installed. The PR body in #264 already lists each documented command under the Verification section as a ⏳ deferred gate so reviewers know which commands still need a human pass.
 
 ### Task 7: Verify acceptance criteria + open PR
 
