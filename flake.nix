@@ -268,7 +268,6 @@
             ''}
             ${lib.optionalString isDarwin ''
               export MACOSX_DEPLOYMENT_TARGET="14.0"
-              export RUSTFLAGS="-L /opt/homebrew/lib"
             ''}
           '';
         } // ortEnv);
