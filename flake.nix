@@ -54,7 +54,16 @@
           pkg-config
           cmake
           makeWrapper
-        ] ++ lib.optionals isDarwin [ pkgs.swift ];
+        ] ++ lib.optionals isDarwin [
+          # `swift` is the compiler (swiftc); `swiftpm` is the package manager
+          # that exposes `swift build` / `swift run` / `swift test`. They live
+          # in separate nixpkgs derivations — including only `swift` leaves
+          # the swift wrapper failing at `exec: swift-build: not found` when
+          # fluidaudio-rs's build.rs shells out to `swift build` to compile
+          # its FluidAudioBridge Swift package.
+          pkgs.swift
+          pkgs.swiftpm
+        ];
 
         # Runtime / link-time dependencies. `protobuf` is in `nativeBuildInputs`.
         buildInputs = with pkgs; [
