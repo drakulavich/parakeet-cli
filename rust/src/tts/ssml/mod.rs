@@ -15,212 +15,22 @@
 //! - plain text inside/between elements — synthesized via G2P
 //! - unknown tags — one stderr warning per name, contained text preserved
 
+mod rate;
+mod segment;
+mod walker;
+mod warnings;
+
 use std::collections::HashSet;
-use std::time::Duration;
 
 use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
 use ssml_parser::parse_ssml;
 
-/// A linearized slice of an SSML document.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Segment {
-    /// Plain text to feed into the G2P → engine pipeline.
-    Text(String),
-    /// Pre-phonemized IPA (from a `<phoneme>` override). Bypasses G2P —
-    /// the tokenizer receives the `ph` string verbatim.
-    Ipa(String),
-    /// Silence of the given duration.
-    Break(Duration),
-    /// Letter-by-letter spelling request from `<say-as interpret-as="characters">`.
-    /// The Russian-Vosk normalization step expands this to a `Text` segment via
-    /// `tts::ru::letter_table::expand_chars`. Other engines pass it through as text
-    /// (their G2P will read the cyrillic word verbatim — acceptable until per-engine
-    /// support lands).
-    Spell(String),
-    /// SSML `<emphasis>` content. The Russian-Vosk normalization step honors
-    /// any `+` markers in `content` (passing them through to Vosk, which
-    /// interprets `+vowel` as a stress hint per the #233 spike). On non-
-    /// `ru-vosk-*` voices the `+` markers are stripped before reaching G2P.
-    /// `suppress` is set when the source tag had `level="none"` — strip `+`
-    /// markers regardless of voice (SSML composition: a
-    /// `<emphasis level="none">` overrides an inherited emphasis).
-    Emphasis { content: String, suppress: bool },
-    /// SSML `<prosody rate>` content where the prosody wraps the entire
-    /// utterance (immediate child of `<speak>`, no sibling content). The
-    /// dispatcher multiplies `rate` by the CLI `--rate` and threads the
-    /// result into the per-engine speed knob. Mid-utterance prosody is
-    /// warned+stripped at parse time and never reaches a `ProsodyRate`
-    /// segment.
-    ProsodyRate { rate: f32, content: Vec<Segment> },
-}
+pub use segment::Segment;
 
-/// Default `<break/>` duration when the `time` attribute is omitted.
-/// Matches SSML 1.1's "medium" strength interpretation in most engines.
-const DEFAULT_BREAK: Duration = Duration::from_millis(250);
-
-/// Warn-once bucket keys for `<prosody>` paths. Hoisted to consts so the
-/// three call sites can't drift on a typo (`HashSet<String>::insert` swallows
-/// any mismatch silently and re-fires the warning forever).
-const WARN_PROSODY_MID_UTTERANCE: &str = "prosody-mid-utterance";
-const WARN_PROSODY_NESTED: &str = "prosody-nested";
-const WARN_PROSODY_NO_SUPPORTED_ATTR: &str = "prosody-no-supported-attr";
-
-/// Parse an SSML `prosody rate` attribute value into a raw multiplier.
-/// Supports W3C named values (`x-slow`/`slow`/`medium`/`fast`/`x-fast`/`default`),
-/// absolute `N%`, and relative `+N%` / `-N%`. Returns `None` on malformed
-/// input, zero/negative results, or non-finite values (`NaN`, `±inf`).
-///
-/// Note: relative `+N%` / `-N%` is parsed correctly here but is *unreachable
-/// from the production path* via `parse()` — `ssml-parser` 0.1.4 strips the
-/// sign before our code sees it (Display of `RateRange::Percentage(25)` is
-/// `"25%"` regardless of original `+25%` source). `parse()` rejects relative
-/// percent at the input pre-scan to avoid silent miscoercion. The function
-/// arms remain for direct-call clarity and to document the SSML 1.1 mapping.
-///
-/// The dispatcher composes this with the CLI `--rate` and clamps the
-/// product to 0.5..=2.0 — clamping here too would break the documented
-/// "compose multiplicatively, then clamp" contract for cases like
-/// `--rate 0.6` × `<prosody rate="400%">` (should saturate at 2.0×, not
-/// land at 1.2× because the SSML side was pre-clamped to 2.0×).
-fn parse_rate_value(s: &str) -> Option<f32> {
-    let s = s.trim();
-    let mult = match s {
-        "x-slow" => 0.5_f32,
-        "slow" => 0.75,
-        // SSML 1.1: `default` means "use the voice's default rate" — i.e. 1.0×.
-        "medium" | "default" => 1.0,
-        "fast" => 1.25,
-        "x-fast" => 1.5,
-        _ => {
-            let pct = s.strip_suffix('%')?;
-            if let Some(rest) = pct.strip_prefix('+') {
-                // Reject double signs like "++50%" symmetrically with the `-` arm below.
-                if rest.starts_with('-') || rest.starts_with('+') {
-                    return None;
-                }
-                let n: f32 = rest.parse().ok()?;
-                1.0 + n / 100.0
-            } else if let Some(rest) = pct.strip_prefix('-') {
-                if rest.starts_with('-') || rest.starts_with('+') {
-                    return None;
-                }
-                let n: f32 = rest.parse().ok()?;
-                1.0 - n / 100.0
-            } else {
-                let n: f32 = pct.parse().ok()?;
-                n / 100.0
-            }
-        }
-    };
-    // Reject NaN / ±inf — `f32::from_str` accepts the literals "NaN"/"inf"/etc.
-    // and `f32::clamp` propagates NaN. A NaN multiplier would reach the ONNX
-    // speed tensor / vosk speech_rate and produce undefined audio.
-    if !mult.is_finite() {
-        return None;
-    }
-    // Reject zero/negative multipliers — `rate="0%"` or `rate="-100%"` would
-    // be silently clamped up to 0.5× by the dispatcher, producing surprising
-    // half-speed audio for a value that semantically means "stop". Treat as
-    // malformed so the warn+strip path runs.
-    if mult <= 0.0 {
-        return None;
-    }
-    Some(mult)
-}
-
-/// Scan the raw SSML input for the first relative-percent rate attribute
-/// (`rate="+N%"` or `rate="-N%"`). Returns the matched attribute value on
-/// hit. Used by `parse()` to reject inputs where `ssml-parser` would
-/// silently strip the sign (`+25%` → `25%` → 0.25× instead of 1.25×) or
-/// hard-fail with a cryptic upstream message (`-25%` → "Negative percentage
-/// not allowed for rate"). Input length is bounded by `MAX_TEXT_CHARS`, so
-/// the O(n) scan is cheap.
-fn find_relative_rate(input: &str) -> Option<String> {
-    let bytes = input.as_bytes();
-    let needle = b"rate=";
-    let mut i = 0;
-    while i + needle.len() < bytes.len() {
-        if !bytes[i..i + needle.len()].eq_ignore_ascii_case(needle) {
-            i += 1;
-            continue;
-        }
-        let after = i + needle.len();
-        let (quote, value_start) = match bytes.get(after) {
-            Some(b'"') => (b'"', after + 1),
-            Some(b'\'') => (b'\'', after + 1),
-            _ => {
-                i = after;
-                continue;
-            }
-        };
-        if let Some(close_rel) = bytes[value_start..].iter().position(|&b| b == quote) {
-            let value_bytes = &bytes[value_start..value_start + close_rel];
-            // Skip leading whitespace per SSML/XML normalization.
-            let trimmed_start = value_bytes
-                .iter()
-                .position(|b| !b.is_ascii_whitespace())
-                .unwrap_or(value_bytes.len());
-            let trimmed = &value_bytes[trimmed_start..];
-            if let Some(&first) = trimmed.first() {
-                if (first == b'+' || first == b'-')
-                    && trimmed.get(1).is_some_and(|c| c.is_ascii_digit())
-                {
-                    if let Ok(s) = std::str::from_utf8(value_bytes) {
-                        return Some(s.to_string());
-                    }
-                }
-            }
-            i = value_start + close_rel + 1;
-        } else {
-            // Unclosed quote — let ssml-parser surface the real error.
-            return None;
-        }
-    }
-    None
-}
-
-/// Check whether the raw SSML source has any non-whitespace content between
-/// `<speak ...>` and the first `<prosody ...>` opening tag, or between
-/// `</prosody>` and `</speak>`. Used as the source-position complement to the
-/// text-offset whole-utterance check — zero-width tags like `<break/>`
-/// collapse to the same text offset as the prosody boundary and cannot be
-/// distinguished by text-position alone.
-///
-/// Conservative: any `<` between `<speak ...>` and `<prosody>` counts as a
-/// sibling, including the opening tag of another non-prosody element. Returns
-/// false when the document is malformed (no `<prosody>`, no matching close
-/// tags, or out-of-order tags) so the existing parser error path takes over.
-fn has_structural_source_siblings(input: &str) -> bool {
-    let speak_open_end = match input.find("<speak") {
-        Some(p) => match input[p..].find('>') {
-            Some(e) => p + e + 1,
-            None => return false,
-        },
-        None => return false,
-    };
-    // First `<prosody` opens the outermost. Its matching close is the LAST
-    // `</prosody>` in the document (handles nested prosody correctly: the
-    // outer span is still whole-utterance, the inner one's warn-strip is
-    // handled later by `parse_inner_spans`).
-    let prosody_open = match input.find("<prosody") {
-        Some(p) => p,
-        None => return false,
-    };
-    let prosody_close_end = match input.rfind("</prosody>") {
-        Some(p) => p + "</prosody>".len(),
-        None => return false,
-    };
-    let speak_close = match input.rfind("</speak>") {
-        Some(p) => p,
-        None => return false,
-    };
-    // Malformed ordering — let ssml-parser surface the real error.
-    if speak_open_end > prosody_open || prosody_close_end > speak_close {
-        return false;
-    }
-    !input[speak_open_end..prosody_open].trim().is_empty()
-        || !input[prosody_close_end..speak_close].trim().is_empty()
-}
+use rate::{find_relative_rate, has_structural_source_siblings, parse_rate_value};
+use segment::DEFAULT_BREAK;
+use walker::{parse_inner_spans, push_text_slice, span_priority};
+use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 
 /// Parse an SSML string into a linear segment list.
 /// Unknown tags emit a single stderr warning per name and are otherwise stripped
@@ -450,162 +260,10 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     Ok(segments)
 }
 
-/// Sort key for span ordering: lower priority runs FIRST in the segment
-/// loop. When two spans share `span.start` (e.g. an inner `<say-as>`
-/// nested inside `<emphasis>`), the lower-priority arm runs first and
-/// advances the cursor; the higher-priority arm is then skipped by the
-/// loop-top `cursor` guard. This implements the spec's "inner structural
-/// tag wins" rule for nested SSML.
-///
-/// Priority assignments (#233):
-/// - 0: structural-leaf tags (Phoneme, SayAs) — run first, consume span
-/// - 1: Break and other non-overlapping containers
-/// - 2: Emphasis — run after inner leaves; otherwise wraps them
-/// - 3: Speak root wrapper
-fn span_priority(el: &ParsedElement) -> u8 {
-    match el {
-        ParsedElement::Phoneme(_) | ParsedElement::SayAs(_) => 0,
-        ParsedElement::Break(_) => 1,
-        ParsedElement::Emphasis(_) | ParsedElement::Prosody(_) => 2,
-        ParsedElement::Speak(_) => 3,
-        _ => 1,
-    }
-}
-
-fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usize, end: usize) {
-    if start >= end {
-        return;
-    }
-    let chunk: String = text[start..end].iter().collect();
-    if !chunk.trim().is_empty() {
-        out.push(Segment::Text(chunk));
-    }
-}
-
-/// Parse the inner content of a whole-utterance `<prosody>` span into segments.
-/// Iterates the sub-spans whose character range falls strictly within
-/// `[prosody_start, prosody_end)`, applying the same rules as the top-level
-/// walker (Break, Phoneme, SayAs, Emphasis). Unknown tags warn+strip. The
-/// outer `warned` set is shared so each warning fires at most once per
-/// document regardless of nesting.
-fn parse_inner_spans(
-    all_spans: &[&ssml_parser::parser::Span],
-    text: &[char],
-    prosody_start: usize,
-    prosody_end: usize,
-    warned: &mut HashSet<String>,
-) -> Vec<Segment> {
-    let mut segments: Vec<Segment> = Vec::new();
-    let mut cursor = prosody_start;
-
-    // Filter to spans that are strictly children of the prosody span
-    // (start >= prosody_start, end <= prosody_end) and are not the prosody
-    // span itself (we skip the Prosody element and the Speak wrapper).
-    for span in all_spans {
-        if span.start < prosody_start || span.end > prosody_end {
-            continue;
-        }
-        // Skip the outer prosody span itself — `all_spans` includes it
-        // because its `(start, end)` matches the prosody range. Without this
-        // guard, the Prosody match arm below would fire `prosody-nested`
-        // for every whole-utterance prosody.
-        if span.start == prosody_start && span.end == prosody_end {
-            if let ParsedElement::Prosody(_) = &span.element {
-                continue;
-            }
-        }
-        if span.start < cursor {
-            continue;
-        }
-        match &span.element {
-            ParsedElement::Speak(_) => {
-                // Skip the speak wrapper — we're already inside it.
-            }
-            ParsedElement::Prosody(_) => {
-                // Nested <prosody> inside another <prosody>: not supported in v1.
-                // Inner attributes are dropped; inner content flows at the outer
-                // rate via the trailing push_text_slice plus any leaf spans below.
-                if warned.insert(WARN_PROSODY_NESTED.to_string()) {
-                    eprintln!(
-                        "warning: SSML <prosody> nested inside another <prosody> is not \
-                         supported; inner rate/pitch/volume attributes ignored"
-                    );
-                }
-            }
-            ParsedElement::Break(attrs) => {
-                push_text_slice(&mut segments, text, cursor, span.start);
-                let dur = attrs
-                    .time
-                    .as_ref()
-                    .map(|t| t.duration())
-                    .unwrap_or(DEFAULT_BREAK);
-                segments.push(Segment::Break(dur));
-                cursor = span.end;
-            }
-            ParsedElement::Phoneme(attrs) => {
-                let is_ipa = matches!(&attrs.alphabet, None | Some(PhonemeAlphabet::Ipa));
-                if is_ipa {
-                    push_text_slice(&mut segments, text, cursor, span.start);
-                    if !attrs.ph.is_empty() {
-                        segments.push(Segment::Ipa(attrs.ph.clone()));
-                    }
-                    cursor = span.end;
-                } else {
-                    let alpha = match &attrs.alphabet {
-                        Some(PhonemeAlphabet::Other(s)) => s.clone(),
-                        other => format!("{other:?}"),
-                    };
-                    if warned.insert(format!("phoneme[alphabet={alpha}]")) {
-                        eprintln!(
-                            "warning: SSML <phoneme alphabet=\"{alpha}\"> not supported — \
-                             only \"ipa\" is recognised; falling back to G2P on contained text"
-                        );
-                    }
-                }
-            }
-            ParsedElement::SayAs(attrs) => {
-                if attrs.interpret_as == "characters" {
-                    push_text_slice(&mut segments, text, cursor, span.start);
-                    if let Some(inner) = extract_inner_text(text, span.start, span.end) {
-                        segments.push(Segment::Spell(inner));
-                    }
-                    cursor = span.end;
-                } else {
-                    let key = format!("say-as[interpret-as={}]", attrs.interpret_as);
-                    if warned.insert(key) {
-                        eprintln!(
-                            "warning: SSML <say-as interpret-as=\"{}\"> is not supported — \
-                             only \"characters\" is recognised; falling back to plain text",
-                            attrs.interpret_as
-                        );
-                    }
-                }
-            }
-            ParsedElement::Emphasis(attrs) => {
-                push_text_slice(&mut segments, text, cursor, span.start);
-                if let Some(content) = extract_inner_text(text, span.start, span.end) {
-                    let suppress = matches!(attrs.level, Some(EmphasisLevel::None));
-                    segments.push(Segment::Emphasis { content, suppress });
-                }
-                cursor = span.end;
-            }
-            other => {
-                let name = tag_name(other);
-                if warned.insert(name.clone()) {
-                    eprintln!("warning: SSML tag <{name}> is not supported — stripping");
-                }
-            }
-        }
-    }
-    // Trailing text inside the prosody span.
-    push_text_slice(&mut segments, text, cursor, prosody_end);
-    segments
-}
-
 /// Collect the inner text of a structural span and trim whitespace.
 /// Returns `None` for empty/whitespace-only content. Used by tags that
 /// emit a single segment carrying their inner content (SayAs, Emphasis).
-fn extract_inner_text(text: &[char], start: usize, end: usize) -> Option<String> {
+pub(super) fn extract_inner_text(text: &[char], start: usize, end: usize) -> Option<String> {
     let raw: String = text[start..end].iter().collect();
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -615,7 +273,7 @@ fn extract_inner_text(text: &[char], start: usize, end: usize) -> Option<String>
     }
 }
 
-fn tag_name(el: &ParsedElement) -> String {
+pub(super) fn tag_name(el: &ParsedElement) -> String {
     // Explicit map to the canonical SSML element name. Using Debug would produce
     // `sayas` for `<say-as>` and `description` for `<desc>` — user-facing warnings
     // need to match the tag the user typed.
@@ -661,6 +319,7 @@ fn contains_doctype(input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn plain_text_in_speak_produces_single_text_segment() {
