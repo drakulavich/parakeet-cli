@@ -689,35 +689,55 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
     }
     eprintln!("GET {}", f.rel_path);
     let url = apply_mirror(f.url);
+    // Include the resolved URL in the error chain (#275 D11). On
+    // `KESHA_MODEL_MIRROR`-redirected downloads, the user otherwise has no
+    // visibility into which host was actually contacted when the download
+    // fails — anyhow's context surfaces the URL through the bail.
     let response = ureq::get(&url)
         .call()
-        .with_context(|| format!("download {}", f.rel_path))?;
+        .with_context(|| format!("GET {url} ({})", f.rel_path))?;
     let mut reader = response.into_body().into_reader();
     let mut out =
         fs::File::create(&target).with_context(|| format!("create {}", target.display()))?;
     io::copy(&mut reader, &mut out)?;
     drop(out);
     if !verify_sha256(&target, f.sha256)? {
+        // Recompute to embed the actual hash in the bail (#275 D5). One
+        // extra hash pass on a freshly-downloaded file is cheap relative
+        // to the failure-mode value: the user can now tell stale-mirror
+        // vs corrupt-download vs upstream-rehost from one line of stderr.
+        let actual = compute_sha256(&target).unwrap_or_else(|_| "<unreadable>".to_string());
         // Remove so the existence-only cache probes don't later resurrect
         // unverified weights (#174). Best-effort — errors here are masked
         // by the bail below which surfaces the real problem.
         let _ = fs::remove_file(&target);
-        anyhow::bail!("sha256 mismatch for {}", f.rel_path);
+        anyhow::bail!(
+            "sha256 mismatch for {}: expected {} got {}",
+            f.rel_path,
+            f.sha256.get(..12).unwrap_or(f.sha256),
+            actual.get(..12).unwrap_or(&actual)
+        );
     }
     eprintln!("OK  {}", f.rel_path);
     Ok(())
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
+    Ok(compute_sha256(path)?.eq_ignore_ascii_case(expected))
+}
+
+/// SHA-256 of `path`'s contents, lowercase hex. Split out from
+/// [`verify_sha256`] so the mismatch bail in `download_verified` can embed
+/// the actual hash next to the expected one (#275 D5). 64 KiB BufReader
+/// keeps `io::copy` off its 8 KiB default so hashing a 2.4 GB model file
+/// stays IO-bound rather than syscall-bound.
+fn compute_sha256(path: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
-    // 64 KiB buffer keeps `io::copy` off its 8 KiB default so hashing a
-    // 2.4 GB model file stays IO-bound rather than syscall-bound.
     let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut reader = std::io::BufReader::with_capacity(65_536, file);
     let mut hasher = Sha256::new();
     io::copy(&mut reader, &mut hasher)?;
-    let actual = format!("{:x}", hasher.finalize());
-    Ok(actual.eq_ignore_ascii_case(expected))
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn cleanup_legacy() {
