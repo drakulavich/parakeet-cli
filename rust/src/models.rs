@@ -223,12 +223,18 @@ pub fn apply_mirror(url: &str) -> String {
     url.to_string()
 }
 
-/// Emit the "Model mirror active: <url>" banner once per process so any
-/// download entry point (`install`, `download_tts`, future programmatic
-/// callers) surfaces the redirect. `OnceLock` keeps us quiet on the
-/// second-through-Nth call — a user running `kesha install --tts` would
-/// otherwise see the line twice.
-fn log_mirror_once() {
+/// Emit the "Model mirror active: <url>" banner so any user staring at a
+/// fresh `kesha install` notices that downloads are flowing through
+/// `KESHA_MODEL_MIRROR`. **Side effect**: writes a single line to stderr
+/// on the first call per process, no-op thereafter. Idempotent via
+/// `OnceLock` — repeated calls (test reruns inside one process) are safe.
+///
+/// Call this once at the start of the install handler in `main.rs` rather
+/// than from each `download_*` function. Concentrating the side effect at
+/// one boundary keeps `download_tts`, `download_vad`, and `download_diarize`
+/// behaviourally pure-from-the-caller — they return `Result<()>` and don't
+/// hide a surprise stderr write behind it.
+pub fn init_mirror_logging() {
     use std::sync::OnceLock;
     static LOGGED: OnceLock<()> = OnceLock::new();
     LOGGED.get_or_init(|| {
@@ -348,7 +354,6 @@ fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
 }
 
 pub fn install(no_cache: bool) -> Result<()> {
-    log_mirror_once();
     let cache = cache_dir();
 
     // Always run through download_verified so a silently-corrupted cached
@@ -642,7 +647,6 @@ mod tts_tests {
 /// same hash-verify + retry path as the rest.
 #[cfg(feature = "system_diarize")]
 pub fn download_diarize(no_cache: bool) -> Result<()> {
-    log_mirror_once();
     let cache = cache_dir();
     let refs: Vec<&ModelFile> = DIARIZE_FILES.iter().collect();
     parallel_download(&cache, &refs, no_cache)
@@ -652,7 +656,6 @@ pub fn download_diarize(no_cache: bool) -> Result<()> {
 /// Single-file manifest, so `parallel_download` reduces to one HTTP round
 /// trip — keeps the uniform hash-verify + retry path.
 pub fn download_vad(no_cache: bool) -> Result<()> {
-    log_mirror_once();
     let cache = cache_dir();
     let refs: Vec<&ModelFile> = VAD_FILES.iter().collect();
     parallel_download(&cache, &refs, no_cache)
@@ -663,7 +666,6 @@ pub fn download_vad(no_cache: bool) -> Result<()> {
 /// downloads (#178).
 #[cfg(feature = "tts")]
 pub fn download_tts(no_cache: bool) -> Result<()> {
-    log_mirror_once();
     let cache = cache_dir();
     let mut manifest = kokoro_manifest();
     manifest.extend(vosk_ru_manifest());

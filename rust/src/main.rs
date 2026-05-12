@@ -434,6 +434,11 @@ fn main() -> Result<()> {
             #[cfg(feature = "system_diarize")]
             diarize,
         }) => {
+            // Emit the "Model mirror active" banner once at the start of the
+            // install run, regardless of which subset of models the flags
+            // request. Push-down to `download_*` is more "magic" — each fn
+            // hides a stderr write behind its Ok(()) return.
+            models::init_mirror_logging();
             models::install(no_cache)?;
             #[cfg(feature = "tts")]
             if tts {
