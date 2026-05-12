@@ -1,31 +1,8 @@
 import { defineCommand } from "citty";
 import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
-import { say, SayError, type SayFormat } from "../say";
-
-/**
- * Darwin defaults to AVSpeech Milena — zero install, no model download required.
- * Linux/Windows fall through to Vosk-TTS `ru-vosk-m02` (male, per CLAUDE.md
- * "DEFAULT TTS VOICES MUST BE MALE"; replaces Piper-ruslan as of #213).
- */
-const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
-
-/** Map a detected language code to a default voice id. Unknown / low-confidence → undefined. */
-export function pickVoiceForLang(
-  code: string | undefined,
-  confidence: number,
-  platform: NodeJS.Platform = process.platform,
-): string | undefined {
-  if (!code || confidence < 0.5) return undefined;
-  switch (code) {
-    case "en":
-      return "en-am_michael";
-    case "ru":
-      return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
-    default:
-      return undefined;
-  }
-}
+import { say, SayError, type SayFormat } from "../synth";
+import { pickVoiceForLang } from "../voice-routing";
 
 /** Run NLLanguageRecognizer (via engine) on the text and pick a default voice. */
 async function autoRouteVoice(text: string): Promise<string | undefined> {

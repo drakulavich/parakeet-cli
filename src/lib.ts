@@ -9,7 +9,7 @@ import { downloadEngine } from "./engine-install";
 export type { TranscribeOptions };
 export type { TranscriptionOutput, TranscriptionSegment } from "./engine";
 export { downloadEngine as downloadModel };
-export { say, type SayOptions, SayError } from "./say";
+export { say, type SayOptions, SayError } from "./synth";
 
 /**
  * Encode a `TranscribeResult[]` as TOON (#138). Same data shape as the
