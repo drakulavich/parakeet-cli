@@ -19,6 +19,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
       raycast: ${{ steps.filter.outputs.raycast }}
+      nix: ${{ steps.filter.outputs.nix }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
@@ -43,6 +44,12 @@ jobs:
               - '.github/actions/**'
             raycast:
               - 'raycast/**'
+              - '.github/workflows/ci.yml'
+            nix:
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'rust/**'
+              - 'package.json'
               - '.github/workflows/ci.yml'
 
   unit-tests:
@@ -206,6 +213,40 @@ jobs:
 
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
         run: npm run lint
+
+  # Supplementary check: verify the Nix flake still evaluates and the
+  # engine derivation builds. Catches regressions in `flake.nix` /
+  # naersk / ort-sys env-var wiring before they reach main. Does NOT
+  # replace `build-engine.yml` — distributable release artifacts
+  # continue to go through Github-runner cargo + Swift toolchain pins.
+  #
+  # Currently builds only `.#kesha-engine`. The Bun wrapper package
+  # `.#kesha` uses a fixed-output derivation whose `outputHash` requires
+  # a nix-equipped developer to populate (see flake.nix `keshaNodeModules`
+  # block + #264 plan T5); CI without that hash can't build it.
+  nix-build:
+    needs: changes
+    if: needs.changes.outputs.nix == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: ❄️  Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: 💾 Setup Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: 🔍 Validate flake metadata
+        run: nix flake metadata --no-update-lock-file
+
+      - name: 🦀 Build kesha-engine
+        run: nix build .#kesha-engine --no-update-lock-file -L
+
+      - name: 🚬 Smoke
+        run: ./result/bin/kesha-engine --version
 
   pr-comment:
     if: always() && github.event_name == 'pull_request' && (needs.unit-tests.result == 'success' || needs.integration-tests.result == 'success' || needs.tts-e2e.result == 'success')
