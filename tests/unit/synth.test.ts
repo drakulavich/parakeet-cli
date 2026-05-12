@@ -80,7 +80,11 @@ describe("--no-expand-abbrev (#232)", () => {
     expect(args).toContain("--no-expand-abbrev");
   });
 
-  it("dropped silently when engine lacks the capability", () => {
+  it("dropped from argv with a warning when engine lacks the capability (#275 D3)", () => {
+    // The drop is no longer silent — `buildSayArgs` emits a `log.warn` so
+    // the user notices their flag had no effect. We can't intercept the
+    // colored stderr from bun:test cleanly, so we only assert the argv
+    // shape here; the warn-call is exercised by the e2e tests on stderr.
     const args = buildSayArgs({
       ...baseOpts,
       noExpandAbbrev: true,

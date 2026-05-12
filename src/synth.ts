@@ -65,8 +65,12 @@ export function buildSayArgs(o: SayOptions, capabilities?: EngineCapabilities | 
     if (supportsExpand) {
       args.push("--no-expand-abbrev");
     } else {
-      log.debug(
-        "kesha-engine does not advertise tts.ru_acronym_expansion or tts.en_acronym_expansion; dropping --no-expand-abbrev",
+      // CLAUDE.md "NEVER SWALLOW ERRORS": the user explicitly passed the flag.
+      // Silent drop with only `log.debug` made the flag look effective on old
+      // engines (#275 D3). Surface it as a warning so a CI script or human
+      // user sees the mismatch on every invocation, not only with --debug.
+      log.warn(
+        "--no-expand-abbrev requires kesha-engine ≥ 1.10.0 (advertises no tts.ru_acronym_expansion / tts.en_acronym_expansion capability); flag ignored",
       );
     }
   }
