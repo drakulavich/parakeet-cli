@@ -36,3 +36,33 @@ pub enum Segment {
 /// Default `<break/>` duration when the `time` attribute is omitted.
 /// Matches SSML 1.1's "medium" strength interpretation in most engines.
 pub(super) const DEFAULT_BREAK: Duration = Duration::from_millis(250);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segment_has_spell_variant() {
+        // Ensure the variant exists and is constructible.
+        let s = Segment::Spell("ВОЗ".to_string());
+        match s {
+            Segment::Spell(t) => assert_eq!(t, "ВОЗ"),
+            _ => panic!("expected Segment::Spell"),
+        }
+    }
+
+    #[test]
+    fn segment_has_emphasis_variant() {
+        let s = Segment::Emphasis {
+            content: "д+ома".to_string(),
+            suppress: false,
+        };
+        match s {
+            Segment::Emphasis { content, suppress } => {
+                assert_eq!(content, "д+ома");
+                assert!(!suppress);
+            }
+            _ => panic!("expected Segment::Emphasis"),
+        }
+    }
+}

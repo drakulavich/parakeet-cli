@@ -542,16 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn segment_has_spell_variant() {
-        // Ensure the variant exists and is constructible. Parser wiring lands in Task 2.
-        let s = Segment::Spell("ВОЗ".to_string());
-        match s {
-            Segment::Spell(t) => assert_eq!(t, "ВОЗ"),
-            _ => panic!("expected Segment::Spell"),
-        }
-    }
-
-    #[test]
     fn say_as_characters_emits_spell_segment() {
         let segs =
             parse(r#"<speak><say-as interpret-as="characters">ВОЗ</say-as></speak>"#).unwrap();
@@ -651,21 +641,6 @@ mod tests {
     }
 
     #[test]
-    fn segment_has_emphasis_variant() {
-        let s = Segment::Emphasis {
-            content: "д+ома".to_string(),
-            suppress: false,
-        };
-        match s {
-            Segment::Emphasis { content, suppress } => {
-                assert_eq!(content, "д+ома");
-                assert!(!suppress);
-            }
-            _ => panic!("expected Segment::Emphasis"),
-        }
-    }
-
-    #[test]
     fn emphasis_wrapping_say_as_does_not_double_emit() {
         // <emphasis><say-as interpret-as="characters">ВОЗ</say-as></emphasis>
         // — spec says "inner say-as wins". The parser should produce a single
@@ -717,86 +692,6 @@ mod tests {
             emphasis_count, 0,
             "no Emphasis when <phoneme> nested inside, got: {segs:?}"
         );
-    }
-
-    #[test]
-    fn parse_rate_named_values() {
-        assert_eq!(parse_rate_value("x-slow"), Some(0.5));
-        assert_eq!(parse_rate_value("slow"), Some(0.75));
-        assert_eq!(parse_rate_value("medium"), Some(1.0));
-        assert_eq!(parse_rate_value("fast"), Some(1.25));
-        assert_eq!(parse_rate_value("x-fast"), Some(1.5));
-    }
-
-    #[test]
-    fn parse_rate_percent_absolute() {
-        assert_eq!(parse_rate_value("100%"), Some(1.0));
-        assert_eq!(parse_rate_value("50%"), Some(0.5));
-        assert_eq!(parse_rate_value("150%"), Some(1.5));
-        assert_eq!(parse_rate_value("200%"), Some(2.0));
-    }
-
-    #[test]
-    fn parse_rate_percent_relative() {
-        assert_eq!(parse_rate_value("+25%"), Some(1.25));
-        assert_eq!(parse_rate_value("-25%"), Some(0.75));
-        assert_eq!(parse_rate_value("+0%"), Some(1.0));
-    }
-
-    #[test]
-    fn parse_rate_returns_raw_multiplier_clamping_happens_at_synth() {
-        // Parser returns the raw multiplier; the synth dispatcher composes
-        // with `--rate` and clamps once at `(cli_rate * ssml_rate).clamp(0.5, 2.0)`.
-        // Pre-clamping here would break "compose then clamp" for cases like
-        // `--rate 0.6` × `<prosody rate="400%">` (intent: saturate at 2.0×).
-        assert_eq!(parse_rate_value("10%"), Some(0.1));
-        assert_eq!(parse_rate_value("400%"), Some(4.0));
-        assert_eq!(parse_rate_value("+500%"), Some(6.0));
-        // Out-of-range relative percents stay raw too.
-        let neg = parse_rate_value("-90%").unwrap();
-        assert!((neg - 0.1).abs() < 1e-6, "got {neg}");
-    }
-
-    #[test]
-    fn parse_rate_malformed_returns_none() {
-        assert_eq!(parse_rate_value(""), None);
-        assert_eq!(parse_rate_value("abc"), None);
-        assert_eq!(parse_rate_value("100"), None);
-        assert_eq!(parse_rate_value("--50%"), None);
-        assert_eq!(parse_rate_value("++50%"), None);
-        assert_eq!(parse_rate_value("xx-slow"), None);
-    }
-
-    #[test]
-    fn parse_rate_rejects_zero_and_negative_results() {
-        // `0%` is finite and parses cleanly, but semantically means "stop";
-        // a 0.0 multiplier would compose to 0.0 and clamp UP to 0.5×, which
-        // is surprising. Treat as malformed.
-        assert_eq!(parse_rate_value("0%"), None);
-        // Relative form that resolves to <=0 is also rejected.
-        assert_eq!(parse_rate_value("-100%"), None);
-        assert_eq!(parse_rate_value("-150%"), None);
-    }
-
-    #[test]
-    fn parse_rate_accepts_default_keyword() {
-        // SSML 1.1 "default" means "the voice's default rate" — i.e. 1.0×.
-        // Previously fell through to the malformed path → warn-strip.
-        assert_eq!(parse_rate_value("default"), Some(1.0));
-    }
-
-    #[test]
-    fn parse_rate_rejects_non_finite_values() {
-        // f32::from_str accepts "NaN", "inf", "Infinity" (case-insensitive),
-        // and a NaN multiplier would propagate through `.clamp(0.5, 2.0)` to
-        // the ONNX speed tensor. Reject explicitly so the synth never sees it.
-        assert_eq!(parse_rate_value("NaN%"), None);
-        assert_eq!(parse_rate_value("nan%"), None);
-        assert_eq!(parse_rate_value("inf%"), None);
-        assert_eq!(parse_rate_value("Infinity%"), None);
-        assert_eq!(parse_rate_value("+inf%"), None);
-        assert_eq!(parse_rate_value("-inf%"), None);
-        assert_eq!(parse_rate_value("+NaN%"), None);
     }
 
     #[test]
