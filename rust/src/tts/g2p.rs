@@ -12,7 +12,9 @@ use anyhow::Result;
 /// Only English is supported; everything else errors with a pointer to the
 /// engine-specific G2P (Russian → use a `ru-vosk-*` voice; others → not yet).
 pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
+    let text_chars = text.chars().count();
     if text.trim().is_empty() {
+        crate::dtrace!("g2p::route lang={lang} backend=empty text_chars={text_chars}");
         return Ok(String::new());
     }
     let lower = lang.to_ascii_lowercase();
@@ -25,7 +27,13 @@ pub fn text_to_ipa(text: &str, lang: &str) -> Result<String> {
              Other languages: tracked in #212."
         ),
     };
-    misaki_to_ipa(text, misaki_lang)
+    // #275 D6: log the dispatch branch + char counts so a downstream
+    // `"empty after G2P"` bail has the routing context attached. One
+    // boundary trace, never per-token.
+    crate::dtrace!("g2p::route lang={lang} backend=misaki text_chars={text_chars}");
+    let ipa = misaki_to_ipa(text, misaki_lang)?;
+    crate::dtrace!("g2p::result ipa_chars={}", ipa.chars().count());
+    Ok(ipa)
 }
 
 /// Run misaki-rs and strip the U+200D zero-width joiners it inserts for
