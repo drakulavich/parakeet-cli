@@ -19,6 +19,13 @@ function envDebug(): boolean {
   return !KESHA_DEBUG_OFF_VALUES.has(v.trim().toLowerCase());
 }
 
+/**
+ * Module-load timestamp for relative-since-start prefixes on debug lines.
+ * The CLI runs nothing of substance before this file is imported, so this
+ * is effectively process-start. Recorded once.
+ */
+const PROCESS_T0_MS = performance.now();
+
 export const log = {
   info: (msg: string) => console.log(msg),
   success: (msg: string) => console.log(pc.green(msg)),
@@ -29,7 +36,15 @@ export const log = {
   debugEnabled: false,
   debug(msg: string): void {
     if (this.debugEnabled || envDebug()) {
-      console.error(pc.dim(`[debug] ${msg}`));
+      // `[debug +Nms]` prefix sits on the CLI process's own timeline so
+      // the reader can see when each line fired. The Rust engine emits
+      // the same `+Nms` shape from `rust/src/debug.rs::trace_fmt`, but
+      // anchored to its own process start — the two axes are
+      // independent. For "duration between two events on the same
+      // process", read the prefix difference; for cross-process spans,
+      // the spawn→exit `dt=Nms` inside the message remains authoritative.
+      const t = Math.round(performance.now() - PROCESS_T0_MS);
+      console.error(pc.dim(`[debug +${t}ms] ${msg}`));
     }
   },
 };

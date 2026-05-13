@@ -398,6 +398,10 @@ fn run_say(a: SayArgs) -> i32 {
 }
 
 fn main() -> Result<()> {
+    // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::parse()` so
+    // clap parsing + env probes are counted toward the first `dtrace!`'s
+    // prefix (Greptile P2 on #293). No-op when debug is off.
+    debug::init();
     let cli = Cli::parse();
 
     if cli.capabilities_json {
