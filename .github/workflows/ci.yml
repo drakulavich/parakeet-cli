@@ -18,6 +18,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
+      tts_e2e: ${{ steps.filter.outputs.tts_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
       nix: ${{ steps.filter.outputs.nix }}
     steps:
@@ -28,18 +29,40 @@ jobs:
         uses: dorny/paths-filter@v4
         id: filter
         with:
+          # Filter design (post-#280):
+          # - `code` is the SUPERSET. Anything that should trigger TS unit-tests
+          #   sits here. `integration` is a STRICT SUBSET of `code` so whenever
+          #   `integration-tests` fires, `unit-tests` is guaranteed to fire too
+          #   — the `needs: unit-tests` gate then evaluates predictably without
+          #   the skip-propagation hazard that #274 + the pre-rewrite of #280
+          #   silently fell into.
+          # - `tts_e2e` is its own filter: rust + the TS files that drive the
+          #   say-e2e test. It is INDEPENDENT — no `unit-tests` gate, because a
+          #   rust-only PR (`code == 'false'`) still needs the e2e to run.
           filters: |
             code:
               - 'src/**'
               - 'tests/**'
+              - 'fixtures/**'
               - 'package.json'
               - 'bun.lock'
               - 'tsconfig.json'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
               - 'fixtures/**'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            tts_e2e:
+              - 'src/**'
+              - 'tests/integration/say-e2e.test.ts'
               - 'rust/**'
+              - 'package.json'
+              - 'bun.lock'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             raycast:
@@ -93,14 +116,23 @@ jobs:
           retention-days: 7
 
   integration-tests:
-    needs: changes
     # Skip on release/* branches: this job downloads the released engine
     # binary (the version in `package.json#keshaEngine.version`), which
     # doesn't exist yet on a version-bump PR — the tag is pushed AFTER
     # merge per the CLAUDE.md release flow. All other jobs either build
     # from source (tts-e2e) or test code directly (unit/rust-test), so
     # end-to-end-against-published coverage is the one thing we skip.
-    if: needs.changes.outputs.integration == 'true' && !startsWith(github.head_ref, 'release/')
+    #
+    # Fail-fast: gate on `unit-tests` so a `tsc --noEmit` failure cancels
+    # this 5-10 min lane. Safe because `integration` is a strict subset of
+    # `code` (see filter design above) — when `integration == 'true'`,
+    # `code == 'true'`, so `unit-tests` is never `skipped` here and the
+    # standard `result == 'success'` gate is enough.
+    needs: [changes, unit-tests]
+    if: |
+      needs.changes.outputs.integration == 'true' &&
+      !startsWith(github.head_ref, 'release/') &&
+      needs.unit-tests.result == 'success'
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -137,16 +169,15 @@ jobs:
           retention-days: 7
 
   tts-e2e:
-    # Job-level fail-fast: tts-e2e burns ~15-20 min on `cargo build
-    # --release` + the e2e tests. Gate it on `unit-tests` so a typo
-    # caught by `tsc --noEmit` (10 s into unit-tests) cancels the slow
-    # job instead of running it to completion. `unit-tests` is skipped
-    # for rust-only PRs (code filter false); the explicit
-    # `result == 'skipped'` allowance keeps tts-e2e running in that case.
-    needs: [changes, unit-tests]
-    if: |
-      needs.changes.outputs.integration == 'true' &&
-      (needs.unit-tests.result == 'success' || needs.unit-tests.result == 'skipped')
+    # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
+    # or the say-e2e test itself changes. No `unit-tests` gate: a rust-only
+    # PR has `code == 'false'`, `unit-tests` is skipped, and GitHub Actions
+    # skip-propagation would silently skip a downstream gate even with
+    # `result == 'skipped'` in the `if:` — the latent bug behind #274 that
+    # made rust-only PRs miss tts-e2e coverage for ~a session. Path filter
+    # alone is the contract.
+    needs: changes
+    if: needs.changes.outputs.tts_e2e == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     env:
