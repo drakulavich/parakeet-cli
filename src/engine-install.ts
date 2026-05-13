@@ -77,38 +77,75 @@ const SIDECARS: SidecarSpec[] = [
 ];
 
 /**
- * Re-apply an ad-hoc signature to a freshly-downloaded Mach-O on macOS.
+ * Make a freshly-downloaded Mach-O runnable on macOS 15+ Sequoia.
+ *
  * The release binaries ship `Signature=adhoc` (built via `cargo build`,
  * no Apple Developer ID). When fetched via HTTPS into `~/.cache/...`,
- * macOS attaches a `com.apple.provenance` xattr; combined with stricter
- * Gatekeeper policy on macOS 15+ Sequoia, the resulting "untrusted
- * downloaded ad-hoc binary" is killed with SIGKILL on first invocation
- * (exit 137), with no log line — Gatekeeper denies before Rust's main
- * runs. Re-signing with the user's own host identity (`codesign -s -`)
- * strips the provenance trust mismatch and lets the binary execute.
+ * macOS attaches a `com.apple.provenance` xattr identifying the download
+ * source. Combined with stricter Gatekeeper policy on macOS 15+ Sequoia,
+ * the resulting "untrusted downloaded ad-hoc binary" is killed with
+ * SIGKILL on first invocation (exit 137), with no log line — Gatekeeper
+ * denies before Rust's main runs.
  *
- * Best-effort: if `codesign` is missing from PATH (corporate-locked
- * machine, minimal CI image) we log a warning and continue — the user
- * can re-sign manually, and Linux/Windows paths never hit this code.
+ * Two independent fixes run in sequence; both are best-effort:
+ *
+ * 1. `codesign --force --sign - <path>` — re-applies the ad-hoc
+ *    signature with the user's own host identity, defeating the trust
+ *    mismatch.
+ * 2. `xattr -d com.apple.provenance <path>` — strips the provenance
+ *    marker entirely. Cheaper than codesign and works even when
+ *    `codesign` is absent from PATH (corporate-locked machine, minimal
+ *    CI image).
+ *
+ * Either step alone has unblocked the SIGKILL in field reports, so we
+ * run both. If both fail, surface the manual recovery commands in
+ * stderr. Linux/Windows paths never reach this function.
  */
-function darwinRecodesign(path: string, displayName: string): void {
+function darwinTrustBinary(path: string, displayName: string): void {
   if (process.platform !== "darwin") return;
+  let codesignOk = false;
+  let xattrOk = false;
   try {
     const proc = Bun.spawnSync(["codesign", "--force", "--sign", "-", path], {
       stdout: "pipe",
       stderr: "pipe",
     });
-    if (proc.exitCode !== 0) {
+    codesignOk = proc.exitCode === 0;
+    if (!codesignOk) {
       const stderr = new TextDecoder().decode(proc.stderr).trim();
-      log.warn(
-        `Could not re-sign ${displayName} on macOS (codesign exit ${proc.exitCode}: ${stderr}); ` +
-          `if the binary refuses to run, manually run: codesign --force --sign - ${path}`,
-      );
+      log.debug(`codesign on ${displayName} exited ${proc.exitCode}: ${stderr}`);
     }
   } catch (e) {
+    log.debug(
+      `codesign on ${displayName} threw: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+  try {
+    // `xattr -d` returns exit 1 with "No such xattr" if the attribute is
+    // already absent (e.g. the file was placed via `bun link` instead of
+    // downloaded). That's a success outcome for our purposes — the
+    // attribute we wanted gone is already gone — so treat exit 1 as ok.
+    const proc = Bun.spawnSync(
+      ["xattr", "-d", "com.apple.provenance", path],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const stderr = new TextDecoder().decode(proc.stderr).trim();
+    xattrOk =
+      proc.exitCode === 0 ||
+      (proc.exitCode === 1 && /No such xattr/i.test(stderr));
+    if (!xattrOk) {
+      log.debug(`xattr -d on ${displayName} exited ${proc.exitCode}: ${stderr}`);
+    }
+  } catch (e) {
+    log.debug(
+      `xattr -d on ${displayName} threw: ${e instanceof Error ? e.message : e}`,
+    );
+  }
+  if (!codesignOk && !xattrOk) {
     log.warn(
-      `Could not re-sign ${displayName} on macOS (${e instanceof Error ? e.message : e}); ` +
-        `if the binary refuses to run, manually run: codesign --force --sign - ${path}`,
+      `Could not unblock ${displayName} for macOS Gatekeeper (both codesign ` +
+        `and xattr failed); if the binary refuses to run, manually run: ` +
+        `codesign --force --sign - ${path}  &&  xattr -d com.apple.provenance ${path}`,
     );
   }
 }
@@ -156,7 +193,7 @@ async function downloadSidecar(
   try {
     await streamResponseToFile(res, sidecarPath, spec.displayName);
     chmodSync(sidecarPath, 0o755);
-    darwinRecodesign(sidecarPath, spec.displayName);
+    darwinTrustBinary(sidecarPath, spec.displayName);
     log.success(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
     log.warn(
@@ -290,7 +327,7 @@ export async function downloadEngine(
 
     await streamResponseToFile(res, binPath, "kesha-engine binary");
     chmodSync(binPath, 0o755);
-    darwinRecodesign(binPath, "kesha-engine binary");
+    darwinTrustBinary(binPath, "kesha-engine binary");
     writeInstalledEngineVersion(binPath, engineVersion);
     log.success(`Engine binary downloaded (v${engineVersion}).`);
     await Promise.all(sidecarPromises);
