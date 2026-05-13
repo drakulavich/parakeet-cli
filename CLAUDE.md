@@ -215,12 +215,14 @@ PRs receive automated review from Greptile (as a PR comment on each push). Treat
 
 Both must change to confirm a re-review. `gh pr view <N> --json comments` returns the comment list but its `updatedAt` field is null for issue-comments — fetch via `gh api repos/OWNER/REPO/issues/<N>/comments` for the real timestamp.
 
+**NEVER post `@greptileai review` immediately after opening a PR.** Greptile auto-fires the review on PR open — manual trigger right after `gh pr create` is redundant noise and the only effect is an extra "review queued" comment cluttering the timeline. Just open the PR and let the auto-trigger run. (Reminder posted by drakulavich on #298 after I trigger-spammed.)
+
 **Greptile does NOT reliably auto-re-review subsequent pushes** — the first push fires the bot, but later pushes (fix commits, polish, P2 follow-ups) often go unreviewed. Empirically this session: #287/#288/#292 got auto re-reviews; #291/#293/#294 did not.
 
-**Trigger `@greptileai review` manually when the diff materially changes the review verdict.** Use judgment — not every commit needs a fresh review.
+**Trigger `@greptileai review` manually only when the diff materially changes the review verdict AND auto-trigger missed it.** Use judgment — not every commit needs a fresh review.
 
-- **Trigger** for: code fixes addressing P1/P2 findings, new tests that change coverage of flagged behavior, logic changes after an initial pass, security-relevant edits (workflow inputs, secrets handling), version bumps in a release PR.
-- **Skip** for: comment-only edits, typo fixes, docs prose without behavior change, reverts that undo a previous commit on the same branch, formatting (`cargo fmt`/prettier) without semantic change, README/CLAUDE.md text shuffles.
+- **Trigger** (after a SUBSEQUENT push, not initial PR open) for: code fixes addressing P1/P2 findings, new tests that change coverage of flagged behavior, logic changes after an initial pass, security-relevant edits (workflow inputs, secrets handling), version bumps in a release PR.
+- **Skip** for: initial PR open (always — auto-trigger handles it), comment-only edits, typo fixes, docs prose without behavior change, reverts that undo a previous commit on the same branch, formatting (`cargo fmt`/prettier) without semantic change, README/CLAUDE.md text shuffles.
 
 Command: `gh pr comment <N> --body "@greptileai review"`. Typical re-review latency: 1-5 min after the trigger.
 
