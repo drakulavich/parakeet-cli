@@ -360,6 +360,24 @@ describe("resolveOutputFormat (#300 regression)", () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error).toContain("mutually exclusive");
     });
+
+    test("--format transcript + --json → error (Greptile P2 on #300)", () => {
+      // Pre-fix: wantsTranscript was set but the dispatch checked
+      // wantsJson first → silent JSON output. Now rejected with a
+      // symmetric mutex message.
+      const r = resolveOutputFormat({ json: true, format: "transcript" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error).toContain("--format transcript");
+        expect(r.error).toContain("mutually exclusive");
+      }
+    });
+
+    test("--format transcript + --toon → error", () => {
+      const r = resolveOutputFormat({ toon: true, format: "transcript" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+    });
   });
 
   describe("unknown --format values are rejected", () => {

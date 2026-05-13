@@ -81,6 +81,19 @@ export function resolveOutputFormat(input: {
       error: "--json and --toon are mutually exclusive (pick one output format).",
     };
   }
+  // `--format transcript` + boolean `--json` / `--toon` was previously
+  // accepted and silently produced the boolean's format (because the
+  // dispatch checked wantsJson/wantsToon first). Greptile P2 on #300
+  // flagged the silent override. Fail loudly with the same shape as
+  // the json/toon mutex — symmetric across all three formats.
+  if (wantsTranscript && (wantsJson || wantsToon)) {
+    return {
+      ok: false,
+      error:
+        "--format transcript is mutually exclusive with --json / --toon " +
+        "(pick one output format).",
+    };
+  }
   return { ok: true, wantsJson, wantsToon, wantsTranscript };
 }
 
