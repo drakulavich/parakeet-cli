@@ -43,8 +43,23 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
 /// within ~7% of theoretical at these endpoints; past them quality
 /// degrades. Single source of truth for the clamp range — change here
 /// and the two engine arms in `synth_one_*` pick it up.
+///
+/// Emits a `warn_once` to stderr the first time a clamp diverges from
+/// the raw product — without that line, an SSML `rate="300%"` capped to
+/// `2.0` looks indistinguishable from a clean 2× rate (#267 F9).
 fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
-    (cli_rate * ssml_rate).clamp(0.5, 2.0)
+    let raw = cli_rate * ssml_rate;
+    let clamped = raw.clamp(0.5, 2.0);
+    if (raw - clamped).abs() > f32::EPSILON {
+        crate::tts::warn::warn_once(
+            "compose-rate-clamped",
+            &format!(
+                "rate {raw:.2} (cli={cli_rate:.2} × ssml={ssml_rate:.2}) \
+                 clamped to {clamped:.2} (engine-safe range 0.5..=2.0)"
+            ),
+        );
+    }
+    clamped
 }
 
 /// Synthesize speech and return WAV bytes (mono float32; sample rate depends on engine).
@@ -553,5 +568,20 @@ mod tests {
                 "cli={cli}, ssml={ssml}: got {effective}, expected {expected}"
             );
         }
+    }
+
+    #[test]
+    fn compose_rate_warns_once_on_clamp() {
+        // F9: clamping must surface a stderr warn so a user passing
+        // SSML rate="300%" learns it was capped. Subsequent clamps reuse
+        // the same key — process-wide warn_once dedupes.
+        let _ = super::compose_rate(2.0, 2.0); // 4.0 → 2.0 (clamp high)
+        assert!(
+            crate::tts::warn::was_warned("compose-rate-clamped"),
+            "compose_rate must record the warn key when clamping"
+        );
+        // Idempotent: a second clamp doesn't change set membership.
+        let _ = super::compose_rate(0.1, 0.1); // 0.01 → 0.5 (clamp low)
+        assert!(crate::tts::warn::was_warned("compose-rate-clamped"));
     }
 }

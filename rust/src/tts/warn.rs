@@ -46,6 +46,18 @@ pub fn warn_once(key: &str, msg: &str) {
     }
 }
 
+/// Probe whether `warn_once` has already recorded `key` in this process.
+/// Test-only — the production warn_once path itself doesn't need this.
+/// Honors the test-isolation caveat in the module doc-comment: order
+/// matters across `#[test]` blocks in the same `cargo test --lib` process.
+#[cfg(test)]
+pub(crate) fn was_warned(key: &str) -> bool {
+    warned()
+        .lock()
+        .expect("was_warned: mutex poisoned")
+        .contains(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
