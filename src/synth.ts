@@ -128,6 +128,14 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   ]);
 
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
+
+  // #275 D4: surface engine stderr on the success path so warnings like
+  // `Model mirror active:` and the dtrace lines emitted under
+  // KESHA_DEBUG=1 reach the user. Errors keep their existing path
+  // through `SayError.stderr` so we don't double-print.
+  if (exitCode === 0 && stderrText.length > 0) {
+    process.stderr.write(stderrText.endsWith("\n") ? stderrText : stderrText + "\n");
+  }
   if (exitCode !== 0) {
     throw new SayError(
       stderrText.trim() || `kesha-engine say exited ${exitCode}`,

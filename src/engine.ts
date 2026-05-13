@@ -66,6 +66,15 @@ async function runEngine(args: string[]): Promise<{ stdout: string; stderr: stri
   ]);
 
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
+
+  // #275 D4: surface engine stderr on the success path so warnings like
+  // `hint: audio is 180s`, `Model mirror active:`, and the dtrace lines
+  // emitted under KESHA_DEBUG=1 reach the user. On non-zero exit we leave
+  // the buffer for callers to fold into a thrown Error — otherwise the
+  // user would see the warning AND a duplicate inside the error message.
+  if (exitCode === 0 && stderr.length > 0) {
+    process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
+  }
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
