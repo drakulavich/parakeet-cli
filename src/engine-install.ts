@@ -282,7 +282,7 @@ export async function downloadEngine(
       throw new Error(
         "--diarize is not supported by the installed engine: it was built " +
           "without the 'system_diarize' feature (the Nix build is one such " +
-          "case — see README's Nix Install section).\n" +
+          "case — see docs/nix-install.md).\n" +
           "  Fix: install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, " +
           "which ships the diarize-enabled engine on darwin-arm64.",
       );
