@@ -24,8 +24,9 @@ Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
 
 ```bash
 # Install Bun (skip if already installed) — pick one:
-curl -fsSL https://bun.sh/install | bash       # upstream installer
-brew install oven-sh/bun/bun                   # Homebrew (macOS / Linux)
+curl -fsSL https://bun.sh/install | bash          # Linux & macOS — upstream installer
+brew install oven-sh/bun/bun                      # Linux & macOS — Homebrew
+powershell -c "irm bun.sh/install.ps1 | iex"      # Windows — upstream installer (PowerShell)
 
 bun add -g @drakulavich/kesha-voice-kit
 kesha install       # downloads engine + models
