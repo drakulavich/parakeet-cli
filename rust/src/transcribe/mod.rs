@@ -272,15 +272,27 @@ fn transcribe_via_vad(
     if spans.is_empty() {
         let min_speech_samples =
             (cfg.min_speech_ms as u64 * VAD_SAMPLE_RATE as u64 / 1000) as usize;
+        // #275 D7: surface the input duration + threshold the segmenter
+        // saw when it concluded "no speech". With the prior `vad::detect
+        // segments=0` line, this gives the user enough to tell "the audio
+        // is actually silent" from "the threshold is too aggressive".
+        let total_secs = samples.len() as f32 / VAD_SAMPLE_RATE as f32;
+        dtrace!(
+            "vad::all_silence total_secs={:.1} min_speech_ms={} threshold={:.2}",
+            total_secs,
+            cfg.min_speech_ms,
+            cfg.threshold
+        );
         if samples.len() >= min_speech_samples {
             eprintln!(
                 "warning: VAD produced no speech segments; transcribing full file (consider lowering --vad threshold or skipping --vad)"
             );
         }
         let text = be.transcribe_samples(&samples)?;
-        let end_s = samples.len() as f32 / VAD_SAMPLE_RATE as f32;
+        // Reuse the duration we already computed for the dtrace above
+        // (Greptile follow-up on #282 — was a redundant float divide).
         return Ok(TranscriptionOutput {
-            segments: single_segment(0.0, end_s, &text),
+            segments: single_segment(0.0, total_secs, &text),
             text,
         });
     }

@@ -173,14 +173,24 @@ pub(crate) fn resolve_output_format(
 ) -> Result<tts::OutputFormat, String> {
     use std::str::FromStr;
 
-    let mut chosen = match (format, out) {
-        (Some(f), _) => tts::OutputFormat::from_str(f)?,
-        (None, Some(p)) => p
-            .extension()
-            .and_then(|e| e.to_str())
-            .and_then(tts::encode::format_from_extension)
-            .unwrap_or_default(),
-        (None, None) => tts::OutputFormat::default(),
+    // #275 D10: track which arm of the resolver fired so the dtrace at
+    // the bottom can surface `chosen=… source=…`. Three possible sources:
+    //   "--format"  — explicit flag wins.
+    //   "out-ext"   — sniffed from the `--out` extension.
+    //   "default"   — fallthrough (no flag, no `--out`, or unknown ext).
+    let (mut chosen, source): (tts::OutputFormat, &'static str) = match (format, out) {
+        (Some(f), _) => (tts::OutputFormat::from_str(f)?, "--format"),
+        (None, Some(p)) => {
+            let ext_fmt = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(tts::encode::format_from_extension);
+            match ext_fmt {
+                Some(fmt) => (fmt, "out-ext"),
+                None => (tts::OutputFormat::default(), "default"),
+            }
+        }
+        (None, None) => (tts::OutputFormat::default(), "default"),
     };
 
     if let tts::OutputFormat::OggOpus {
@@ -200,6 +210,7 @@ pub(crate) fn resolve_output_format(
         return Err("--bitrate / --sample-rate only apply to --format ogg-opus".to_string());
     }
 
+    crate::dtrace!("format::resolved chosen={chosen:?} source={source}");
     Ok(chosen)
 }
 
