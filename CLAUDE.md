@@ -219,6 +219,13 @@ Both must change to confirm a re-review. `gh pr view <N> --json comments` return
 
 **Cascade hazard:** if auto-merge fires on CI-green BEFORE Greptile finishes re-reviewing the last push, a P1/P2 found post-merge becomes a follow-up PR. Three-PR chains have happened this session (#287→#288→#289 for F9, #290→#291→#292 was avoided by NOT arming auto-merge). When in doubt: don't arm auto-merge; merge by hand after `Confidence Score: ≥4/5` shows up in the body for the LATEST SHA.
 
+**Always arm a `/loop`-style waiting mechanism when Greptile is the next gate.** Narrating "жду Greptile pass" without setting up an actual wait is dishonest — the check has to happen somewhere. Two-part pattern:
+
+1. `ScheduleWakeup(delaySeconds: 300-900, prompt: "<<autonomous-loop-dynamic>>", reason: "<…>")` — typical Greptile latency is 1-15 min after push or after `@greptileai review` trigger. Pick delay by cache-window: 270s (cache-warm) for short waits, 900s+ once a cache miss is accepted. Avoid the dead zone around 300s.
+2. Optional background `Bash` poll with `run_in_background: true` when the goal is auto-merge on green — `while :; do gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login | contains("greptile"))'; done` — wire auto-merge when `Confidence Score: ≥4/5` AND the body's `commit/SHA` matches the head SHA.
+
+`TaskStop` the background poll if the user says "подожди" (or similar) so it doesn't merge under their feet.
+
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
 Validate flags against `kesha-engine --capabilities-json` instead of forwarding to the engine subprocess. `kesha-engine install` only accepts `--no-cache`.
