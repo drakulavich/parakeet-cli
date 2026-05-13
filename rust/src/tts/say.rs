@@ -53,8 +53,11 @@ fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     // Exact bound check, not `(raw - clamped).abs() > EPSILON`: at raw≈0.5
     // the f32 ULP (~6e-8) is below `EPSILON` (~1.2e-7), so a value one ULP
     // outside the bound would clamp silently (Greptile P2 on #287). NaN
-    // is unordered against any bound → `contains` returns false → no warning,
-    // matching the clamp's own NaN-passthrough behavior.
+    // is unordered against any bound → `contains` returns false → the
+    // warning DOES fire ("rate NaN ... clamped to NaN"). That's
+    // intentional: NaN here means an upstream bug parsed `cli_rate` or
+    // `ssml_rate` as not-a-number, and surfacing it on stderr beats
+    // silently propagating NaN sample-rate params downstream.
     if !(0.5..=2.0).contains(&raw) {
         crate::tts::warn::warn_once(
             "compose-rate-clamped",
