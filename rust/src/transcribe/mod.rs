@@ -289,9 +289,10 @@ fn transcribe_via_vad(
             );
         }
         let text = be.transcribe_samples(&samples)?;
-        let end_s = samples.len() as f32 / VAD_SAMPLE_RATE as f32;
+        // Reuse the duration we already computed for the dtrace above
+        // (Greptile follow-up on #282 — was a redundant float divide).
         return Ok(TranscriptionOutput {
-            segments: single_segment(0.0, end_s, &text),
+            segments: single_segment(0.0, total_secs, &text),
             text,
         });
     }
