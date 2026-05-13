@@ -80,10 +80,12 @@ enum Commands {
         /// Skip the ASR-backend warm-up step at the end of install. On macOS
         /// (CoreML) the warm-up triggers the ~20-30 s Apple Neural Engine
         /// model-compile so the first `kesha audio.ogg` invocation is fast.
+        /// On the ONNX path (Linux/Windows) warm-up is ~500 ms — still worth
+        /// running since it surfaces missing-dep crashes at install time.
         /// Use this flag in scripted installs where the cold-start cost
         /// belongs on the first real run, or to debug install-time issues
         /// without the backend in the loop.
-        #[arg(long = "no-warmup", default_value_t = false)]
+        #[arg(long = "no-warmup")]
         no_warmup: bool,
     },
     /// Synthesize speech from text (TTS)
@@ -496,10 +498,34 @@ fn main() -> Result<()> {
                 let asr_dir = models::model_dir(models::ModelKind::Asr)
                     .to_string_lossy()
                     .into_owned();
-                eprintln!("Warming up ASR backend (one-time, ~20-30 s on macOS)...");
+                // Honest cost estimate per backend so the user knows what
+                // to expect during the pause. CoreML (macOS) pays the ANE
+                // compile (~20-30 s); ONNX (Linux/Windows + macOS without
+                // `coreml` feature) just loads an ORT session (~500 ms).
+                let cost_hint = if cfg!(feature = "coreml") {
+                    "one-time, ~20-30 s for the ANE compile on first install"
+                } else {
+                    "~500 ms for the ORT session init"
+                };
+                eprintln!("Warming up ASR backend ({cost_hint})...");
                 let t = std::time::Instant::now();
-                let _ = backend::create_backend(&asr_dir)?;
-                eprintln!("ASR backend warmed up (dt={}ms).", t.elapsed().as_millis());
+                // Warm-up failures are NON-FATAL (Greptile P1 on #298).
+                // All models are already on disk; the install succeeded
+                // and the user can still run `kesha audio.ogg`. The first
+                // real invocation will pay the cold-start cost we were
+                // trying to hide, but that's strictly no-worse than the
+                // pre-#298 behavior. Surface the cause on stderr so the
+                // user can investigate (typically: ANE permission glitch,
+                // CoreML cache directory unwritable, transient ORT init
+                // hiccup).
+                match backend::create_backend(&asr_dir) {
+                    Ok(_) => eprintln!("ASR backend warmed up (dt={}ms).", t.elapsed().as_millis()),
+                    Err(e) => eprintln!(
+                        "warning: ASR backend warm-up failed ({e}); install \
+                         still complete but the first `kesha audio.ogg` will \
+                         pay the cold-start cost."
+                    ),
+                }
             }
             eprintln!("Install complete.");
         }
