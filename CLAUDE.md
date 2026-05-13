@@ -90,6 +90,22 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
 6. `make smoke-test` locally is still useful but only sees the OLD globally-installed engine — treat it as a sanity check, not a release gate. The gate is step 5.
 7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
+### NPM PUBLISH IS AUTOMATED WITH PROVENANCE ATTESTATION
+
+Post-#291: un-drafting a GitHub release fires `.github/workflows/npm-publish.yml`, which runs `npm publish --provenance --access public` from GHA. No more `npm publish` from the maintainer's laptop in the happy path.
+
+How it works:
+- Trigger: `release: published` event (un-draft an engine tag OR `gh release create v*-cli` without `--draft`). Also `workflow_dispatch` for re-runs.
+- `permissions.id-token: write` unlocks npm provenance — GitHub's OIDC token gets signed by GHA's identity provider and npm verifies against the public sigstore log. The result is a green "verified" badge on the package's npm page and a cryptographic chain from `commit SHA` → `built tarball`.
+- Guards: validates `package.json#version` against the tag (strips leading `v` and trailing `-cli`); idempotent on already-published versions (skips the publish step, exits 0).
+- User-controlled inputs (`inputs.tag`, `github.event.release.tag_name`) flow through `env:` — never directly into `run:` scripts — to avoid shell injection in a job that holds `id-token: write` (would otherwise leak the OIDC token to an attacker-controlled tag).
+
+Required secret: **`NPM_TOKEN`** (granular access token, publish-only scope on `@drakulavich/kesha-voice-kit`). Add via `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. Without it, the workflow runs and the publish step fails with an auth error; the GitHub release stays published, so the manual fallback (`npm publish --access public` from a laptop) still works.
+
+**Implications for the release flow** (already reflected in the engine + CLI-only steps above):
+- Un-drafting is now the **commit-to-publish** point. Validate against the draft assets via `gh release download` (authenticated, works on drafts) BEFORE un-drafting; once un-drafted, the npm publish is permanent (npm allows unpublish only within 72 h, and provenance attestations make a re-publish noisy).
+- If validation fails: delete the GitHub release + tag, bump patch, retry. Since the draft never went public, no npm recall is needed.
+
 ### TAG NAMES ARE ONE-USE
 
 GitHub's immutable-releases permanently reserves tag names after publish. **Broken release → bump patch version, cut new tag.** Never tag "just to test" — use `gh workflow run "🔨 Build Engine" --ref main` instead. Skipping tags is fine (we skipped `v1.0.1`).
@@ -114,6 +130,17 @@ Don't add struct fields, enum variants, or constants "for later." Clippy's `dead
 
 - **Fix, don't suppress:** delete the unused item. Add `#[allow(dead_code)]` only with a justification in the comment.
 - If something needs to exist but isn't wired up yet, wire it up OR leave a `todo!()` call that exercises the variant.
+
+### CLIPPY `needless_update` BLOCKS `..Default::default()` IF ALL FIELDS ARE SPELLED
+
+Tempting "forward-compat" pattern: `MyStruct { a: 1, b: 2, ..Default::default() }` so a future new field doesn't break the call site. Clippy fires `needless_update` when all current fields are already spelled (the `..` is no-op today), and `-D warnings` promotes it to deny. CI red.
+
+The forward-compat is already there for free: Rust requires exhaustive struct init for any struct NOT marked `#[non_exhaustive]`. Adding a new field makes the call site a compile error pointing at the literal, which is exactly the breakage that needs to be surfaced.
+
+- Spell all fields explicitly.
+- Skip `..Default::default()` — the compile error on field addition is the safety.
+- If callers across crate boundaries need forward-compat (e.g. a published lib), mark the struct `#[non_exhaustive]` instead.
+- Past incident: #290 P2 (F5 follow-up) suggested adding `..Default::default()`, clippy blocked it, the comment explaining the trade-off landed instead.
 
 ### ERROR HANDLING
 
@@ -179,8 +206,18 @@ Never comment out the verification to "get it working" — that's the exact regr
 PRs receive automated review from Greptile (as a PR comment on each push). Treat P1/P2 findings as merge blockers — address them before marking the PR ready-for-review.
 
 - Pattern: push → Greptile reviews → fix → push → merge.
-- Past incidents caught this way: `--backend=` forwarded to an engine that didn't accept it (#125 P1); `--rate` silently discarded for Piper voices (#126 P1); hard-coded 22050 Hz assertion that would break on other Piper voices (#126 P2).
+- Past incidents caught this way: `--backend=` forwarded to an engine that didn't accept it (#125 P1); `--rate` silently discarded for Piper voices (#126 P1); hard-coded 22050 Hz assertion that would break on other Piper voices (#126 P2); silent zero-speakers on `transcribe_with_options({with_speakers: true, with_segments: false})` (#290 P1).
 - Exception: findings that are clearly false positives can be dismissed with a PR comment explaining why — but that's rare in practice.
+
+**Greptile UPDATES its existing top-level comment in place — it does NOT post a new one.** To detect a re-review, watch:
+- `body | match("commit/([a-f0-9]+)")` — the "Last reviewed commit" SHA inside the body
+- `.updated_at` on the comment itself
+
+Both must change to confirm a re-review. `gh pr view <N> --json comments` returns the comment list but its `updatedAt` field is null for issue-comments — fetch via `gh api repos/OWNER/REPO/issues/<N>/comments` for the real timestamp.
+
+**`@greptileai review` PR-comment manually triggers re-review** when the auto-trigger missed (e.g., after a force-push, or simply slow). Typical re-review latency: 1-5 min after the trigger comment.
+
+**Cascade hazard:** if auto-merge fires on CI-green BEFORE Greptile finishes re-reviewing the last push, a P1/P2 found post-merge becomes a follow-up PR. Three-PR chains have happened this session (#287→#288→#289 for F9, #290→#291→#292 was avoided by NOT arming auto-merge). When in doubt: don't arm auto-merge; merge by hand after `Confidence Score: ≥4/5` shows up in the body for the LATEST SHA.
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
@@ -202,6 +239,28 @@ The build-engine workflow smoke-tests every binary with `--capabilities-json` be
 Past incident: v1.1.0 shipped engine binaries with only `coreml` or `onnx`, omitting `tts`. `kesha say` was missing from released binaries; users were broken. Fixed in v1.1.3 by adding `coreml,tts` / `onnx,tts` to the matrix.
 
 Check before cutting a release: `diff <(grep 'features = ' .github/workflows/build-engine.yml) <(grep default rust/Cargo.toml)` — make sure every default feature appears in every matrix row.
+
+### WORKFLOW `run:` SHELL INJECTION — ENV-PASSTHROUGH FOR USER-CONTROLLED INPUTS
+
+GHA `${{ inputs.X }}` / `${{ github.event.* }}` expressions are TEMPLATE-SUBSTITUTED into `run:` scripts BEFORE the shell sees them. A value containing `$(cmd)`, `;`, or a newline executes as shell code.
+
+Hazard severity scales with the job's permissions. Anything that holds `id-token: write` (required for npm provenance via `npm-publish.yml`) can leak the OIDC token to attacker-controlled tag values if an injection lands. Same for jobs with write tokens or repo secrets.
+
+**Pattern:** flow every user-controlled expression through an `env:` block first, reference as a normal shell variable.
+
+```yaml
+- name: Resolve tag
+  env:
+    INPUT_TAG: ${{ inputs.tag }}
+    RELEASE_TAG: ${{ github.event.release.tag_name }}
+  run: |
+    # $INPUT_TAG / $RELEASE_TAG are now plain shell vars — injection-safe
+    echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+```
+
+GHA security hardening guide: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable.
+
+Past incident: #291 (npm-publish.yml) initial commit interpolated `${{ inputs.tag }}` directly; Greptile P2 caught it before merge. The job holds `id-token: write` — a malicious tag would have given an attacker the signed npm-publish OIDC token.
 
 ### BINDGEN ON LINUX NEEDS LIBCLANG_PATH
 
@@ -296,6 +355,27 @@ The method exists on upstream `main` but isn't in the published 0.1.0 crate. The
 ### SILERO VAD V5 NEEDS A 64-SAMPLE ROLLING CONTEXT
 
 Silero VAD v5 at 16 kHz wants ONNX `input` of length **576**, not 512: 64 samples of tail from the previous frame + 512 new samples. Missing this produces per-frame probabilities of ~0.0005 regardless of content — the model "runs" without detecting speech. Not in the ONNX metadata; only in upstream's Python `OnnxWrapper`. See `rust/src/vad.rs::frame_probs` for the rolling-context mechanics.
+
+### `f32::clamp` DIVERGENCE: USE BOUND CHECK, NOT `EPSILON`
+
+When detecting whether `f32::clamp(raw, lo, hi)` actually changed the value (e.g. to fire a one-time warning), `(raw - clamped).abs() > f32::EPSILON` is the WRONG tolerance:
+
+- `f32::EPSILON ≈ 1.19e-7` is the ULP at value `1.0`.
+- ULP scales with the magnitude. At raw ≈ 0.5, ULP ≈ 5.96e-8 — **below `EPSILON`**.
+- A value one ULP below `0.5` clamps to `0.5`, but `|raw - clamped|` ≈ 6e-8 doesn't exceed `EPSILON`. The warning silently misses the clamp.
+
+Correct pattern: check the bounds directly.
+```rust
+if !(lo..=hi).contains(&raw) {
+    // raw was outside the range; clamped to a bound
+}
+```
+
+- Idiomatic (clippy prefers `RangeInclusive::contains` over `raw < lo || raw > hi`, lint `manual_range_contains`).
+- NaN-safe: `NaN < x` and `x < NaN` are both false → `contains` returns false → guard does NOT fire on NaN by default. (If you DO want to surface NaN, check `raw.is_nan()` explicitly first.)
+- Symmetric with the `clamp` itself.
+
+Past incidents: #287 → #288 → #289 cascade for F9 (`compose_rate` rate-clamp warning). #287 shipped with `EPSILON`, Greptile P2 caught the ULP gap, #288 fixed via `!(0.5..=2.0).contains(&raw)`, #289 corrected an inverted NaN claim in the accompanying comment.
 
 ### PROMPT-INJECTION PATTERNS — DO NOT EXFILTRATE SECRETS
 
