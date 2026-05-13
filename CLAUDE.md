@@ -354,6 +354,26 @@ Repeat for `kesha-engine-linux-x64` (run via Docker if not on Linux). If ANY of 
 
 The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-undraft gate; it lives in this checklist, not in the workflow file.
 
+### `bun link` DOES NOT OVERRIDE A GLOBALLY-INSTALLED PACKAGE — REMOVE FIRST
+
+`bun link` (in the package root) only **registers** the local checkout under its package name. It does NOT swap an existing `~/.bun/install/global/node_modules/<pkg>/` directory if one is already there (placed by a previous `bun add -g <pkg>`).
+
+Result: the global `kesha` shim keeps running the previously-installed version, not the local checkout. `kesha --version` reports the old number, `kesha install` downloads the OLD engine version embedded in that old `package.json`, and "smoke testing locally" silently exercises the previously-released CLI — a textbook false-green publish gate.
+
+How to spot: `readlink ~/.bun/install/global/node_modules/@drakulavich/kesha-voice-kit`. If it prints nothing (real directory) → the old install wins. If it prints a path back to your checkout → the link wins.
+
+Fix (one-time, then `bun link` works as expected):
+
+```bash
+bun remove -g @drakulavich/kesha-voice-kit   # delete the previously-installed copy
+bun link                                      # re-register from package root
+# verify:
+readlink ~/.bun/install/global/node_modules/@drakulavich/kesha-voice-kit
+# should print: /path/to/your/kesha-voice-kit checkout (absolute path)
+```
+
+Incident this session: I ran `bun link` to test local main, `kesha --version` reported `1.14.0` (looked right because npm-published 1.14.0 happened to match the local checkout). But `kesha install` showed `Upgrading engine v1.14.0 → v1.6.0...` — proving the global shim was the OLD `bun add -g` v1.6.0 install, NOT the local link. `bun remove -g` + `bun link` fixed it.
+
 ### TESTS THAT STAGE A TEMPDIR CACHE MUST STAGE G2P TOO
 
 Post-#123 (v1.4.0), Kokoro + Piper synthesis flows through the ONNX G2P at `$KESHA_CACHE_DIR/models/g2p/byt5-tiny/`. Any test that creates a fresh `KESHA_CACHE_DIR` tempdir and copies in only Kokoro / Piper will fail with `SynthesisFailed("g2p: G2P model not installed")`. Use `models::is_g2p_cached(dir)` + `models::g2p_model_dir()` to gate + copy the ONNX files. Examples: `rust/tests/tts_smoke.rs::resolves_from_cache_when_installed`, `tests/integration/say-e2e.test.ts::beforeAll`.
