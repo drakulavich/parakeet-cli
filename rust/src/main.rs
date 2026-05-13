@@ -77,6 +77,14 @@ enum Commands {
         #[cfg(feature = "system_diarize")]
         #[arg(long)]
         diarize: bool,
+        /// Skip the ASR-backend warm-up step at the end of install. On macOS
+        /// (CoreML) the warm-up triggers the ~20-30 s Apple Neural Engine
+        /// model-compile so the first `kesha audio.ogg` invocation is fast.
+        /// Use this flag in scripted installs where the cold-start cost
+        /// belongs on the first real run, or to debug install-time issues
+        /// without the backend in the loop.
+        #[arg(long = "no-warmup", default_value_t = false)]
+        no_warmup: bool,
     },
     /// Synthesize speech from text (TTS)
     #[cfg(feature = "tts")]
@@ -448,6 +456,7 @@ fn main() -> Result<()> {
             vad,
             #[cfg(feature = "system_diarize")]
             diarize,
+            no_warmup,
         }) => {
             // Emit the "Model mirror active" banner once at the start of the
             // install run, regardless of which subset of models the flags
@@ -468,6 +477,29 @@ fn main() -> Result<()> {
             if diarize {
                 models::download_diarize(no_cache)?;
                 eprintln!("Diarization model installed.");
+            }
+            // ASR backend warm-up: instantiate the backend once so the
+            // expensive cold-start work — Apple Neural Engine model-compile
+            // on CoreML (~20-30 s for Parakeet TDT 0.6B), ORT session init
+            // on the ONNX path (~500 ms) — happens HERE, during the install
+            // step where the user is already waiting on multi-GB downloads.
+            // After this, the first real `kesha audio.ogg` is fast because
+            // the macOS CoreML cache is keyed by (model bytes, signing
+            // identity); the identity is stable across runs of the same
+            // binary, so the warm cache survives until the next
+            // `kesha install` re-signs (#295).
+            //
+            // Drop the backend handle immediately — no need to keep it
+            // alive past install; the warm cache lives in the OS, not in
+            // this process.
+            if !no_warmup {
+                let asr_dir = models::model_dir(models::ModelKind::Asr)
+                    .to_string_lossy()
+                    .into_owned();
+                eprintln!("Warming up ASR backend (one-time, ~20-30 s on macOS)...");
+                let t = std::time::Instant::now();
+                let _ = backend::create_backend(&asr_dir)?;
+                eprintln!("ASR backend warmed up (dt={}ms).", t.elapsed().as_millis());
             }
             eprintln!("Install complete.");
         }
