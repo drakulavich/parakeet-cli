@@ -190,6 +190,19 @@ pub fn transcribe_with_options(
         with_segments: timestamps_required,
         with_speakers: speakers_required,
     } = *opts;
+    // Reject the `{with_speakers: true, with_segments: false}` combination
+    // explicitly. On the plain path `transcribe_plain` returns an empty
+    // `segments` vec when `timestamps_required == false`, and
+    // `diarize::merge_into` would then drop every speaker label silently
+    // (Greptile P1 on #290). Before this guard the combination was
+    // unreachable: the three legacy wrappers always paired the two flags.
+    // Now that `transcribe_with_options` is public, surface the misuse.
+    anyhow::ensure!(
+        !speakers_required || timestamps_required,
+        "TranscribeOptions::with_speakers requires with_segments=true \
+         (speaker labels attach to per-utterance segments; without segments \
+         there is nowhere to put them)"
+    );
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::model_dir(models::ModelKind::Vad)
         .to_string_lossy()
@@ -813,5 +826,25 @@ mod tests {
         assert_eq!(o.mode, VadMode::Auto);
         assert!(!o.with_segments);
         assert!(!o.with_speakers);
+    }
+
+    #[test]
+    fn transcribe_with_options_rejects_speakers_without_segments() {
+        // Greptile P1 on #290: `{with_speakers: true, with_segments: false}`
+        // would silently drop every speaker label on the plain path. The
+        // guard rejects the combination before any model lookup or audio
+        // probe, so a bogus `audio_path` is fine — we never get there.
+        let opts = TranscribeOptions {
+            mode: VadMode::Off,
+            with_segments: false,
+            with_speakers: true,
+        };
+        let err = transcribe_with_options("/dev/null", &opts)
+            .expect_err("speakers-without-segments must error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("with_speakers requires with_segments"),
+            "error message must explain the constraint, got: {msg}"
+        );
     }
 }
