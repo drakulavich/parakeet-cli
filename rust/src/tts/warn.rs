@@ -1,28 +1,34 @@
-//! Per-process warn-once helper for SSML feature gates.
+//! Per-process warn-once helper.
 //!
-//! Engine-agnostic: called from both the Russian-Vosk path and the Kokoro /
-//! Vosk defensive arms in `tts::mod`. Emits a single stderr line when a
-//! non-fatal SSML feature is misused (e.g. `<emphasis>` content without a
-//! `+vowel` marker on a `ru-vosk-*` voice, or `<emphasis>` on a non-Vosk
-//! voice where `+` markers are stripped). Dedup is keyed by a `&'static str`
-//! identifier so all instances of the same warning across `kesha say`
-//! invocations within the same process print only once.
+//! Engine-agnostic: called from the SSML parser (`tts::ssml`), the Russian-
+//! Vosk normalization, and the Kokoro / Vosk defensive arms in `tts::say`.
+//! Emits a single stderr line per `key` per process. Two key shapes are
+//! supported via the relaxed `&str` signature:
+//!
+//! - **Constant keys** (e.g. `WARN_PROSODY_MID_UTTERANCE`) — preferred. The
+//!   set of distinct warnings is bounded; one allocation per process.
+//! - **Dynamic keys** (e.g. `phoneme[alphabet=x-sampa]`, `say-as[interpret-as=cardinal]`,
+//!   `unknown-tag-paragraph`) — used by SSML's open-ended attribute spaces.
+//!   One allocation per *unique* combination across the process lifetime.
+//!
+//! Lock poisoning is treated as fatal — at that point another thread panicked
+//! while holding the lock and the process is in an unrecoverable state.
 
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
-fn warned() -> &'static Mutex<HashSet<&'static str>> {
-    static W: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+fn warned() -> &'static Mutex<HashSet<String>> {
+    static W: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     W.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// Emit `msg` to stderr if `key` has not been warned in this process.
-/// Subsequent calls with the same `key` are silent. Lock poisoning is
-/// treated as fatal — at that point another thread panicked while
-/// holding the lock and the process is in an unrecoverable state.
-pub fn warn_once(key: &'static str, msg: &str) {
+/// Subsequent calls with the same `key` are silent. See module docs for
+/// the constant-vs-dynamic key contract.
+pub fn warn_once(key: &str, msg: &str) {
     let mut set = warned().lock().expect("warn_once: mutex poisoned");
-    if set.insert(key) {
+    if !set.contains(key) {
+        set.insert(key.to_string());
         eprintln!("warning: {msg}");
     }
 }
@@ -51,7 +57,7 @@ mod tests {
         let still_present = warned().lock().unwrap().contains(key);
         assert!(still_present, "key remains in the set across calls");
         // Manual probe: try inserting the key fresh — should report already-there.
-        let probe = warned().lock().unwrap().insert(key);
+        let probe = warned().lock().unwrap().insert(key.to_string());
         assert!(!probe, "key already present after warn_once recorded it");
     }
 

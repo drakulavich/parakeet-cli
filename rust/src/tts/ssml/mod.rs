@@ -20,13 +20,12 @@ mod segment;
 mod walker;
 mod warnings;
 
-use std::collections::HashSet;
-
 use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
 use ssml_parser::parse_ssml;
 
 pub use segment::Segment;
 
+use super::warn::warn_once;
 use rate::{find_relative_rate, has_structural_source_siblings, parse_rate_value};
 use segment::DEFAULT_BREAK;
 use walker::{parse_inner_spans, push_text_slice, span_priority};
@@ -90,7 +89,6 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     });
 
     let mut segments: Vec<Segment> = Vec::new();
-    let mut warned: HashSet<String> = HashSet::new();
     let mut cursor: usize = 0;
 
     for span in &spans {
@@ -140,11 +138,12 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         Some(PhonemeAlphabet::Other(s)) => s.clone(),
                         other => format!("{other:?}"),
                     };
-                    if warned.insert(format!("phoneme[alphabet={alpha}]")) {
-                        eprintln!(
-                            "warning: SSML <phoneme alphabet=\"{alpha}\"> not supported — only \"ipa\" is recognised; falling back to G2P on contained text"
-                        );
-                    }
+                    warn_once(
+                        &format!("phoneme[alphabet={alpha}]"),
+                        &format!(
+                            "SSML <phoneme alphabet=\"{alpha}\"> not supported — only \"ipa\" is recognised; falling back to G2P on contained text"
+                        ),
+                    );
                 }
             }
             ParsedElement::SayAs(attrs) => {
@@ -161,13 +160,13 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                     // Other interpret-as values (cardinal, ordinal, date, telephone, …)
                     // are out of scope for #232. Keep the established warn+strip
                     // behavior; the inner text falls through as a Text segment.
-                    let key = format!("say-as[interpret-as={}]", attrs.interpret_as);
-                    if warned.insert(key) {
-                        eprintln!(
-                            "warning: SSML <say-as interpret-as=\"{}\"> is not supported — only \"characters\" is recognised; falling back to plain text",
+                    warn_once(
+                        &format!("say-as[interpret-as={}]", attrs.interpret_as),
+                        &format!(
+                            "SSML <say-as interpret-as=\"{}\"> is not supported — only \"characters\" is recognised; falling back to plain text",
                             attrs.interpret_as
-                        );
-                    }
+                        ),
+                    );
                 }
             }
             ParsedElement::Emphasis(attrs) => {
@@ -218,8 +217,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         // Recurse: collect the sub-spans that fall within this prosody's
                         // range and parse them as a nested segment list.
                         push_text_slice(&mut segments, &text, cursor, span.start);
-                        let inner_segs =
-                            parse_inner_spans(&spans, &text, span.start, span.end, &mut warned);
+                        let inner_segs = parse_inner_spans(&spans, &text, span.start, span.end);
                         segments.push(Segment::ProsodyRate {
                             rate,
                             content: inner_segs,
@@ -227,30 +225,29 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
                         cursor = span.end;
                     } else {
                         // Whole-utterance but unparseable rate attribute — warn+strip.
-                        if warned.insert(WARN_PROSODY_NO_SUPPORTED_ATTR.to_string()) {
-                            eprintln!(
-                                "warning: SSML <prosody> without a parseable rate= attribute \
-                                 is not supported (pitch/volume scoped to a follow-up); stripping"
-                            );
-                        }
+                        warn_once(
+                            WARN_PROSODY_NO_SUPPORTED_ATTR,
+                            "SSML <prosody> without a parseable rate= attribute \
+                             is not supported (pitch/volume scoped to a follow-up); stripping",
+                        );
                         // Leave cursor unchanged; inner text flows through as Text.
                     }
                 } else {
                     // Mid-utterance prosody — warn+strip.
-                    if warned.insert(WARN_PROSODY_MID_UTTERANCE.to_string()) {
-                        eprintln!(
-                            "warning: SSML <prosody> mid-utterance is not yet supported \
-                             (whole-utterance only); stripping rate, pitch, and volume"
-                        );
-                    }
+                    warn_once(
+                        WARN_PROSODY_MID_UTTERANCE,
+                        "SSML <prosody> mid-utterance is not yet supported \
+                         (whole-utterance only); stripping rate, pitch, and volume",
+                    );
                     // Leave cursor unchanged; inner text falls through as Text.
                 }
             }
             other => {
                 let name = tag_name(other);
-                if warned.insert(name.clone()) {
-                    eprintln!("warning: SSML tag <{name}> is not supported — stripping");
-                }
+                warn_once(
+                    &format!("unknown-tag-{name}"),
+                    &format!("SSML tag <{name}> is not supported — stripping"),
+                );
                 // Preserve the text content; don't touch cursor.
             }
         }

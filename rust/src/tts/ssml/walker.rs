@@ -2,9 +2,9 @@
 //! module so the top-level `parse()` and the recursive whole-utterance
 //! `<prosody>` body share the same emit/skip logic without duplication.
 
-use std::collections::HashSet;
-
 use ssml_parser::elements::{EmphasisLevel, ParsedElement, PhonemeAlphabet};
+
+use crate::tts::warn::warn_once;
 
 use super::segment::{Segment, DEFAULT_BREAK};
 use super::warnings::WARN_PROSODY_NESTED;
@@ -45,15 +45,14 @@ pub(super) fn push_text_slice(out: &mut Vec<Segment>, text: &[char], start: usiz
 /// Parse the inner content of a whole-utterance `<prosody>` span into segments.
 /// Iterates the sub-spans whose character range falls strictly within
 /// `[prosody_start, prosody_end)`, applying the same rules as the top-level
-/// walker (Break, Phoneme, SayAs, Emphasis). Unknown tags warn+strip. The
-/// outer `warned` set is shared so each warning fires at most once per
-/// document regardless of nesting.
+/// walker (Break, Phoneme, SayAs, Emphasis). Unknown tags warn+strip via the
+/// process-wide `warn_once` (#275 D2 — was a per-call `HashSet` before, which
+/// re-fired warnings on every `--stdin-loop` request).
 pub(super) fn parse_inner_spans(
     all_spans: &[&ssml_parser::parser::Span],
     text: &[char],
     prosody_start: usize,
     prosody_end: usize,
-    warned: &mut HashSet<String>,
 ) -> Vec<Segment> {
     let mut segments: Vec<Segment> = Vec::new();
     let mut cursor = prosody_start;
@@ -85,12 +84,11 @@ pub(super) fn parse_inner_spans(
                 // Nested <prosody> inside another <prosody>: not supported in v1.
                 // Inner attributes are dropped; inner content flows at the outer
                 // rate via the trailing push_text_slice plus any leaf spans below.
-                if warned.insert(WARN_PROSODY_NESTED.to_string()) {
-                    eprintln!(
-                        "warning: SSML <prosody> nested inside another <prosody> is not \
-                         supported; inner rate/pitch/volume attributes ignored"
-                    );
-                }
+                warn_once(
+                    WARN_PROSODY_NESTED,
+                    "SSML <prosody> nested inside another <prosody> is not \
+                     supported; inner rate/pitch/volume attributes ignored",
+                );
             }
             ParsedElement::Break(attrs) => {
                 push_text_slice(&mut segments, text, cursor, span.start);
@@ -115,12 +113,13 @@ pub(super) fn parse_inner_spans(
                         Some(PhonemeAlphabet::Other(s)) => s.clone(),
                         other => format!("{other:?}"),
                     };
-                    if warned.insert(format!("phoneme[alphabet={alpha}]")) {
-                        eprintln!(
-                            "warning: SSML <phoneme alphabet=\"{alpha}\"> not supported — \
+                    warn_once(
+                        &format!("phoneme[alphabet={alpha}]"),
+                        &format!(
+                            "SSML <phoneme alphabet=\"{alpha}\"> not supported — \
                              only \"ipa\" is recognised; falling back to G2P on contained text"
-                        );
-                    }
+                        ),
+                    );
                 }
             }
             ParsedElement::SayAs(attrs) => {
@@ -131,14 +130,14 @@ pub(super) fn parse_inner_spans(
                     }
                     cursor = span.end;
                 } else {
-                    let key = format!("say-as[interpret-as={}]", attrs.interpret_as);
-                    if warned.insert(key) {
-                        eprintln!(
-                            "warning: SSML <say-as interpret-as=\"{}\"> is not supported — \
+                    warn_once(
+                        &format!("say-as[interpret-as={}]", attrs.interpret_as),
+                        &format!(
+                            "SSML <say-as interpret-as=\"{}\"> is not supported — \
                              only \"characters\" is recognised; falling back to plain text",
                             attrs.interpret_as
-                        );
-                    }
+                        ),
+                    );
                 }
             }
             ParsedElement::Emphasis(attrs) => {
@@ -151,9 +150,10 @@ pub(super) fn parse_inner_spans(
             }
             other => {
                 let name = tag_name(other);
-                if warned.insert(name.clone()) {
-                    eprintln!("warning: SSML tag <{name}> is not supported — stripping");
-                }
+                warn_once(
+                    &format!("unknown-tag-{name}"),
+                    &format!("SSML tag <{name}> is not supported — stripping"),
+                );
             }
         }
     }
