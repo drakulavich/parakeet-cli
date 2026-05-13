@@ -60,6 +60,15 @@ impl VadMode {
     }
 }
 
+/// `Default` lives with the type it's for. `TranscribeOptions::default()`
+/// uses `Auto` so it matches the historical text-only `transcribe(_, Auto)`
+/// behavior.
+impl Default for VadMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TranscriptionSegment {
     pub start: f32,
@@ -77,6 +86,28 @@ pub struct TranscriptionSegment {
 pub struct TranscriptionOutput {
     pub text: String,
     pub segments: Vec<TranscriptionSegment>,
+}
+
+/// Canonical input shape for [`transcribe_with_options`]. Replaces the
+/// per-feature `(audio_path, mode, …flags)` argument lists that grew with
+/// every release (#267 F5):
+/// - `transcribe(_, mode)` — text only
+/// - `transcribe_output(_, mode)` — adds segments
+/// - `transcribe_output_with_speakers(_, mode)` — adds diarization
+///
+/// New flags should land here as fields, not as a new top-level wrapper.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TranscribeOptions {
+    /// VAD preprocessing selector (Auto / On / Off).
+    pub mode: VadMode,
+    /// Populate `TranscriptionOutput::segments` with per-utterance
+    /// `(start, end, text)` triples. Text-only callers can leave this
+    /// `false` to skip the duration probe on the non-VAD plain path.
+    pub with_segments: bool,
+    /// Run the FluidAudio diarization post-step and label each segment
+    /// with its `speaker` cluster id. Currently darwin-arm64 only;
+    /// `transcribe_with_options` returns an error on other platforms.
+    pub with_speakers: bool,
 }
 
 /// Pure decision function so the auto-trigger rules can be unit-tested
@@ -101,42 +132,83 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
     }
 }
 
+/// Text-only convenience wrapper. Equivalent to
+/// `transcribe_with_options(audio_path, &TranscribeOptions { mode, ..Default::default() })`
+/// followed by `.text`. Kept thin so existing call sites (`main.rs::run_transcribe`)
+/// stay readable.
 pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
-    Ok(transcribe_inner(audio_path, mode, false, false)?.text)
+    let opts = TranscribeOptions {
+        mode,
+        ..Default::default()
+    };
+    Ok(transcribe_with_options(audio_path, &opts)?.text)
 }
 
+/// Segments-included convenience wrapper. See [`TranscribeOptions::with_segments`].
 pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
-    transcribe_inner(audio_path, mode, true, false)
+    let opts = TranscribeOptions {
+        mode,
+        with_segments: true,
+        ..Default::default()
+    };
+    transcribe_with_options(audio_path, &opts)
 }
 
-/// Transcribe `audio_path` with speaker diarization enabled. Returns segments
-/// with `speaker: Some(u32)` populated where the diarization timeline
-/// covered the segment's midpoint. Currently darwin-arm64 only — fails
-/// on other platforms with a #199 tracking-issue link.
+/// Segments + diarization convenience wrapper. See [`TranscribeOptions::with_speakers`].
+/// Currently darwin-arm64 only — fails on other platforms with a #199 tracking-issue link.
 pub fn transcribe_output_with_speakers(
     audio_path: &str,
     mode: VadMode,
 ) -> Result<TranscriptionOutput> {
-    transcribe_inner(audio_path, mode, true, true)
+    // `TranscribeOptions` is not `#[non_exhaustive]`, so Rust enforces
+    // exhaustive struct init at this site: adding a new field to the
+    // struct produces a compile error here pointing at the literal —
+    // which is the same forward-compat safety `..Default::default()`
+    // would give, minus a `needless_update` clippy warning.
+    let opts = TranscribeOptions {
+        mode,
+        with_segments: true,
+        with_speakers: true,
+    };
+    transcribe_with_options(audio_path, &opts)
 }
 
-/// `timestamps_required` gates the non-VAD plain path's call to
-/// `whole_file_segment`. Text-only callers (`pub fn transcribe`) skip it
-/// because `audio::probe_duration_seconds` returns `Ok(None)` for streaming
+/// Canonical transcribe entry. New flags should land in [`TranscribeOptions`]
+/// instead of growing a new top-level wrapper (#267 F5).
+///
+/// `opts.with_segments` gates the non-VAD plain path's call to
+/// `whole_file_segment`. Text-only callers skip it because
+/// `audio::probe_duration_seconds` returns `Ok(None)` for streaming
 /// Ogg/Opus without a frame count, which would turn into a hard error for
 /// inputs that previously transcribed cleanly. The VAD path always builds
 /// segments cheaply (per-span boundaries already in hand from VAD output).
 ///
-/// `speakers_required` triggers the diarization post-step after ASR completes.
+/// `opts.with_speakers` triggers the diarization post-step after ASR completes.
 /// On darwin-arm64 with the `system_diarize` feature it invokes
 /// `diarize::run` + `diarize::merge_into`; on all other platforms it returns
 /// a clear error pointing at #199.
-fn transcribe_inner(
+pub fn transcribe_with_options(
     audio_path: &str,
-    mode: VadMode,
-    timestamps_required: bool,
-    speakers_required: bool,
+    opts: &TranscribeOptions,
 ) -> Result<TranscriptionOutput> {
+    let TranscribeOptions {
+        mode,
+        with_segments: timestamps_required,
+        with_speakers: speakers_required,
+    } = *opts;
+    // Reject the `{with_speakers: true, with_segments: false}` combination
+    // explicitly. On the plain path `transcribe_plain` returns an empty
+    // `segments` vec when `timestamps_required == false`, and
+    // `diarize::merge_into` would then drop every speaker label silently
+    // (Greptile P1 on #290). Before this guard the combination was
+    // unreachable: the three legacy wrappers always paired the two flags.
+    // Now that `transcribe_with_options` is public, surface the misuse.
+    anyhow::ensure!(
+        !speakers_required || timestamps_required,
+        "TranscribeOptions::with_speakers requires with_segments=true \
+         (speaker labels attach to per-utterance segments; without segments \
+         there is nowhere to put them)"
+    );
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::model_dir(models::ModelKind::Vad)
         .to_string_lossy()
@@ -739,6 +811,46 @@ mod tests {
         assert!(
             json.contains("\"speaker\":2"),
             "expected speaker:2 in {json}"
+        );
+    }
+
+    #[test]
+    fn vad_mode_default_is_auto() {
+        // `TranscribeOptions::default()` only matches the legacy text-only
+        // `transcribe(_, VadMode::Auto)` behavior if VadMode's own Default
+        // is Auto. Lock that in.
+        assert_eq!(VadMode::default(), VadMode::Auto);
+    }
+
+    #[test]
+    fn transcribe_options_default_is_text_only_auto() {
+        // The struct's default must match the legacy `transcribe(_, mode)`
+        // text-only path: Auto VAD, no segments, no speakers. Anyone
+        // building options inline can rely on `..Default::default()` for
+        // the unmentioned fields without surprise.
+        let o = TranscribeOptions::default();
+        assert_eq!(o.mode, VadMode::Auto);
+        assert!(!o.with_segments);
+        assert!(!o.with_speakers);
+    }
+
+    #[test]
+    fn transcribe_with_options_rejects_speakers_without_segments() {
+        // Greptile P1 on #290: `{with_speakers: true, with_segments: false}`
+        // would silently drop every speaker label on the plain path. The
+        // guard rejects the combination before any model lookup or audio
+        // probe, so a bogus `audio_path` is fine — we never get there.
+        let opts = TranscribeOptions {
+            mode: VadMode::Off,
+            with_segments: false,
+            with_speakers: true,
+        };
+        let err = transcribe_with_options("/dev/null", &opts)
+            .expect_err("speakers-without-segments must error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("with_speakers requires with_segments"),
+            "error message must explain the constraint, got: {msg}"
         );
     }
 }
