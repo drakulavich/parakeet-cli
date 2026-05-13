@@ -46,12 +46,29 @@ fn enabled() -> bool {
     *CACHE.get_or_init(|| debug_on_for(std::env::var("KESHA_DEBUG").ok().as_deref()))
 }
 
+static T0: OnceLock<Instant> = OnceLock::new();
+
 /// Engine-side process-start timestamp for the relative-ms prefix on
-/// debug lines. Initialised on first call. NOT the same axis as the TS
-/// side's `PROCESS_T0_MS` — each process logs against its own start.
+/// debug lines. Anchored by [`init`] at the top of `main()` so early
+/// startup work (clap parsing, model-cache stat, env probes) shows up
+/// in the `+Nms` prefix instead of being collapsed into "+0ms" on the
+/// first `dtrace!` call (Greptile P2 on #293). NOT the same axis as
+/// the TS side's `PROCESS_T0_MS` — each process logs against its own
+/// start.
 fn engine_t0() -> Instant {
-    static T0: OnceLock<Instant> = OnceLock::new();
     *T0.get_or_init(Instant::now)
+}
+
+/// Anchor the relative-ms timeline as early as possible in process life.
+/// Idempotent — first call wins; later calls are a no-op (the
+/// `OnceLock::get_or_init` semantic). Safe to call even when
+/// `KESHA_DEBUG` is off; the only cost is one atomic `OnceLock` load.
+///
+/// Call this AS THE FIRST line of `main()` so the timeline starts before
+/// `Cli::parse()` and any pre-dispatch work. Without it, the first
+/// `dtrace!` call anchors T0 and earlier work is invisible.
+pub fn init() {
+    let _ = engine_t0();
 }
 
 /// Emit a stderr trace line when `KESHA_DEBUG` is on. Accepts `format_args!`

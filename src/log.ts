@@ -36,11 +36,13 @@ export const log = {
   debugEnabled: false,
   debug(msg: string): void {
     if (this.debugEnabled || envDebug()) {
-      // `[debug +Nms]` prefix sits on a single process timeline so the
-      // reader can see when each line fired, not just the per-span
-      // `dt=Nms` inside individual messages. Mirrored in
-      // `rust/src/debug.rs::trace_fmt` so engine traces share the
-      // same axis (within ~10ms — engine startup vs CLI startup).
+      // `[debug +Nms]` prefix sits on the CLI process's own timeline so
+      // the reader can see when each line fired. The Rust engine emits
+      // the same `+Nms` shape from `rust/src/debug.rs::trace_fmt`, but
+      // anchored to its own process start — the two axes are
+      // independent. For "duration between two events on the same
+      // process", read the prefix difference; for cross-process spans,
+      // the spawn→exit `dt=Nms` inside the message remains authoritative.
       const t = Math.round(performance.now() - PROCESS_T0_MS);
       console.error(pc.dim(`[debug +${t}ms] ${msg}`));
     }
