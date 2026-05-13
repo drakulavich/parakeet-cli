@@ -215,9 +215,14 @@ PRs receive automated review from Greptile (as a PR comment on each push). Treat
 
 Both must change to confirm a re-review. `gh pr view <N> --json comments` returns the comment list but its `updatedAt` field is null for issue-comments — fetch via `gh api repos/OWNER/REPO/issues/<N>/comments` for the real timestamp.
 
-**Greptile does NOT reliably auto-re-review subsequent pushes** — the first push fires the bot, but later pushes (fix commits, polish, P2 follow-ups) often go unreviewed. Empirically this session: #287/#288/#292 got auto re-reviews; #291/#293/#294 did not. Treat manual triggering as the default workflow, not the exception.
+**Greptile does NOT reliably auto-re-review subsequent pushes** — the first push fires the bot, but later pushes (fix commits, polish, P2 follow-ups) often go unreviewed. Empirically this session: #287/#288/#292 got auto re-reviews; #291/#293/#294 did not.
 
-**After every push to an open PR that has had Greptile attention, post `@greptileai review` as a PR comment.** `gh pr comment <N> --body "@greptileai review"`. Typical re-review latency: 1-5 min after the trigger.
+**Trigger `@greptileai review` manually when the diff materially changes the review verdict.** Use judgment — not every commit needs a fresh review.
+
+- **Trigger** for: code fixes addressing P1/P2 findings, new tests that change coverage of flagged behavior, logic changes after an initial pass, security-relevant edits (workflow inputs, secrets handling), version bumps in a release PR.
+- **Skip** for: comment-only edits, typo fixes, docs prose without behavior change, reverts that undo a previous commit on the same branch, formatting (`cargo fmt`/prettier) without semantic change, README/CLAUDE.md text shuffles.
+
+Command: `gh pr comment <N> --body "@greptileai review"`. Typical re-review latency: 1-5 min after the trigger.
 
 **Cascade hazard:** if auto-merge fires on CI-green BEFORE Greptile finishes re-reviewing the last push, a P1/P2 found post-merge becomes a follow-up PR. Three-PR chains have happened this session (#287→#288→#289 for F9, #290→#291→#292 was avoided by NOT arming auto-merge). When in doubt: don't arm auto-merge; merge by hand after `Confidence Score: ≥4/5` shows up in the body for the LATEST SHA.
 
