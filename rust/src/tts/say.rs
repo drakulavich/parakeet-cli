@@ -10,6 +10,7 @@
 
 use std::borrow::Cow;
 use std::path::Path;
+use std::time::Instant;
 
 use super::encode::OutputFormat;
 use super::{
@@ -317,10 +318,28 @@ fn say_with_kokoro(
 ) -> Result<Vec<u8>, TtsError> {
     let mut sess = sessions::KokoroSession::load(model_path)
         .map_err(|e| TtsError::SynthesisFailed(e.to_string()))?;
+    // #275 D1: boundary trace so a "no recognizable phonemes in input"
+    // bail carries inputs (IPA length + voice file) and outputs (sample
+    // count + wall time) instead of pointing at nothing.
+    let ipa_len = ipa.chars().count();
+    crate::dtrace!(
+        "kokoro::infer.start ipa_len={ipa_len} voice={}",
+        voice_path.display()
+    );
+    let t = Instant::now();
     let audio = sess
         .infer_ipa(ipa, voice_path, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+    crate::dtrace!(
+        "kokoro::infer.end samples={} dt={}ms",
+        audio.len(),
+        t.elapsed().as_millis()
+    );
     if audio.is_empty() {
+        crate::dtrace!(
+            "kokoro::infer.empty ipa_first_20={:?}",
+            ipa.chars().take(20).collect::<String>()
+        );
         return Err(TtsError::SynthesisFailed(
             "no recognizable phonemes in input".into(),
         ));
