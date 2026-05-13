@@ -22,12 +22,22 @@
 
 Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
 
-```bash
-# Install Bun (skip if already installed) — pick one:
-curl -fsSL https://bun.sh/install | bash          # Linux & macOS — upstream installer
-brew install oven-sh/bun/bun                      # Linux & macOS — Homebrew
-powershell -c "irm bun.sh/install.ps1 | iex"      # Windows — upstream installer (PowerShell)
+Install Bun (skip if already installed) — pick one:
 
+```bash
+# Linux & macOS
+curl -fsSL https://bun.sh/install | bash       # upstream installer
+brew install oven-sh/bun/bun                   # Homebrew
+```
+
+```powershell
+# Windows
+powershell -c "irm bun.sh/install.ps1 | iex"
+```
+
+Then install Kesha:
+
+```bash
 bun add -g @drakulavich/kesha-voice-kit
 kesha install       # downloads engine + models
 kesha audio.ogg     # transcript to stdout
@@ -37,7 +47,14 @@ Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-m
 
 ## Nix Install
 
-Alternative reproducible-build path on `aarch64-darwin` / `x86_64-linux`: `nix run github:drakulavich/kesha-voice-kit -- audio.ogg`. Full recipes (one-liner, profile install, engine-only, dev shell) live in [docs/nix-install.md](docs/nix-install.md).
+Alternative reproducible-build path on `aarch64-darwin` / `x86_64-linux`:
+
+```bash
+nix run github:drakulavich/kesha-voice-kit -- install      # downloads models (engine is bundled)
+nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe
+```
+
+Full recipes (one-liner, profile install, engine-only, dev shell) live in [docs/nix-install.md](docs/nix-install.md).
 
 ## Speech-to-text
 
