@@ -60,6 +60,12 @@ jobs:
               - 'package.json'
               - 'bun.lock'
               - 'tsconfig.json'
+              # `rust/Cargo.toml` is in the SUPERSET filter so the
+              # version-drift check (#267 F16) always fires on a
+              # Cargo-only version bump PR. Without it, `unit-tests`
+              # skipped entirely and the drift merged undetected
+              # (Greptile P1 on #315).
+              - 'rust/Cargo.toml'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
             integration:
