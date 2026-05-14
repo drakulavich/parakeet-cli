@@ -7,7 +7,13 @@ export { installCommand } from "./cli/install";
 export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
 export { statusCommand } from "./cli/status";
-export { mainCommand, detectLanguage, checkLanguageMismatch } from "./cli/main";
+export {
+  mainCommand,
+  detectLanguage,
+  checkLanguageMismatch,
+  resolveOutputFormat,
+} from "./cli/main";
+export type { ResolvedOutputFormat } from "./cli/main";
 export { runCli } from "./cli/dispatch";
 
 export type { TranscribeResult } from "./types";

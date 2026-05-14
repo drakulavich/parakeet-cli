@@ -34,6 +34,69 @@ export function detectLanguage(text: string): string {
   return detect(text);
 }
 
+/**
+ * Pure validation + normalization of the output-format selection. Pulled
+ * out of the citty `run` handler so the contract is unit-testable without
+ * spawning the CLI binary; the handler just owns the side effects
+ * (log.error + process.exit) when this returns `{ ok: false }`.
+ *
+ * Inputs accept the three knobs the user can flip:
+ * - `--json` (boolean) — long-form alias for `--format json`
+ * - `--toon` (boolean) — long-form alias for `--format toon`
+ * - `--format <value>` — must be one of `transcript`, `json`, `toon`
+ *
+ * Mutex: `--json` and `--toon` cannot both be requested. Either via the
+ * booleans or `--format` cross-pollination (`--json --format toon` →
+ * error). The mutex check happens AFTER format validation, so unknown
+ * `--format` still surfaces with its own clearer error first.
+ */
+export type ResolvedOutputFormat =
+  | {
+      ok: true;
+      wantsJson: boolean;
+      wantsToon: boolean;
+      wantsTranscript: boolean;
+    }
+  | { ok: false; error: string };
+
+const SUPPORTED_FORMATS = ["transcript", "json", "toon"] as const;
+
+export function resolveOutputFormat(input: {
+  json?: boolean;
+  toon?: boolean;
+  format?: string;
+}): ResolvedOutputFormat {
+  if (input.format !== undefined && !SUPPORTED_FORMATS.includes(input.format as never)) {
+    return {
+      ok: false,
+      error: `unknown --format '${input.format}'. supported: ${SUPPORTED_FORMATS.join(", ")}`,
+    };
+  }
+  const wantsJson = !!input.json || input.format === "json";
+  const wantsToon = !!input.toon || input.format === "toon";
+  const wantsTranscript = input.format === "transcript";
+  if (wantsJson && wantsToon) {
+    return {
+      ok: false,
+      error: "--json and --toon are mutually exclusive (pick one output format).",
+    };
+  }
+  // `--format transcript` + boolean `--json` / `--toon` was previously
+  // accepted and silently produced the boolean's format (because the
+  // dispatch checked wantsJson/wantsToon first). Greptile P2 on #300
+  // flagged the silent override. Fail loudly with the same shape as
+  // the json/toon mutex — symmetric across all three formats.
+  if (wantsTranscript && (wantsJson || wantsToon)) {
+    return {
+      ok: false,
+      error:
+        "--format transcript is mutually exclusive with --json / --toon " +
+        "(pick one output format).",
+    };
+  }
+  return { ok: true, wantsJson, wantsToon, wantsTranscript };
+}
+
 export function checkLanguageMismatch(expected: string | undefined, detected: string): string | null {
   if (!expected || !detected || expected === detected) return null;
   return `warning: expected language "${expected}" but detected "${detected}"`;
@@ -76,7 +139,7 @@ export const mainCommand = defineCommand({
     },
     format: {
       type: "string",
-      description: "Output format: transcript (enriched text with lang/confidence)",
+      description: "Output format: transcript | json | toon (long-form alias for --json / --toon)",
     },
     lang: {
       type: "string",
@@ -102,21 +165,32 @@ export const mainCommand = defineCommand({
     if (args.debug) log.debugEnabled = true;
     const files = args._;
 
-    if ((args.json || args.format === "json") && args.toon) {
-      log.error("--json and --toon are mutually exclusive (pick one output format).");
+    // Validate `--format <value>` and normalize into the boolean flags
+    // that the rest of this handler consults. Routing happens in
+    // `resolveOutputFormat` so the contract is unit-testable without
+    // spawning the CLI; the handler just owns the side-effect arms
+    // (log.error + process.exit).
+    const fmt = resolveOutputFormat({
+      json: args.json,
+      toon: args.toon,
+      format: args.format,
+    });
+    if (!fmt.ok) {
+      log.error(fmt.error);
       process.exit(2);
     }
+    const { wantsJson, wantsToon, wantsTranscript } = fmt;
 
     if (args.vad && args["no-vad"]) {
       log.error("--vad and --no-vad are mutually exclusive.");
       process.exit(2);
     }
-    if (args.timestamps && !(args.json || args.toon || args.format === "json")) {
-      log.error("--timestamps requires --json, --toon, or --format json.");
+    if (args.timestamps && !(wantsJson || wantsToon)) {
+      log.error("--timestamps requires --json, --toon, or --format {json,toon}.");
       process.exit(2);
     }
-    if (args.speakers && !(args.json || args.toon || args.format === "json")) {
-      log.error("--speakers requires --json, --toon, or --format json.");
+    if (args.speakers && !(wantsJson || wantsToon)) {
+      log.error("--speakers requires --json, --toon, or --format {json,toon}.");
       process.exit(2);
     }
     const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
@@ -129,7 +203,7 @@ export const mainCommand = defineCommand({
     let hasError = false;
     const results: TranscribeResult[] = [];
 
-    const wantsLangId = !!(args.lang || args.verbose || args.json || args.toon || args.format === "transcript" || args.format === "json");
+    const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
 
     for (const file of files) {
       const startedAt = performance.now();
@@ -185,11 +259,11 @@ export const mainCommand = defineCommand({
       }
     }
 
-    if (args.json || args.format === "json") {
+    if (wantsJson) {
       process.stdout.write(formatJsonOutput(results));
-    } else if (args.toon) {
+    } else if (wantsToon) {
       process.stdout.write(formatToonOutput(results));
-    } else if (args.format === "transcript") {
+    } else if (wantsTranscript) {
       process.stdout.write(formatTranscriptOutput(results));
     } else if (args.verbose) {
       process.stdout.write(formatVerboseOutput(results));

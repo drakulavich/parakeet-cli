@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch } from "../../src/cli";
+import { mainCommand, installCommand, statusCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -272,5 +272,150 @@ describe("JSON output with lang-id fields", () => {
     const parsed = JSON.parse(formatJsonOutput(results));
     expect(parsed[0].audioLanguage).toBeUndefined();
     expect(parsed[0].lang).toBe("en");
+  });
+});
+
+describe("resolveOutputFormat (#300 regression)", () => {
+  // Pre-#300 bug: `--format toon` set args.format to the string but the
+  // dispatch only checked the boolean args.toon flag, so output silently
+  // fell through to plain text. Same class hit unknown --format values
+  // and any cross-form mutex (e.g. --json --format toon). These tests
+  // lock in the contract behind `resolveOutputFormat`.
+
+  describe("boolean flags route to their format", () => {
+    test("--json sets wantsJson", () => {
+      const r = resolveOutputFormat({ json: true });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.wantsJson).toBe(true);
+        expect(r.wantsToon).toBe(false);
+        expect(r.wantsTranscript).toBe(false);
+      }
+    });
+
+    test("--toon sets wantsToon", () => {
+      const r = resolveOutputFormat({ toon: true });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.wantsToon).toBe(true);
+        expect(r.wantsJson).toBe(false);
+        expect(r.wantsTranscript).toBe(false);
+      }
+    });
+
+    test("no flags → all false (default plain-text)", () => {
+      const r = resolveOutputFormat({});
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.wantsJson).toBe(false);
+        expect(r.wantsToon).toBe(false);
+        expect(r.wantsTranscript).toBe(false);
+      }
+    });
+  });
+
+  describe("--format string is an alias for the boolean", () => {
+    test("--format json", () => {
+      const r = resolveOutputFormat({ format: "json" });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.wantsJson).toBe(true);
+    });
+
+    test("--format toon (the bug fixed in #300)", () => {
+      const r = resolveOutputFormat({ format: "toon" });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.wantsToon).toBe(true);
+        expect(r.wantsJson).toBe(false);
+        expect(r.wantsTranscript).toBe(false);
+      }
+    });
+
+    test("--format transcript", () => {
+      const r = resolveOutputFormat({ format: "transcript" });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.wantsTranscript).toBe(true);
+        expect(r.wantsJson).toBe(false);
+        expect(r.wantsToon).toBe(false);
+      }
+    });
+  });
+
+  describe("mutex: --json + --toon are exclusive", () => {
+    test("both booleans → error", () => {
+      const r = resolveOutputFormat({ json: true, toon: true });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+    });
+
+    test("boolean --json + --format toon → error (cross-form)", () => {
+      const r = resolveOutputFormat({ json: true, format: "toon" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+    });
+
+    test("boolean --toon + --format json → error (cross-form)", () => {
+      const r = resolveOutputFormat({ toon: true, format: "json" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+    });
+
+    test("--format transcript + --json → error (Greptile P2 on #300)", () => {
+      // Pre-fix: wantsTranscript was set but the dispatch checked
+      // wantsJson first → silent JSON output. Now rejected with a
+      // symmetric mutex message.
+      const r = resolveOutputFormat({ json: true, format: "transcript" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error).toContain("--format transcript");
+        expect(r.error).toContain("mutually exclusive");
+      }
+    });
+
+    test("--format transcript + --toon → error", () => {
+      const r = resolveOutputFormat({ toon: true, format: "transcript" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+    });
+  });
+
+  describe("unknown --format values are rejected", () => {
+    test("--format gibberish → error", () => {
+      const r = resolveOutputFormat({ format: "gibberish" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error).toContain("unknown --format 'gibberish'");
+        expect(r.error).toContain("supported: transcript, json, toon");
+      }
+    });
+
+    test("--format \"\" → error (empty string is not a valid value)", () => {
+      const r = resolveOutputFormat({ format: "" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("unknown --format");
+    });
+
+    test("unknown format wins over mutex (clearer error first)", () => {
+      // --json + --format gibberish: report the unknown format,
+      // not the mutex — the user can't fix mutex until format is valid.
+      const r = resolveOutputFormat({ json: true, format: "gibberish" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toContain("unknown --format");
+    });
+  });
+
+  describe("boolean + --format same value is harmless (idempotent)", () => {
+    test("--json --format json → wantsJson true, no mutex", () => {
+      const r = resolveOutputFormat({ json: true, format: "json" });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.wantsJson).toBe(true);
+    });
+
+    test("--toon --format toon → wantsToon true, no mutex", () => {
+      const r = resolveOutputFormat({ toon: true, format: "toon" });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.wantsToon).toBe(true);
+    });
   });
 });
