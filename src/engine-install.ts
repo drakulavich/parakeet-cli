@@ -74,6 +74,20 @@ const SIDECARS: SidecarSpec[] = [
     availableHint: "--speakers available",
     unavailableHint: "--speakers unavailable",
   },
+  {
+    // Runtime resolver looks for plain `kesha-textlang` next to the engine
+    // (see `rust/src/text_lang.rs::helper_path`), not the platform-suffixed
+    // release-asset name. Mismatch is intentional: the asset name needs the
+    // suffix for GitHub-release uniqueness; the sidecar lookup wants the
+    // unsuffixed binary so the same Rust code path works on the build-time
+    // OUT_DIR baked fallback.
+    fileBasename: "kesha-textlang",
+    assetName: "kesha-textlang-darwin-arm64",
+    displayName: "Text-lang sidecar",
+    availableHint: "detect-text-lang fast path",
+    unavailableHint:
+      "detect-text-lang will fail until next `kesha install` (no swift -e fallback)",
+  },
 ];
 
 /**
