@@ -340,21 +340,29 @@ fn emphasis_marker_shifts_stress() {
     );
 }
 
-/// Issue #237 — verify that `warn_once("emphasis-no-plus", ...)` is
-/// deduplicated across multiple SSML calls within the same engine process.
-/// The stdin-loop daemon shares one Vosk session AND one warn-once HashSet,
-/// so multiple bad inputs must produce ONE stderr line, not N.
+/// Issue #237, updated by #267 F15 / #311 — verify that
+/// `warn_once("emphasis-no-plus", ...)` fires ONCE PER REQUEST in the
+/// stdin-loop daemon. The original #237 spec was "one stderr line total
+/// across all calls" because the warn-once HashSet was process-scoped;
+/// that turned out to silently swallow the second + third occurrence of
+/// the same bug, which is the opposite of what the user wants when they
+/// keep sending bad SSML over a long-lived `--stdin-loop` session
+/// (#311). The fix in `say_loop::handle` calls `tts::warn::reset` at
+/// the top of each request, so each call gets a fresh dedup scope.
 #[test]
-fn emphasis_warn_once_dedups_across_calls() {
+fn emphasis_warn_fires_per_request_in_stdin_loop() {
     let mut eng = match LoopEngine::spawn() {
         Some(e) => e,
         None => {
-            eprintln!("skipping emphasis_warn_once_dedups_across_calls: vosk-ru models not staged");
+            eprintln!(
+                "skipping emphasis_warn_fires_per_request_in_stdin_loop: vosk-ru models not staged"
+            );
             return;
         }
     };
 
-    // Three calls without `+` markers — should fire warn_once exactly once.
+    // Three calls without `+` markers — each call resets the warn scope,
+    // so the warning should fire three times (once per request).
     let _ = eng.synth(r#"<speak><emphasis>обычно</emphasis></speak>"#, true, false);
     let _ = eng.synth(
         r#"<speak><emphasis>другое слово</emphasis></speak>"#,
@@ -377,7 +385,7 @@ fn emphasis_warn_once_dedups_across_calls() {
         .count();
 
     assert_eq!(
-        warn_count, 1,
-        "expected exactly one emphasis-no-plus warning across 3 calls, got {warn_count}.\nstderr:\n{stderr}"
+        warn_count, 3,
+        "expected one emphasis-no-plus warning PER request (3 total across 3 calls), got {warn_count}.\nstderr:\n{stderr}"
     );
 }

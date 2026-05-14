@@ -167,6 +167,12 @@ pub fn run() -> i32 {
 }
 
 fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
+    // Reset the per-process warn-once scope so each request gets a fresh
+    // dedup baseline. Without this, a long-lived `--stdin-loop` process
+    // would silently swallow the second occurrence of any warning that
+    // had already fired earlier in its lifetime (#267 F15 / #311).
+    tts::warn::reset();
+
     // Apply the same input guards as one-shot tts::say(): empty + length cap.
     if req.text.is_empty() {
         return Err("text is empty".into());
