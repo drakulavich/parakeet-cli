@@ -88,12 +88,9 @@ pub struct TranscriptionOutput {
     pub segments: Vec<TranscriptionSegment>,
 }
 
-/// Canonical input shape for [`transcribe_with_options`]. Replaces the
-/// per-feature `(audio_path, mode, …flags)` argument lists that grew with
-/// every release (#267 F5):
-/// - `transcribe(_, mode)` — text only
-/// - `transcribe_output(_, mode)` — adds segments
-/// - `transcribe_output_with_speakers(_, mode)` — adds diarization
+/// Canonical input shape for [`transcribe_with_options`]. Replaced three
+/// per-feature top-level wrappers (`transcribe` / `transcribe_output` /
+/// `transcribe_output_with_speakers`) that grew with each new flag (#267 F5).
 ///
 /// New flags should land here as fields, not as a new top-level wrapper.
 #[derive(Debug, Clone, Copy, Default)]
@@ -132,49 +129,8 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
     }
 }
 
-/// Text-only convenience wrapper. Equivalent to
-/// `transcribe_with_options(audio_path, &TranscribeOptions { mode, ..Default::default() })`
-/// followed by `.text`. Kept thin so existing call sites (`main.rs::run_transcribe`)
-/// stay readable.
-pub fn transcribe(audio_path: &str, mode: VadMode) -> Result<String> {
-    let opts = TranscribeOptions {
-        mode,
-        ..Default::default()
-    };
-    Ok(transcribe_with_options(audio_path, &opts)?.text)
-}
-
-/// Segments-included convenience wrapper. See [`TranscribeOptions::with_segments`].
-pub fn transcribe_output(audio_path: &str, mode: VadMode) -> Result<TranscriptionOutput> {
-    let opts = TranscribeOptions {
-        mode,
-        with_segments: true,
-        ..Default::default()
-    };
-    transcribe_with_options(audio_path, &opts)
-}
-
-/// Segments + diarization convenience wrapper. See [`TranscribeOptions::with_speakers`].
-/// Currently darwin-arm64 only — fails on other platforms with a #199 tracking-issue link.
-pub fn transcribe_output_with_speakers(
-    audio_path: &str,
-    mode: VadMode,
-) -> Result<TranscriptionOutput> {
-    // `TranscribeOptions` is not `#[non_exhaustive]`, so Rust enforces
-    // exhaustive struct init at this site: adding a new field to the
-    // struct produces a compile error here pointing at the literal —
-    // which is the same forward-compat safety `..Default::default()`
-    // would give, minus a `needless_update` clippy warning.
-    let opts = TranscribeOptions {
-        mode,
-        with_segments: true,
-        with_speakers: true,
-    };
-    transcribe_with_options(audio_path, &opts)
-}
-
 /// Canonical transcribe entry. New flags should land in [`TranscribeOptions`]
-/// instead of growing a new top-level wrapper (#267 F5).
+/// instead of growing a new top-level wrapper.
 ///
 /// `opts.with_segments` gates the non-VAD plain path's call to
 /// `whole_file_segment`. Text-only callers skip it because
@@ -290,13 +246,14 @@ fn transcribe_plain(
         t1.elapsed().as_millis(),
         text.chars().count()
     );
-    // Skip the duration probe for text-only callers. Streaming Ogg/Opus
-    // (and a few other format edge cases) return `Ok(None)` from
-    // `probe_duration_seconds`, which `whole_file_segment` turns into a
-    // hard error — surfacing it for callers that don't even need segments
-    // would be a regression vs pre-#248 behavior.
-    let segments = if timestamps_required {
-        whole_file_segment(audio_path, &text, duration)?
+    // Skip the duration probe for text-only callers AND for blank
+    // transcripts — streaming Ogg/Opus (and a few other format edge cases)
+    // return `Ok(None)` from `probe_duration_seconds`, which would surface
+    // as a hard error for callers that don't need segments anyway, a
+    // regression vs pre-#248 behavior.
+    let segments = if timestamps_required && !text.trim().is_empty() {
+        let dur = resolve_segment_duration(audio_path, duration)?;
+        single_segment(0.0, dur, &text)
     } else {
         vec![]
     };
@@ -443,31 +400,25 @@ where
 /// Build the single-segment vec produced by the non-VAD plain path. Re-uses
 /// the caller-supplied duration when available (#248) — the
 /// `Auto` mode probe-and-decide step already opens the file once.
-fn whole_file_segment(
-    audio_path: &str,
-    text: &str,
-    duration: Option<f32>,
-) -> Result<Vec<TranscriptionSegment>> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Ok(vec![]);
+/// Honor a caller-supplied audio duration if present; otherwise probe the
+/// file. Split from `transcribe_plain` so the probe-vs-hint contract can be
+/// unit-tested without spinning up an ASR backend.
+fn resolve_segment_duration(audio_path: &str, hint: Option<f32>) -> Result<f32> {
+    if let Some(d) = hint {
+        return Ok(d);
     }
-    let duration = match duration {
-        Some(d) => d,
-        None => audio::probe_duration_seconds(audio_path)
-            .with_context(|| {
-                format!("failed to probe audio duration for timestamped segments: {audio_path}")
-            })?
-            .with_context(|| {
-                format!("audio duration is unavailable for timestamped segments: {audio_path}")
-            })?,
-    };
-    Ok(single_segment(0.0, duration, trimmed))
+    audio::probe_duration_seconds(audio_path)
+        .with_context(|| {
+            format!("failed to probe audio duration for timestamped segments: {audio_path}")
+        })?
+        .with_context(|| {
+            format!("audio duration is unavailable for timestamped segments: {audio_path}")
+        })
 }
 
 /// Construct a one-element `Vec<TranscriptionSegment>` (or empty if `text` is
-/// blank after trimming). Shared by both `whole_file_segment` and the
-/// VAD-fallback path in [`transcribe_via_vad`].
+/// blank after trimming). Shared by the plain-path's whole-file segment and
+/// the VAD-fallback path in [`transcribe_via_vad`].
 fn single_segment(start: f32, end: f32, text: &str) -> Vec<TranscriptionSegment> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -632,24 +583,24 @@ mod tests {
     }
 
     #[test]
-    fn whole_file_segment_uses_caller_supplied_duration_without_probing() {
+    fn resolve_segment_duration_returns_hint_without_probing() {
         // When the caller already probed (Auto mode), the helper must NOT
-        // re-open the file (#248).
+        // re-open the file (#248). Pass a deliberately-unparseable file
+        // alongside the hint — if the probe runs, it errors; if not, the
+        // hint is returned verbatim.
         let tmp = tempfile::Builder::new()
             .prefix("kesha-no-probe-")
             .suffix(".raw")
             .tempfile()
             .unwrap();
         std::fs::write(tmp.path(), b"not an audio container").unwrap();
-        let segs = whole_file_segment(tmp.path().to_str().unwrap(), "hello", Some(7.5)).unwrap();
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0].start, 0.0);
-        assert_eq!(segs[0].end, 7.5);
-        assert_eq!(segs[0].text, "hello");
+        let dur =
+            resolve_segment_duration(tmp.path().to_str().unwrap(), Some(7.5)).unwrap();
+        assert_eq!(dur, 7.5);
     }
 
     #[test]
-    fn whole_file_segment_errors_when_duration_is_unavailable_and_no_caller_value() {
+    fn resolve_segment_duration_errors_when_no_hint_and_probe_fails() {
         let tmp = tempfile::Builder::new()
             .prefix("kesha-no-duration-")
             .suffix(".raw")
@@ -657,19 +608,13 @@ mod tests {
             .unwrap();
         std::fs::write(tmp.path(), b"not an audio container").unwrap();
 
-        let err = whole_file_segment(tmp.path().to_str().unwrap(), "hello", None)
+        let err = resolve_segment_duration(tmp.path().to_str().unwrap(), None)
             .expect_err("timestamped output should require a known duration when no caller value");
         assert!(
             err.to_string()
                 .contains("failed to probe audio duration for timestamped segments"),
             "{err}"
         );
-    }
-
-    #[test]
-    fn whole_file_segment_skips_empty_text_regardless_of_duration() {
-        let segs = whole_file_segment("/dev/null", "   ", Some(5.0)).unwrap();
-        assert!(segs.is_empty());
     }
 
     #[test]

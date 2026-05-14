@@ -428,19 +428,19 @@ fn main() -> Result<()> {
             no_vad,
             speakers,
         }) => {
-            let mode = transcribe::VadMode::from_flags(vad, no_vad);
-            if speakers {
-                if !json {
-                    anyhow::bail!("--speakers requires --json");
-                }
-                let output = transcribe::transcribe_output_with_speakers(&audio_path, mode)?;
-                println!("{}", serde_json::to_string(&output)?);
-            } else if json {
-                let output = transcribe::transcribe_output(&audio_path, mode)?;
+            if speakers && !json {
+                anyhow::bail!("--speakers requires --json");
+            }
+            let opts = transcribe::TranscribeOptions {
+                mode: transcribe::VadMode::from_flags(vad, no_vad),
+                with_segments: json,
+                with_speakers: speakers,
+            };
+            let output = transcribe::transcribe_with_options(&audio_path, &opts)?;
+            if json {
                 println!("{}", serde_json::to_string(&output)?);
             } else {
-                let text = transcribe::transcribe(&audio_path, mode)?;
-                println!("{}", text);
+                println!("{}", output.text);
             }
         }
         Some(Commands::DetectLang { audio_path }) => {
