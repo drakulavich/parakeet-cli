@@ -1,4 +1,4 @@
-.PHONY: install test unit integration lint lint-tsgo smoke-test release publish help
+.PHONY: install test unit integration rust-test lint lint-tsgo smoke-test release publish help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -13,6 +13,9 @@ unit: ## Run unit tests
 
 integration: ## Run integration tests
 	bun run test:integration
+
+rust-test: ## Run Rust tests via nextest (matches CI — rust-test.yml)
+	cd rust && cargo nextest run --features tts
 
 lint: ## Type-check with tsc
 	bunx tsc --noEmit

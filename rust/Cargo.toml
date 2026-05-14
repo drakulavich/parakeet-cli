@@ -44,7 +44,7 @@ serde_json = "1"
 anyhow = "1"
 
 # Audio decoding
-symphonia = { version = "0.5", features = ["mp3", "ogg", "flac", "aac", "pcm", "wav"] }
+symphonia = { version = "0.5", features = ["mp3", "ogg", "flac", "aac", "pcm", "wav", "isomp4"] }
 symphonia-adapter-libopus = "0.2"
 rubato = "2"
 

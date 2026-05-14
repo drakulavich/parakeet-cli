@@ -243,3 +243,22 @@ pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
         _ => Ok(None),
     }
 }
+
+/// Validate that the file is a supported audio container with at least one
+/// audio track. Reads container headers only — never decodes frames or
+/// scans for `n_frames` (so it stays cheap even for the Xing-less CBR MP3
+/// worst case). Errors on:
+///
+/// - `"unsupported audio format: ..."` — no symphonia demuxer for the
+///   container, e.g. m4a without the `isomp4` feature.
+/// - `"no supported audio tracks in: ..."` — video-only / corrupted
+///   container, e.g. a webm carrying only a VP8 video track.
+///
+/// Designed to be called once at the top of every transcribe entry point
+/// so the user sees a clean symphonia error instead of a cryptic
+/// downstream backend failure (FluidAudio's "Swift bridge error:
+/// Transcription failed" is the worst offender, since it lands ~25 s into
+/// the ASR cold-load on a file we knew at the top was unusable).
+pub fn ensure_audio_track(path: &str) -> Result<()> {
+    open_format(path).map(|_| ())
+}

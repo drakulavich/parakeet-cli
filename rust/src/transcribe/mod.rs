@@ -166,6 +166,15 @@ pub fn transcribe_with_options(
          (speaker labels attach to per-utterance segments; without segments \
          there is nowhere to put them)"
     );
+    // Bail cleanly on unsupported containers / video-only files BEFORE
+    // paying the 25 s+ ANE cold-load tax in `ensure_asr_installed` +
+    // backend construction. Symphonia's error message names the
+    // container and the failure mode; without this check the user sees
+    // the FluidAudio wrapper's cryptic "Swift bridge error: Transcription
+    // failed" ~25 s later (v1.16.0 validation against
+    // `~/Downloads/assets_demo.webm` + three Zoom m4a samples). Cheap:
+    // container-header read only, no frame scan.
+    audio::ensure_audio_track(audio_path)?;
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::model_dir(models::ModelKind::Vad)
         .to_string_lossy()

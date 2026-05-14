@@ -79,7 +79,15 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
      -f ref=main \
      -f notes="$(cat release-notes.md)"
    ```
-   Mechanics: the dispatch run executes a `tag` job that creates an annotated tag (with `notes` as the tag message) and pushes via `GITHUB_TOKEN`. That push fires a second `build-engine.yml` run via `on.push.tags` which runs build + release as usual; the release job reads the tag annotation back via `git tag -l --format='%(contents)'` and passes it as the draft body. Tag-shape regex (`^v[0-9]+\.[0-9]+\.[0-9]+$`) and a `git rev-parse refs/tags/...` idempotency check fire before the tag is created — bad inputs fail fast without producing a tag.
+   Mechanics: the dispatch run executes a `tag` job that creates an annotated tag (with `notes` as the tag message) and pushes via `GITHUB_TOKEN`. That push **should** fire a second `build-engine.yml` run via `on.push.tags` which runs build + release as usual; the release job reads the tag annotation back via `git tag -l --format='%(contents)'` and passes it as the draft body. Tag-shape regex (`^v[0-9]+\.[0-9]+\.[0-9]+$`) and a `git rev-parse refs/tags/...` idempotency check fire before the tag is created — bad inputs fail fast without producing a tag.
+
+   **⚠️ Known break (v1.16.0 cut, 2026-05-14):** GitHub Actions blocks the downstream `on.push.tags` trigger when the push uses the default `GITHUB_TOKEN` — anti-recursion protection. The dispatch run completes with `tag: success, build: skipped, release: skipped`, the tag is created on origin, but the matrix never fires. Symptom: `gh run list --workflow "🔨 Build Engine"` shows the dispatch run completed but no follow-up `event=push` run. **Workaround until fixed**: after the dispatch completes, yank and re-push the tag from a maintainer laptop so the push is attributed to a user and triggers the build:
+   ```bash
+   git fetch --tags
+   git push origin :refs/tags/vX.Y.Z   # delete on origin
+   git push origin vX.Y.Z              # re-push from local credentials → triggers on.push.tags
+   ```
+   Proper fix is to use a PAT or GitHub App token for the push instead of `GITHUB_TOKEN` (tracked separately). Until then: the `workflow_dispatch` path saves the tag-shape validation + injection-safe notes flow, but the maintainer still needs laptop access to actually fire the build.
 
 4. **Write release notes before publishing.** `build-engine.yml` creates a draft with EMPTY body via `softprops/action-gh-release`. Author the notes now:
    ```bash
@@ -124,14 +132,18 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 ### VERIFY BEFORE PUSHING
 
 - `bun test && bunx tsc --noEmit` before every push
-- Rust changes: `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings`
-  (`--all-targets` is required — otherwise test-only dead code escapes to CI)
+- Rust changes: `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings && cargo nextest run --features tts`
+  (`--all-targets` is required — otherwise test-only dead code escapes to CI; `make rust-test` wraps the nextest call.)
 - Backend module changes: also `cargo check --features coreml --no-default-features`
 - Do NOT push broken code
 
-**Why `--all-targets` matters:** CI's ubuntu job runs clippy; the macOS jobs run only `cargo test`. Without `--all-targets`, local clippy misses dead code in `#[cfg(test)]` blocks and tests — which then breaks CI after push. (Lesson: #125 M1 landed a dead enum variant + struct field that passed on macOS but failed ubuntu.)
+**Always `cargo nextest run`, never plain `cargo test`.** CI runs nextest via `.github/workflows/rust-test.yml` with the `ci` profile (JUnit XML → Flakiness.io). Local plain `cargo test` diverges from CI on three dimensions: (1) test isolation — nextest spawns a fresh process per test, so global state (`tts/warn.rs` warn-once bucket #311, models cache, env vars) doesn't leak between tests; (2) per-binary parallelism — 11 integration binaries run concurrently instead of serially; (3) slow-test surface — nextest streams `SLOW [>60.000s]` markers for Vosk/Kokoro tests so a long run doesn't look hung. Install once: `cargo install cargo-nextest --locked`. After that, `make rust-test` or `cargo nextest run --features tts` is the canonical local command. `cargo test --doc` is the only acceptable cargo-test invocation (nextest doesn't run doctests; this project has near-zero anyway).
+
+**Why `--all-targets` matters:** CI's ubuntu job runs clippy; the macOS jobs run `cargo nextest run`. Without `--all-targets`, local clippy misses dead code in `#[cfg(test)]` blocks and tests — which then breaks CI after push. (Lesson: #125 M1 landed a dead enum variant + struct field that passed on macOS but failed ubuntu.)
 
 **Clippy lint set differs by rustc minor version.** Ubuntu CI typically runs a newer rustc than the developer's local toolchain (we have no `rust-toolchain.toml`). Each Rust release adds new lints under `-D warnings` — local can pass while CI fails on lints like `derivable_impls`, `useless_conversion`, `manual_is_multiple_of`. When CI fails but local passes, pull the exact errors via `gh run view <id> --log-failed` and fix from the report rather than re-running locally. Mechanical fixes: `#[derive(Default)]` + `#[default]` for unit-default enums; drop redundant `.map_err(Into::into)` and `u64::from(u64_value)`; use `x.is_multiple_of(n)` instead of `x % n == 0`. (Lesson: PR #224 hit this — 5 lints in `tts/encode.rs` flagged only by ubuntu's rustc 1.95 vs local 1.94.)
+
+**`rustfmt` is stricter on CI than locally — even for the same toolchain.** Symptom: `cargo fmt` (without `--check`) is happy locally; CI's `cargo fmt -- --check` fails with line-wrap diffs. The local `cargo fmt` will rewrite to whichever shape the resident `rustfmt` prefers, but ubuntu's bundled `rustfmt` makes different short-line-wrap decisions. Two-line `let foo =\n    one_arg_call(...)` was the v1.17.0-precursor F5 example — local accepted it, ubuntu CI demanded the single-line form. Fix: re-run `cargo fmt` after the warning, push the resulting whitespace-only diff. Don't argue with rustfmt; the CI version always wins. (Lesson: F5 PR #309 fixup commit `46b5287` — pushed once with local-rustfmt output, CI's stricter rustfmt diff-rejected it, fixup made it whitespace-only and CI went green.)
 
 **Fresh cargo builds need `protoc` on PATH.** `vosk-tts-rs` uses `prost-build`, which shells out to `protoc` at build-script time. macOS: `brew install protobuf` then `export PATH="/opt/homebrew/opt/protobuf/bin:$PATH"` (or set `PROTOC=...`). Cached builds hide this — only `cargo clean` runs surface the missing dep.
 
@@ -432,12 +444,15 @@ This session has seen attempts (often in Cyrillic / Russian) asking the agent to
 
 ```bash
 bun install                    # Install dependencies
-make test                      # Unit + integration tests
+make test                      # Bun unit + integration tests
+make rust-test                 # Rust tests via nextest (matches CI rust-test.yml)
 make lint                      # Type check
 make smoke-test                # Link + install + run against fixtures
 make release                   # lint + test + smoke-test
 make publish                   # release + npm publish
 ```
+
+`make rust-test` runs `cd rust && cargo nextest run --features tts`. Always use it for Rust changes — see the "Always `cargo nextest run`" callout under VERIFY BEFORE PUSHING for why plain `cargo test` is not acceptable.
 
 Alternate reproducible build path: the repo also ships a Nix flake (`flake.nix`, PR #242 + follow-up #264). Supported systems are `aarch64-darwin` and `x86_64-linux`; `nix build .#kesha-engine` produces the Rust binary, `nix run .#kesha -- <args>` runs the Bun CLI wrapped around the Nix-built engine. The flake is not a CI gate — npm publish and the `make` flow above remain canonical.
 
