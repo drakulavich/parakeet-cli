@@ -70,6 +70,17 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
 1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (via `cargo check`), and `package.json#keshaEngine.version` in lockstep. Usually bump `package.json#version` too.
 2. Merge to main.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z` — triggers `build-engine.yml`.
+
+   **Alternate path: `workflow_dispatch` (no tag-push permission required, fix #306).** Use this when running from a sandboxed remote that rejects tag pushes (Claude Code on the web, restricted git proxies). Authors the notes inline so they land with the draft — skips step 4 entirely.
+   ```bash
+   gh workflow run "🔨 Build Engine" \
+     -R drakulavich/kesha-voice-kit \
+     -f tag=vX.Y.Z \
+     -f ref=main \
+     -f notes="$(cat release-notes.md)"
+   ```
+   Mechanics: the dispatch run executes a `tag` job that creates an annotated tag (with `notes` as the tag message) and pushes via `GITHUB_TOKEN`. That push fires a second `build-engine.yml` run via `on.push.tags` which runs build + release as usual; the release job reads the tag annotation back via `git tag -l --format='%(contents)'` and passes it as the draft body. Tag-shape regex (`^v[0-9]+\.[0-9]+\.[0-9]+$`) and a `git rev-parse refs/tags/...` idempotency check fire before the tag is created — bad inputs fail fast without producing a tag.
+
 4. **Write release notes before publishing.** `build-engine.yml` creates a draft with EMPTY body via `softprops/action-gh-release`. Author the notes now:
    ```bash
    gh release edit vX.Y.Z --notes "$(cat <<'EOF'
@@ -77,7 +88,7 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
    EOF
    )"
    ```
-   Use the v1.1.3 release as a template: features → platform support → breaking changes → shipped PRs → follow-up issues → upgrade instructions.
+   Use the v1.1.3 release as a template: features → platform support → breaking changes → shipped PRs → follow-up issues → upgrade instructions. **Skip this step if you used the `workflow_dispatch` path in step 3** — notes are already on the draft.
 
    **If you forgot and already published:** `gh release edit --notes` silently drops content on published releases (a `gh` CLI quirk — not a GitHub restriction). The `immutable: true` flag protects tag/assets, not the body. Escape hatch is a direct API PATCH:
    ```bash

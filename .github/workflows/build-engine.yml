@@ -12,10 +12,16 @@ on:
       - "!v*-cli"
   workflow_dispatch:
     inputs:
+      tag:
+        description: "Tag to create + build (e.g. v1.17.0). Leave empty to build-only from `ref`."
+        required: false
       ref:
-        description: "Git ref to build (tag, branch, or SHA)"
+        description: "Git ref to tag from (commit SHA, branch). Defaults to main HEAD."
         required: false
         default: "main"
+      notes:
+        description: "Release notes body (Markdown). Stored as the annotated tag message; the release job reads it back to populate the draft body."
+        required: false
 
 permissions:
   contents: write
@@ -24,7 +30,69 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Create + push the annotated tag from a workflow_dispatch with `inputs.tag`
+  # set. Pushing the tag fires this workflow again via `on.push.tags` (the
+  # "two-run" pattern, fix #306) — that second run executes the build matrix +
+  # release job below. Lets sandboxed automation cut a release without holding
+  # tag-push permission on the local git remote (the case that motivated #306
+  # after v1.16.0).
+  tag:
+    if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      # Shape + uniqueness validation BEFORE the tag value reaches any
+      # filesystem / argv site. `^v[0-9]+\.[0-9]+\.[0-9]+$` rejects empty,
+      # CLI-only marker tags (vX.Y.Z-cli), and shell-injection attempts.
+      # CLAUDE.md → TAG NAMES ARE ONE-USE forbids reusing a tag name.
+      - name: Validate tag shape and uniqueness
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$INPUT_TAG' must match ^v[0-9]+.[0-9]+.[0-9]+$ (CLI-only marker tags vX.Y.Z-cli are not supported by this workflow)"
+            exit 1
+          fi
+          if git rev-parse "refs/tags/$INPUT_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $INPUT_TAG already exists. Tag names are one-use (CLAUDE.md → TAG NAMES ARE ONE-USE) — bump patch and retry."
+            exit 1
+          fi
+          echo "Tag $INPUT_TAG passes shape + uniqueness checks."
+
+      # `inputs.tag` and `inputs.notes` flow through `env:` rather than direct
+      # `${{ … }}` interpolation in the run: script. The workflow holds
+      # `contents: write`; an attacker-controlled value containing `$(cmd)` or
+      # `;` would otherwise execute arbitrary code with that permission. Pattern
+      # mirrors `.github/workflows/npm-publish.yml::Resolve tag` (post-#291).
+      # `git tag -F -` reads the message from stdin so newlines/shell metachars
+      # in INPUT_NOTES survive untouched (argv via `-m` would be a re-exposure).
+      - name: Create and push annotated tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf '%s' "$INPUT_NOTES" | git tag -a "$INPUT_TAG" -F -
+          git push origin "refs/tags/$INPUT_TAG"
+          echo "Pushed $INPUT_TAG. on.push.tags will now fire a second workflow run for build + release."
+
   build:
+    # Skip the matrix when the dispatch run is creating a tag (fix #306) —
+    # the push of that tag fires a second workflow run via `on.push.tags`
+    # which runs build + release with `github.ref` set to the new tag.
+    # Running the matrix twice wastes ~12 min and the dispatch-run build
+    # would have no `release` job to consume its artifacts anyway
+    # (release.if: startsWith(github.ref, 'refs/tags/v') would be false).
+    # When `inputs.tag` is empty, the dispatch is in build-only mode (today's
+    # behavior) — matrix runs from `inputs.ref`.
+    if: github.event_name != 'workflow_dispatch' || inputs.tag == ''
     strategy:
       fail-fast: false
       matrix:
@@ -259,14 +327,50 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      # Need the tag object available locally to read its annotation. Default
+      # actions/checkout doesn't fetch tag objects under `on.push.tags`, so
+      # `fetch-tags: true` is explicit. The `tag` job (fix #306) writes the
+      # release notes into the annotated tag's message; this checkout + the
+      # extract step below recover it. Lightweight tags (manual
+      # `git tag vX.Y.Z` from a laptop, no `-a`) produce an empty annotation,
+      # which falls through to today's empty-body behavior.
+      - name: Checkout at tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-tags: true
+          fetch-depth: 0
+
+      # Multi-line heredoc form for $GITHUB_OUTPUT — a single-line
+      # `echo "body=…"` would truncate at the first newline. KESHA_NOTES_EOF
+      # is a magic marker chosen to be highly unlikely in user-authored
+      # release notes; a colliding marker would inject content but the
+      # release body is a doc field, not a shell context, so impact is
+      # cosmetic.
+      - name: Extract release notes from tag annotation
+        id: notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          body=$(git tag -l --format='%(contents)' "$TAG_NAME" || true)
+          {
+            echo "body<<KESHA_NOTES_EOF"
+            printf '%s\n' "$body"
+            echo "KESHA_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           merge-multiple: true
+
       - name: Create draft release with binaries
         uses: softprops/action-gh-release@v3
         with:
+          body: ${{ steps.notes.outputs.body }}
           files: |
             kesha-engine-darwin-arm64
             kesha-engine-linux-x64
