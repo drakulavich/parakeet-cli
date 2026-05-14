@@ -179,8 +179,12 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let format =
-        crate::resolve_output_format(req.format.as_deref(), req.bitrate, req.sample_rate, None)?;
+    let format = crate::cli::say::resolve_output_format(
+        req.format.as_deref(),
+        req.bitrate,
+        req.sample_rate,
+        None,
+    )?;
     let resolved =
         tts::voices::resolve_voice(&models::cache_dir(), &req.voice).map_err(|e| e.to_string())?;
     let espeak_lang: &str = req
