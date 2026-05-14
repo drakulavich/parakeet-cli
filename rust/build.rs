@@ -24,6 +24,14 @@ fn main() {
         target_arch = "aarch64"
     ))]
     build_diarize_sidecar();
+
+    // detect-text-lang fast-path sidecar: compile the NLLanguageRecognizer
+    // helper on macOS. Writes the sidecar binary to $OUT_DIR/kesha-textlang.
+    // Opt-in via `system_text_lang` so minimal macOS environments without
+    // Xcode CLT can still `cargo build` (falls back to legacy `swift -e`
+    // path in text_lang.rs). Silently no-op on Linux/Windows.
+    #[cfg(all(feature = "system_text_lang", target_os = "macos"))]
+    build_text_lang_helper();
 }
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -116,6 +124,43 @@ fn build_diarize_sidecar() {
     // next to the current executable", keeping this path for cargo run / cargo test.
     println!(
         "cargo:rustc-env=KESHA_DIARIZE_SIDECAR={}",
+        out_bin.display()
+    );
+}
+
+#[cfg(all(feature = "system_text_lang", target_os = "macos"))]
+fn build_text_lang_helper() {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let src = manifest_dir.join("swift/kesha-textlang.swift");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out_bin = out_dir.join("kesha-textlang");
+
+    println!("cargo:rerun-if-changed={}", src.display());
+
+    let status = Command::new("swiftc")
+        .arg("-O")
+        .arg("-o")
+        .arg(&out_bin)
+        .arg(&src)
+        .status()
+        .expect(
+            "swiftc not found — install Xcode command-line tools (required for text-lang sidecar)",
+        );
+    assert!(
+        status.success(),
+        "swiftc failed to build kesha-textlang from {}",
+        src.display()
+    );
+
+    // Expose the path to runtime code via env!("KESHA_TEXTLANG_HELPER").
+    // Same KNOWN LIMITATION as say-avspeech: $OUT_DIR is ephemeral, so the
+    // runtime resolver in `text_lang::helper_path` tries sibling-of-exe first
+    // and falls back to this baked path only for `cargo run` / `cargo test`.
+    println!(
+        "cargo:rustc-env=KESHA_TEXTLANG_HELPER={}",
         out_bin.display()
     );
 }

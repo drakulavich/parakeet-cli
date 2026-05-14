@@ -39,7 +39,7 @@ jobs:
           # rust/src/transcribe/diarize.rs::sidecar_path).
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml,tts,system_tts,system_diarize
+            features: coreml,tts,system_tts,system_diarize,system_text_lang
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -160,6 +160,22 @@ jobs:
           # first, then plain kesha-diarize. The release-asset name is the
           # platform-suffixed one — same convention as say-avspeech-*.
 
+      # detect-text-lang fast-path sidecar: replaces the per-call `swift -e`
+      # shell-out. Always built on macOS by `rust/build.rs::build_text_lang_helper`
+      # (no feature gate; `text_lang` itself is macOS-only at runtime).
+      - name: Stage kesha-textlang sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-textlang -type f | head -1)
+          if [ -z "$sidecar" ]; then
+            echo "kesha-textlang sidecar not found — build.rs::build_text_lang_helper may have failed" >&2
+            exit 1
+          fi
+          echo "Sidecar at: $sidecar"
+          cp "$sidecar" ./kesha-textlang                # sibling-next-to-engine for smoke test
+          cp "$sidecar" kesha-textlang-darwin-arm64     # release artifact name
+
       - name: Smoke-test binary
         shell: bash
         # Assert `tts` is in the capabilities — otherwise a future feature-flag
@@ -194,6 +210,17 @@ jobs:
               echo "expected transcribe.diarize in capabilities, got: $caps" >&2
               exit 1
             }
+            # text-lang sidecar e2e: exercise the spawn → stdin → JSON
+            # contract end-to-end so a broken sidecar packaging fails the
+            # build instead of shipping in a release. `detect-text-lang`
+            # accepts the text as argv (not stdin) — argv is forwarded into
+            # the sidecar's stdin inside the Rust glue.
+            lang_json=$("./${{ matrix.binary }}" detect-text-lang "Hello world from the smoke test")
+            echo "$lang_json"
+            echo "$lang_json" | grep -q '"code"' || {
+              echo "expected detect-text-lang to emit JSON with a 'code' field, got: $lang_json" >&2
+              exit 1
+            }
           fi
 
       - name: Inspect macOS dynamic deps
@@ -221,6 +248,13 @@ jobs:
           name: kesha-diarize-darwin-arm64
           path: kesha-diarize-darwin-arm64
 
+      - name: Upload kesha-textlang sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kesha-textlang-darwin-arm64
+          path: kesha-textlang-darwin-arm64
+
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
@@ -239,4 +273,5 @@ jobs:
             kesha-engine-windows-x64.exe
             say-avspeech-darwin-arm64
             kesha-diarize-darwin-arm64
+            kesha-textlang-darwin-arm64
           draft: true

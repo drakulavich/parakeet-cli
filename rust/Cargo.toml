@@ -30,6 +30,12 @@ system_tts = ["tts"]
 # darwin-arm64 speaker diarization via FluidAudio (#199). Requires FluidAudio's
 # diarization SDK and companion helper binary. Darwin-only.
 system_diarize = []
+# macOS-only fast-path for `detect-text-lang`: precompiled NLLanguageRecognizer
+# sidecar replacing the per-call `swift -e` shell-out. Opt-in — requires
+# `swiftc` at build time (build.rs::build_text_lang_helper). When off, the
+# macOS arm of text_lang.rs falls back to the legacy `swift -e` path, so
+# minimal dev environments without Xcode CLT continue to build.
+system_text_lang = []
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
