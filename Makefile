@@ -1,4 +1,4 @@
-.PHONY: install test unit integration rust-test lint lint-tsgo smoke-test release publish help
+.PHONY: install test unit integration rust-test lint lint-tsgo versions smoke-test release publish help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -22,6 +22,9 @@ lint: ## Type-check with tsc
 
 lint-tsgo: ## Type-check with tsgo (TypeScript 7 native preview, advisory)
 	bunx tsgo --noEmit
+
+versions: ## Check version drift between package.json + Cargo.toml (#267 F16)
+	bun .github/scripts/check-versions.ts
 
 smoke-test: ## Run smoke tests against fixtures
 	bun link @drakulavich/kesha-voice-kit

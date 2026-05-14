@@ -110,6 +110,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: bunx tsc --noEmit
 
+      - name: 🔢 Check version drift (package.json + Cargo.toml)
+        if: matrix.os == 'ubuntu-latest'
+        run: bun run check:versions
+
       - name: 🔬 Type check (tsgo / TS 7 preview, advisory)
         if: matrix.os == 'ubuntu-latest'
         continue-on-error: true

@@ -58,6 +58,11 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
 
 `package.json#version` (CLI) and `package.json#keshaEngine.version` (engine, mirrored in `rust/Cargo.toml`) are **decoupled**. `src/engine-install.ts` downloads from `v${keshaEngine.version}`, falling back to `package.json#version`.
 
+CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also `bun run check:versions` or `make versions` locally — runs in `ci.yml`'s "🔢 Check version drift" step on ubuntu, fast-fails before any test job). Two rules enforced (#267 F16):
+
+1. **`keshaEngine.version === rust/Cargo.toml#version`** — these are the same number, just stored twice. Drift here means `kesha install` downloads a release that doesn't match the source. (See "BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS" below for the v1.1.0 incident this guards against.)
+2. **`package.json#version >= keshaEngine.version`** — CLI is allowed to lead the engine for CLI-only patches but must never lag.
+
 **CLI-only patch** (docs, TS fix, plugin tweak):
 
 1. Bump only `package.json#version`. Leave `keshaEngine.version` and `rust/Cargo.toml` alone.
