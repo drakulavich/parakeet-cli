@@ -3,15 +3,23 @@ name: 🧪 CI
 on:
   pull_request:
     branches: [main]
+  # Also run on push to main to catch regressions that slip through admin
+  # force-merges, post-merge hotfixes, or any other code path that lands on
+  # main without exercising the PR gate. The `changes` path-filter still
+  # applies — on push events, dorny/paths-filter diffs against the previous
+  # commit on `main`, so an unrelated touch doesn't run the full matrix.
+  push:
+    branches: [main]
 
 permissions:
   contents: read
-  pull-requests: write
   # `id-token: write` is NOT granted at workflow scope — it's elevated
   # only on the three test jobs that actually upload to Flakiness.io
-  # (Greptile #301 P1 security finding). `changes`, `raycast-lint`,
-  # `nix-build`, and `pr-comment` run third-party actions and don't need
-  # OIDC capability.
+  # (Greptile #301 P1 security finding). `changes`, `raycast-lint`, and
+  # `nix-build` run third-party actions and don't need OIDC capability.
+  # `pull-requests: write` was previously needed for a sticky test-results
+  # comment; removed alongside #303 when Flakiness.io took over the
+  # "where did the tests land" surface.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -151,9 +159,17 @@ jobs:
     # `code == 'true'`, so `unit-tests` is never `skipped` here and the
     # standard `result == 'success'` gate is enough.
     needs: [changes, unit-tests]
+    # Two skip cases for the published-engine download:
+    # 1. PR from a `release/*` branch — the version bump's new tag doesn't
+    #    exist yet (`head_ref` is set on pull_request events only).
+    # 2. Push to main where the merged commit IS the release bump —
+    #    same window between merge and tag-push. `head_commit.message`
+    #    is set on push events; on PRs it's null and `startsWith` short-
+    #    circuits to false so the clause is a no-op there.
     if: |
       needs.changes.outputs.integration == 'true' &&
       !startsWith(github.head_ref, 'release/') &&
+      !startsWith(github.event.head_commit.message, 'chore(release):') &&
       needs.unit-tests.result == 'success'
     runs-on: macos-latest
     timeout-minutes: 10
@@ -360,27 +376,3 @@ jobs:
       - name: 🚬 Smoke
         run: ./result/bin/kesha-engine --version
 
-  pr-comment:
-    if: always() && github.event_name == 'pull_request' && (needs.unit-tests.result == 'success' || needs.integration-tests.result == 'success' || needs.tts-e2e.result == 'success')
-    needs: [unit-tests, integration-tests, tts-e2e]
-    runs-on: ubuntu-latest
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v6
-
-      - name: 🍞 Setup Bun workspace
-        uses: ./.github/actions/setup-bun
-
-      - name: 📥 Download all test results
-        uses: actions/download-artifact@v8
-        with:
-          path: all-results
-          pattern: test-results-*
-
-      - name: 📝 Generate PR comment
-        run: bun .github/scripts/generate-pr-comment.ts all-results /tmp/pr-comment.md
-
-      - name: 💬 Post PR comment
-        uses: marocchino/sticky-pull-request-comment@v3
-        with:
-          path: /tmp/pr-comment.md

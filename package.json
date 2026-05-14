@@ -38,6 +38,7 @@
     "test:integration": "bun test tests/integration/",
     "lint": "bunx tsc --noEmit",
     "lint:tsgo": "bunx tsgo --noEmit",
+    "check:workflows": "bun .github/scripts/check-workflows.ts",
     "postinstall": "node scripts/postinstall.cjs"
   },
   "keywords": [
@@ -69,7 +70,8 @@
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260423.1",
     "fast-xml-parser": "^5.5.10",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
     "@toon-format/toon": "^2.1.0",
