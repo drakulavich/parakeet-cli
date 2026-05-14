@@ -39,11 +39,7 @@ fn ensure_audio_track_accepts_isomp4_aac_fixture() {
         .join("tests")
         .join("fixtures")
         .join("silence.m4a");
-    assert!(
-        fixture.exists(),
-        "fixture missing: {}",
-        fixture.display()
-    );
+    assert!(fixture.exists(), "fixture missing: {}", fixture.display());
 
     audio::ensure_audio_track(fixture.to_str().unwrap())
         .expect("isomp4 feature should let symphonia open the m4a container");
