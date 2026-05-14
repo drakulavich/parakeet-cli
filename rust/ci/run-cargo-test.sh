@@ -32,4 +32,4 @@ if [[ -f "$KOKORO_CACHE/models/vosk-ru/model.onnx" && -f "$KOKORO_CACHE/models/v
   echo "KESHA_CACHE_DIR=$KESHA_CACHE_DIR (Vosk gated tests enabled)"
 fi
 
-cargo test --verbose
+cargo nextest run --profile ci

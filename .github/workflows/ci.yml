@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  # `id-token: write` is NOT granted at workflow scope — it's elevated
+  # only on the three test jobs that actually upload to Flakiness.io
+  # (Greptile #301 P1 security finding). `changes`, `raycast-lint`,
+  # `nix-build`, and `pr-comment` run third-party actions and don't need
+  # OIDC capability.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -80,6 +85,9 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -115,6 +123,20 @@ jobs:
           path: test-results/unit-${{ matrix.os }}.xml
           retention-days: 7
 
+      - name: 🪼 Upload to Flakiness.io
+        # `if: always()` only guarantees the step runs; it does NOT
+        # suppress this step's own exit code. `continue-on-error: true`
+        # is what keeps a Flakiness outage / OIDC handshake failure from
+        # marking the whole test job red (Greptile #301 P1). Telemetry
+        # upload is best-effort, not a release gate.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bunx flakiness convert-junit test-results/unit-${{ matrix.os }}.xml \
+            --category bun --project Laputa/kesha-voice-kit
+          bunx flakiness upload ./flakiness-report
+
   integration-tests:
     # Skip on release/* branches: this job downloads the released engine
     # binary (the version in `package.json#keshaEngine.version`), which
@@ -135,6 +157,9 @@ jobs:
       needs.unit-tests.result == 'success'
     runs-on: macos-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
@@ -168,6 +193,15 @@ jobs:
           path: test-results/integration.xml
           retention-days: 7
 
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bunx flakiness convert-junit test-results/integration.xml \
+            --category bun --project Laputa/kesha-voice-kit
+          bunx flakiness upload ./flakiness-report
+
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
     # or the say-e2e test itself changes. No `unit-tests` gate: a rust-only
@@ -180,6 +214,9 @@ jobs:
     if: needs.changes.outputs.tts_e2e == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
     steps:
@@ -226,7 +263,27 @@ jobs:
           KESHA_CACHE_DIR: ${{ env.KOKORO_CACHE }}
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
-        run: bun test tests/integration/say-e2e.test.ts
+        run: |
+          mkdir -p test-results
+          bun test tests/integration/say-e2e.test.ts \
+            --reporter=junit --reporter-outfile=test-results/tts-e2e.xml
+
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-tts-e2e
+          path: test-results/tts-e2e.xml
+          retention-days: 7
+
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bunx flakiness convert-junit test-results/tts-e2e.xml \
+            --category bun --project Laputa/kesha-voice-kit
+          bunx flakiness upload ./flakiness-report
 
   raycast-lint:
     needs: changes

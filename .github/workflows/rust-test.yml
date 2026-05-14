@@ -4,8 +4,18 @@ on:
   pull_request:
     paths: ["rust/**"]
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    permissions:
+      contents: read
+      # Flakiness.io CLI authenticates via GitHub OIDC; scope the
+      # write capability to this job only so a future second job in
+      # this workflow doesn't inherit it implicitly (symmetric with
+      # the per-job scoping in ci.yml per Greptile #301).
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +35,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+
+      # `cargo nextest` replaces `cargo test` for the actual run — it
+      # parallelizes per-binary, surfaces flakiness explicitly, and emits
+      # JUnit XML via the `ci` profile (see rust/.config/nextest.toml).
+      # taiki-e/install-action caches a prebuilt binary per OS/arch so
+      # the install is ~1s on warm cache.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
 
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
@@ -98,3 +117,31 @@ jobs:
       - name: Run tests (with real Kokoro)
         shell: bash
         run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
+
+      - name: 📤 Upload JUnit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-junit-${{ matrix.os }}
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
+      # The npm Flakiness CLI runs everywhere bun runs, so unlike the
+      # platform-specific curl installer it covers windows-latest too.
+      # Setup-bun is a no-op when bun is already on PATH (cached on warm
+      # runs).
+      - uses: oven-sh/setup-bun@v2
+        if: always()
+
+      - name: 🪼 Upload to Flakiness.io
+        # `if: always()` runs the step but doesn't suppress its exit
+        # code; `continue-on-error: true` keeps a Flakiness outage /
+        # OIDC handshake failure off the test-job verdict (Greptile
+        # #301 P1). Telemetry upload is best-effort, not a release gate.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
+            --category rust --project Laputa/kesha-voice-kit
+          bunx flakiness upload ./flakiness-report

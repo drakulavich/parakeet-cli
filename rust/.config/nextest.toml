@@ -1,0 +1,11 @@
+# cargo-nextest configuration.
+#
+# The `ci` profile is what `rust/ci/run-cargo-test.sh` runs in GitHub
+# Actions. It writes a JUnit XML report at `target/nextest/ci/junit.xml`
+# which the workflow then converts + uploads to Flakiness.io.
+#
+# Run locally with `cargo nextest run` (uses the default profile, no
+# JUnit emission); the `ci` profile is opt-in for CI environments.
+
+[profile.ci.junit]
+path = "junit.xml"
