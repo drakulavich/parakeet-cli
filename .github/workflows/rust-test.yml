@@ -4,6 +4,12 @@ on:
   pull_request:
     paths: ["rust/**"]
 
+permissions:
+  contents: read
+  # Flakiness.io CLI authenticates via GitHub's OIDC provider; the
+  # upload step in each matrix row requests its own token.
+  id-token: write
+
 jobs:
   test:
     strategy:
@@ -25,6 +31,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+
+      # `cargo nextest` replaces `cargo test` for the actual run — it
+      # parallelizes per-binary, surfaces flakiness explicitly, and emits
+      # JUnit XML via the `ci` profile (see rust/.config/nextest.toml).
+      # taiki-e/install-action caches a prebuilt binary per OS/arch so
+      # the install is ~1s on warm cache.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
 
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
@@ -98,3 +113,20 @@ jobs:
       - name: Run tests (with real Kokoro)
         shell: bash
         run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
+
+      - name: 📤 Upload JUnit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-junit-${{ matrix.os }}
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        shell: bash
+        run: |
+          curl -LsSf https://cli.flakiness.io/install.sh | sh
+          flakiness convert-junit rust/target/nextest/ci/junit.xml \
+            --category rust --project Laputa/kesha-voice-kit
+          flakiness upload ./flakiness-report

@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  # Flakiness.io CLI authenticates via GitHub's OIDC provider, no
+  # long-lived secret needed. Granted across all jobs so each test step
+  # can convert+upload its own junit.xml under matrix.os.
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -115,6 +119,15 @@ jobs:
           path: test-results/unit-${{ matrix.os }}.xml
           retention-days: 7
 
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        shell: bash
+        run: |
+          curl -LsSf https://cli.flakiness.io/install.sh | sh
+          flakiness convert-junit test-results/unit-${{ matrix.os }}.xml \
+            --category bun --project Laputa/kesha-voice-kit
+          flakiness upload ./flakiness-report
+
   integration-tests:
     # Skip on release/* branches: this job downloads the released engine
     # binary (the version in `package.json#keshaEngine.version`), which
@@ -167,6 +180,15 @@ jobs:
           name: test-results-integration
           path: test-results/integration.xml
           retention-days: 7
+
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        shell: bash
+        run: |
+          curl -LsSf https://cli.flakiness.io/install.sh | sh
+          flakiness convert-junit test-results/integration.xml \
+            --category bun --project Laputa/kesha-voice-kit
+          flakiness upload ./flakiness-report
 
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
@@ -226,7 +248,27 @@ jobs:
           KESHA_CACHE_DIR: ${{ env.KOKORO_CACHE }}
           KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
           DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
-        run: bun test tests/integration/say-e2e.test.ts
+        run: |
+          mkdir -p test-results
+          bun test tests/integration/say-e2e.test.ts \
+            --reporter=junit --reporter-outfile=test-results/tts-e2e.xml
+
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-tts-e2e
+          path: test-results/tts-e2e.xml
+          retention-days: 7
+
+      - name: 🪼 Upload to Flakiness.io
+        if: always()
+        shell: bash
+        run: |
+          curl -LsSf https://cli.flakiness.io/install.sh | sh
+          flakiness convert-junit test-results/tts-e2e.xml \
+            --category bun --project Laputa/kesha-voice-kit
+          flakiness upload ./flakiness-report
 
   raycast-lint:
     needs: changes
