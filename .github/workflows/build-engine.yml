@@ -39,7 +39,7 @@ jobs:
           # rust/src/transcribe/diarize.rs::sidecar_path).
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml,tts,system_tts,system_diarize
+            features: coreml,tts,system_tts,system_diarize,system_text_lang
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu

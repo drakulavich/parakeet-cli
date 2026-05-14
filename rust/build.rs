@@ -27,11 +27,10 @@ fn main() {
 
     // detect-text-lang fast-path sidecar: compile the NLLanguageRecognizer
     // helper on macOS. Writes the sidecar binary to $OUT_DIR/kesha-textlang.
-    // No feature flag — `text_lang` itself is macOS-only at runtime (the
-    // non-macOS arm of detect_text_language returns "only available on macOS"),
-    // so the sidecar build naturally inherits that gating via the cfg below.
-    // Silently no-op on Linux/Windows so cross-platform builds succeed.
-    #[cfg(target_os = "macos")]
+    // Opt-in via `system_text_lang` so minimal macOS environments without
+    // Xcode CLT can still `cargo build` (falls back to legacy `swift -e`
+    // path in text_lang.rs). Silently no-op on Linux/Windows.
+    #[cfg(all(feature = "system_text_lang", target_os = "macos"))]
     build_text_lang_helper();
 }
 
@@ -129,7 +128,7 @@ fn build_diarize_sidecar() {
     );
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "system_text_lang", target_os = "macos"))]
 fn build_text_lang_helper() {
     use std::path::PathBuf;
     use std::process::Command;

@@ -1,16 +1,22 @@
-//! macOS text-language detection via the `kesha-textlang` Swift sidecar.
+//! macOS text-language detection.
 //!
-//! Replaces a per-call `swift -e <inline-code>` shell-out that paid the Swift
-//! JIT-compiler startup tax every invocation (~200 ms warm, up to 35 s on cold
-//! Xcode-cache state). Precompiled, end-to-end cost drops to ~30-50 ms (binary
-//! spawn + NaturalLanguage framework load).
+//! Two macOS implementations live here:
 //!
-//! Sidecar source lives at `rust/swift/kesha-textlang.swift`. `build.rs`
-//! compiles it via `swiftc -O` into `$OUT_DIR/kesha-textlang`; release builds
-//! also ship the binary as a sibling of `kesha-engine` so `kesha install` can
-//! drop it into `~/.cache/kesha/engine/bin/`.
+//! - **Sidecar path** (`feature = "system_text_lang"`): spawns a precompiled
+//!   `kesha-textlang` Swift binary built by `rust/build.rs`. ~30-50 ms per
+//!   call, no Swift JIT cost. Source at `rust/swift/kesha-textlang.swift`.
+//!   Default in the release matrix; runtime resolution mirrors
+//!   `tts::avspeech::helper_path` (sibling-of-exe first, then build-time
+//!   `OUT_DIR` fallback).
+//!
+//! - **Legacy `swift -e` fallback** (no feature): shells out to `swift -e`
+//!   with inline NaturalLanguage source. ~200 ms warm, up to ~35 s on cold
+//!   Xcode-cache state — slow, but doesn't require `swiftc` at build time.
+//!   Kept so minimal dev environments without Xcode CLT can still
+//!   `cargo build --features onnx,tts` on macOS (Greptile P1 on #303).
+//!
+//! Non-macOS targets return an error regardless of the feature.
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,8 +25,10 @@ pub struct TextLangResult {
     pub confidence: f64,
 }
 
-#[cfg(target_os = "macos")]
-pub fn detect_text_language(text: &str) -> Result<TextLangResult> {
+// ─── Sidecar path (fast, feature-gated) ──────────────────────────────────
+
+#[cfg(all(feature = "system_text_lang", target_os = "macos"))]
+pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     use std::path::PathBuf;
 
     /// Sibling-of-current-exe first, then build-time fallback. Matches the
@@ -48,8 +56,12 @@ pub fn detect_text_language(text: &str) -> Result<TextLangResult> {
 /// `text` on stdin (UTF-8, no escaping required — Swift reads bytes verbatim
 /// via `readDataToEndOfFile`), reads JSON from stdout, surfaces stderr as the
 /// error context on non-zero exit.
-#[cfg(target_os = "macos")]
-pub(crate) fn detect_with_helper(text: &str, helper: &std::path::Path) -> Result<TextLangResult> {
+#[cfg(all(feature = "system_text_lang", target_os = "macos"))]
+pub(crate) fn detect_with_helper(
+    text: &str,
+    helper: &std::path::Path,
+) -> anyhow::Result<TextLangResult> {
+    use anyhow::Context;
     use std::io::Write;
     use std::process::{Command, Stdio};
 
@@ -84,12 +96,44 @@ pub(crate) fn detect_with_helper(text: &str, helper: &std::path::Path) -> Result
     })
 }
 
+// ─── Legacy `swift -e` path (slow, no feature) ───────────────────────────
+
+#[cfg(all(not(feature = "system_text_lang"), target_os = "macos"))]
+pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
+    use std::process::Command;
+
+    // Escape text for Swift string literal.
+    let escaped = text
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', " ");
+
+    let swift_code = format!(
+        r#"import NaturalLanguage; import Foundation; let r = NLLanguageRecognizer(); r.processString("{}"); var c = ""; var p = 0.0; if let l = r.dominantLanguage {{ c = l.rawValue; p = r.languageHypotheses(withMaximum: 1)[l] ?? 0.0 }}; let d = try! JSONSerialization.data(withJSONObject: ["code": c, "confidence": p], options: [.sortedKeys]); FileHandle.standardOutput.write(d)"#,
+        escaped
+    );
+
+    let output = Command::new("swift").arg("-e").arg(&swift_code).output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("NLLanguageRecognizer failed: {}", stderr.trim());
+    }
+
+    let result: TextLangResult = serde_json::from_slice(&output.stdout)?;
+    Ok(result)
+}
+
+// ─── Non-macOS ────────────────────────────────────────────────────────────
+
 #[cfg(not(target_os = "macos"))]
-pub fn detect_text_language(_text: &str) -> Result<TextLangResult> {
+pub fn detect_text_language(_text: &str) -> anyhow::Result<TextLangResult> {
     anyhow::bail!("detect-text-lang is only available on macOS");
 }
 
-#[cfg(all(test, target_os = "macos"))]
+// ─── Tests (sidecar path only — `swift -e` is the same code as v1.15.0) ──
+
+#[cfg(all(test, feature = "system_text_lang", target_os = "macos"))]
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
