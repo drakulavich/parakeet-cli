@@ -356,10 +356,11 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           body=$(git tag -l --format='%(contents)' "$TAG_NAME" || true)
+          EOF_MARKER=$(openssl rand -hex 16)
           {
-            echo "body<<KESHA_NOTES_EOF"
+            echo "body<<$EOF_MARKER"
             printf '%s\n' "$body"
-            echo "KESHA_NOTES_EOF"
+            echo "$EOF_MARKER"
           } >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
