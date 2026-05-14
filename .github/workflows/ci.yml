@@ -123,10 +123,9 @@ jobs:
         if: always()
         shell: bash
         run: |
-          curl -LsSf https://cli.flakiness.io/install.sh | sh
-          flakiness convert-junit test-results/unit-${{ matrix.os }}.xml \
+          bunx flakiness convert-junit test-results/unit-${{ matrix.os }}.xml \
             --category bun --project Laputa/kesha-voice-kit
-          flakiness upload ./flakiness-report
+          bunx flakiness upload ./flakiness-report
 
   integration-tests:
     # Skip on release/* branches: this job downloads the released engine
@@ -185,10 +184,9 @@ jobs:
         if: always()
         shell: bash
         run: |
-          curl -LsSf https://cli.flakiness.io/install.sh | sh
-          flakiness convert-junit test-results/integration.xml \
+          bunx flakiness convert-junit test-results/integration.xml \
             --category bun --project Laputa/kesha-voice-kit
-          flakiness upload ./flakiness-report
+          bunx flakiness upload ./flakiness-report
 
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
@@ -265,10 +263,9 @@ jobs:
         if: always()
         shell: bash
         run: |
-          curl -LsSf https://cli.flakiness.io/install.sh | sh
-          flakiness convert-junit test-results/tts-e2e.xml \
+          bunx flakiness convert-junit test-results/tts-e2e.xml \
             --category bun --project Laputa/kesha-voice-kit
-          flakiness upload ./flakiness-report
+          bunx flakiness upload ./flakiness-report
 
   raycast-lint:
     needs: changes

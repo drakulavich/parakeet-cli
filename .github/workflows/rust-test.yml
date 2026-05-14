@@ -122,11 +122,17 @@ jobs:
           path: rust/target/nextest/ci/junit.xml
           retention-days: 7
 
+      # The npm Flakiness CLI runs everywhere bun runs, so unlike the
+      # platform-specific curl installer it covers windows-latest too.
+      # Setup-bun is a no-op when bun is already on PATH (cached on warm
+      # runs).
+      - uses: oven-sh/setup-bun@v2
+        if: always()
+
       - name: 🪼 Upload to Flakiness.io
         if: always()
         shell: bash
         run: |
-          curl -LsSf https://cli.flakiness.io/install.sh | sh
-          flakiness convert-junit rust/target/nextest/ci/junit.xml \
+          bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
             --category rust --project Laputa/kesha-voice-kit
-          flakiness upload ./flakiness-report
+          bunx flakiness upload ./flakiness-report
