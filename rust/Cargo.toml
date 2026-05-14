@@ -3,6 +3,10 @@ name = "kesha-engine"
 version = "1.16.0"
 edition = "2021"
 description = "Inference engine for Kesha Voice Kit: ASR + language detection"
+# Not for crates.io. The library target (`src/lib.rs`) exists only for the
+# in-tree integration tests; the binary (`src/main.rs`) is the public
+# surface and ships via GitHub Releases. See #267 F17 / #313 P0.
+publish = false
 
 [lib]
 name = "kesha_engine"
