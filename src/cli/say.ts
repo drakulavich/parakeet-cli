@@ -150,10 +150,10 @@ export const sayCommand = defineCommand({
       } else {
         stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
       }
-      stats.finish("success", 1);
       if (!opts.out) {
         process.stdout.write(audio);
       }
+      stats.finish("success", 1);
     } catch (err) {
       stats.recordError("tts", err);
       stats.finish("failed", 1);

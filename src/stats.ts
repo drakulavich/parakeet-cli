@@ -411,10 +411,15 @@ export function sanitizeStatsError(err: unknown): { errorClass: string; message:
 function openStatsDatabase(dbPath: string): Database {
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
-  db.exec("pragma journal_mode = WAL");
-  db.exec("pragma busy_timeout = 1000");
-  migrateStatsDatabase(db);
-  return db;
+  try {
+    db.exec("pragma journal_mode = WAL");
+    db.exec("pragma busy_timeout = 1000");
+    migrateStatsDatabase(db);
+    return db;
+  } catch (err) {
+    db.close();
+    throw err;
+  }
 }
 
 function migrateStatsDatabase(db: Database): void {
@@ -423,61 +428,79 @@ function migrateStatsDatabase(db: Database): void {
       version integer primary key,
       applied_at text not null
     );
-
-    create table if not exists settings (
-      key text primary key,
-      value text not null
-    );
-
-    create table if not exists runs (
-      id integer primary key autoincrement,
-      command text not null,
-      started_at text not null,
-      finished_at text,
-      status text not null,
-      app_version text not null,
-      item_count integer not null default 0
-    );
-
-    create table if not exists artifacts (
-      id integer primary key autoincrement,
-      run_id integer not null references runs(id),
-      kind text not null,
-      format text,
-      size_bytes integer,
-      duration_ms integer,
-      sample_rate integer,
-      channels integer
-    );
-
-    create table if not exists stage_timings (
-      id integer primary key autoincrement,
-      run_id integer not null references runs(id),
-      stage text not null,
-      started_at text not null,
-      duration_ms integer not null,
-      status text not null
-    );
-
-    create table if not exists errors (
-      id integer primary key autoincrement,
-      run_id integer references runs(id),
-      stage text,
-      error_class text,
-      error_code text,
-      sanitized_message text not null,
-      occurred_at text not null
-    );
-
-    create index if not exists runs_started_at_idx on runs(started_at);
-    create index if not exists stage_timings_run_id_idx on stage_timings(run_id);
-    create index if not exists artifacts_run_id_idx on artifacts(run_id);
-    create index if not exists errors_occurred_at_idx on errors(occurred_at);
   `);
 
+  const currentVersion = currentSchemaVersion(db);
+  if (currentVersion >= SCHEMA_VERSION) return;
+
+  if (currentVersion < 1) {
+    db.exec(`
+      create table if not exists settings (
+        key text primary key,
+        value text not null
+      );
+
+      create table if not exists runs (
+        id integer primary key autoincrement,
+        command text not null,
+        started_at text not null,
+        finished_at text,
+        status text not null,
+        app_version text not null,
+        item_count integer not null default 0
+      );
+
+      create table if not exists artifacts (
+        id integer primary key autoincrement,
+        run_id integer not null references runs(id),
+        kind text not null,
+        format text,
+        size_bytes integer,
+        duration_ms integer,
+        sample_rate integer,
+        channels integer
+      );
+
+      create table if not exists stage_timings (
+        id integer primary key autoincrement,
+        run_id integer not null references runs(id),
+        stage text not null,
+        started_at text not null,
+        duration_ms integer not null,
+        status text not null
+      );
+
+      create table if not exists errors (
+        id integer primary key autoincrement,
+        run_id integer references runs(id),
+        stage text,
+        error_class text,
+        error_code text,
+        sanitized_message text not null,
+        occurred_at text not null
+      );
+
+      create index if not exists runs_started_at_idx on runs(started_at);
+      create index if not exists stage_timings_run_id_idx on stage_timings(run_id);
+      create index if not exists artifacts_run_id_idx on artifacts(run_id);
+      create index if not exists errors_occurred_at_idx on errors(occurred_at);
+    `);
+
+    recordSchemaVersion(db, 1);
+  }
+}
+
+function currentSchemaVersion(db: Database): number {
+  const row = db.query("select coalesce(max(version), 0) as version from schema_migrations").get() as {
+    version: number;
+  };
+  return Number(row.version ?? 0);
+}
+
+function recordSchemaVersion(db: Database, version: number): void {
   db.query(
     "insert or ignore into schema_migrations (version, applied_at) values (?, ?)",
-  ).run(SCHEMA_VERSION, new Date().toISOString());
+  ).run(version, new Date().toISOString());
 }
 
 function getStatsEnabled(db: Database): boolean {
