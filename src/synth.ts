@@ -1,4 +1,10 @@
-import { getEngineBinPath, isEngineInstalled, getEngineCapabilities, type EngineCapabilities } from "./engine";
+import {
+  getEngineBinPath,
+  isEngineInstalled,
+  getEngineCapabilities,
+  spawnStdioWithDebugFd,
+  type EngineCapabilities,
+} from "./engine";
 import { log } from "./log";
 
 /**
@@ -109,21 +115,27 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const startedAt = performance.now();
   log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
   const proc = Bun.spawn([getEngineBinPath(), ...args], {
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+    stdio: spawnStdioWithDebugFd(["pipe", "pipe", "pipe"]),
   });
+  // The `stdio: [...]` form widens stdin/stdout/stderr into a union
+  // (Bun.spawn can't infer that indices 0/1/2 are always "pipe" given
+  // the helper's return type). All three are guaranteed `FileSink` /
+  // `ReadableStream` here because the helper preserves index 0/1/2
+  // from the base tuple. Narrow back via cast.
+  const stdin = proc.stdin as Bun.FileSink;
+  const stdout = proc.stdout as ReadableStream<Uint8Array>;
+  const stderr = proc.stderr as ReadableStream<Uint8Array>;
 
   if (opts.text !== undefined && opts.text.length > 0) {
-    proc.stdin.write(opts.text);
-    await proc.stdin.end();
+    stdin.write(opts.text);
+    await stdin.end();
   } else {
-    await proc.stdin.end();
+    await stdin.end();
   }
 
   const [stdoutBuf, stderrText, exitCode] = await Promise.all([
-    new Response(proc.stdout).arrayBuffer(),
-    new Response(proc.stderr).text(),
+    new Response(stdout).arrayBuffer(),
+    new Response(stderr).text(),
     proc.exited,
   ]);
 

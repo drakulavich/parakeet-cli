@@ -50,18 +50,59 @@ export function isEngineInstalled(): boolean {
   return existsSync(getEngineBinPath());
 }
 
+/** A Bun.spawn `stdio` array entry: per-fd action or inherit-by-number. */
+type SpawnStdioEntry = "inherit" | "pipe" | "ignore" | number;
+
+/**
+ * Build a `stdio` array for `Bun.spawn`, forwarding `KESHA_DEBUG_FD` (#321 F19).
+ *
+ * The engine's NDJSON debug sink looks for `KESHA_DEBUG_FD=N` and writes
+ * structured events to fd `N`. Bun.spawn closes all non-stdio fds in the
+ * child by default, so a bare `KESHA_DEBUG_FD=3 kesha ...` would propagate
+ * the env var but the kernel-level fd 3 wouldn't reach the engine — the
+ * sink would silently no-op.
+ *
+ * This helper forwards the parent's fd N to the same number in the child
+ * by extending the stdio array with `"ignore"` padding up to index N and
+ * setting `stdio[N] = N` (Bun's "inherit parent fd identity" form).
+ *
+ * Returns `base` unchanged when:
+ *   - `KESHA_DEBUG_FD` is unset / empty.
+ *   - The value isn't a non-negative integer.
+ *   - The value is 0/1/2 (covered by base stdin/stdout/stderr entries).
+ *
+ * Exported so `synth.ts` (the `kesha say` spawn site) can share the
+ * forwarding logic without duplicating the env-parse code.
+ */
+export function spawnStdioWithDebugFd(
+  base: [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry],
+): [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry, ...SpawnStdioEntry[]] {
+  const envFd = process.env.KESHA_DEBUG_FD;
+  if (!envFd) return base;
+  const fd = Number(envFd);
+  if (!Number.isInteger(fd) || fd < 3) return base;
+  const out: SpawnStdioEntry[] = [...base];
+  while (out.length < fd) out.push("ignore");
+  out[fd] = fd;
+  return out as [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry, ...SpawnStdioEntry[]];
+}
+
 async function runEngine(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const binPath = getEngineBinPath();
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const proc = Bun.spawn([binPath, ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
+    stdio: spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
   });
+  // `stdio: [...]` widens stdout/stderr into a union; indices 1/2 are
+  // pinned to "pipe" by the helper, so the narrow ReadableStream type
+  // is correct. Cast to drop the spurious `number` arm.
+  const stdoutStream = proc.stdout as ReadableStream<Uint8Array>;
+  const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
 
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+    new Response(stdoutStream).text(),
+    new Response(stderrStream).text(),
     proc.exited,
   ]);
 
