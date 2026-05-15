@@ -68,7 +68,14 @@ fn debug_on_for(value: Option<&str>) -> bool {
     }
 }
 
-fn enabled() -> bool {
+/// Whether `KESHA_DEBUG` was truthy at process start. Cached via
+/// `OnceLock` so call sites can probe it cheaply (one atomic load).
+///
+/// Exposed `pub` so [`dtrace!`] (this module) and library consumers
+/// can guard the call site BEFORE evaluating the format-args
+/// expression — the macro relies on this to skip work like
+/// `ipa.chars().count()` when debug is off (#313 F22).
+pub fn enabled() -> bool {
     static CACHE: OnceLock<bool> = OnceLock::new();
     *CACHE.get_or_init(|| debug_on_for(std::env::var("KESHA_DEBUG").ok().as_deref()))
 }
@@ -98,9 +105,11 @@ pub fn init() {
     let _ = engine_t0();
 }
 
-/// Emit a stderr trace line when `KESHA_DEBUG` is on. Accepts `format_args!`
-/// so call sites don't allocate when debug is off — `enabled()` is one atomic
-/// load via OnceLock. Use via the `dtrace!` macro below.
+/// Emit a stderr trace line when `KESHA_DEBUG` is on. The internal
+/// `enabled()` check stays as defence-in-depth for direct callers that
+/// bypass [`dtrace!`] (none today, but the function is `pub`).
+///
+/// The fast path is the macro-level guard — see [`dtrace!`].
 pub fn trace_fmt(args: std::fmt::Arguments<'_>) {
     if enabled() {
         let t = engine_t0().elapsed().as_millis();
@@ -108,11 +117,23 @@ pub fn trace_fmt(args: std::fmt::Arguments<'_>) {
     }
 }
 
-/// Convenience macro so call sites don't allocate when off.
+/// Emit a relative-ms-prefixed stderr line when `KESHA_DEBUG` is on.
+/// **No-op when off, INCLUDING the format-args expression.** The
+/// `enabled()` guard fires at the call site BEFORE `format_args!`,
+/// so eager work like `ipa.chars().count()` or `path.to_string()`
+/// inside the `dtrace!` argument list is skipped entirely under
+/// production load. Locked by a Display-counting test in
+/// [`tests::dtrace_skips_arg_evaluation_when_debug_is_off`].
+///
+/// Cost when off: one atomic OnceLock load (the cached `enabled()`).
+/// Cost when on: format_args build + `Instant::now()` elapsed + one
+/// eprintln! syscall.
 #[macro_export]
 macro_rules! dtrace {
     ($($arg:tt)*) => {
-        $crate::debug::trace_fmt(format_args!($($arg)*))
+        if $crate::debug::enabled() {
+            $crate::debug::trace_fmt(format_args!($($arg)*));
+        }
     };
 }
 
@@ -301,5 +322,57 @@ mod tests {
         assert!(debug_on_for(Some("1")));
         assert!(debug_on_for(Some("true")));
         assert!(debug_on_for(Some("anything")));
+    }
+
+    /// Locks the F22 contract (#313 P2): when `KESHA_DEBUG` is off, the
+    /// `dtrace!` macro must NOT evaluate its format-args expression at
+    /// the call site. Without the call-site guard, work like
+    /// `ipa.chars().count()` at `tts/g2p.rs:35` (an O(n) char walk)
+    /// would run on every release-build invocation.
+    ///
+    /// Earlier draft of this test (Greptile P2 on #326) used a `Display`
+    /// impl with a side-effecting `fmt`. That test passed under the
+    /// pre-fix macro too because `Display::fmt` only runs when the
+    /// `Arguments<'_>` is actually written — which `trace_fmt`'s own
+    /// internal guard already blocked. To genuinely detect a regression
+    /// to eager-arg-eval we have to use an expression Rust evaluates
+    /// EAGERLY as part of building the `Arguments` — i.e. a function
+    /// call whose return value becomes the format argument.
+    ///
+    /// The test relies on the default test-process state: `cargo test`
+    /// and nextest don't set `KESHA_DEBUG`, so the cached `enabled()`
+    /// resolves to false. Skips harmlessly when on so a deliberate
+    /// `KESHA_DEBUG=1 cargo test` doesn't produce an ambiguous failure.
+    #[test]
+    fn dtrace_skips_arg_evaluation_when_debug_is_off() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        if super::enabled() {
+            eprintln!("KESHA_DEBUG is on in this process; skipping lazy-arg test");
+            return;
+        }
+
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        fn side_effecting_arg() -> u32 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            42
+        }
+
+        // `format_args!("{}", side_effecting_arg())` requires the call
+        // to be evaluated BEFORE the `Arguments<'_>` value is built —
+        // its return is captured as the format argument. So if the
+        // macro short-circuits at the call site (new behaviour), the
+        // function never runs; if it eagerly expands `format_args!`
+        // and only guards the eprintln (old behaviour), the function
+        // DOES run and COUNT increments.
+        crate::dtrace!("f22-test {}", side_effecting_arg());
+
+        assert_eq!(
+            COUNT.load(Ordering::Relaxed),
+            0,
+            "dtrace! eagerly evaluated its format-arg expression when KESHA_DEBUG was off; \
+             the call-site guard regressed (#313 F22)"
+        );
     }
 }
