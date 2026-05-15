@@ -12,9 +12,9 @@ describe("pickVoiceForLang (auto-routing)", () => {
     );
   });
 
-  it("falls back to ru-vosk-m02 for Russian on non-darwin (Vosk replaces Piper-ruslan, #213)", () => {
-    expect(pickVoiceForLang("ru", 0.95, "linux")).toBe("ru-vosk-m02");
-    expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-vosk-m02");
+  it("falls back to Chatterbox for Russian on non-darwin", () => {
+    expect(pickVoiceForLang("ru", 0.95, "linux")).toBe("ru-chatterbox-m01");
+    expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-chatterbox-m01");
   });
 
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {

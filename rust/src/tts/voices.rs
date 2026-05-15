@@ -54,6 +54,13 @@ pub enum ResolvedVoice {
         model_dir: std::path::PathBuf,
         speaker_id: u32,
     },
+    /// Chatterbox Multilingual ONNX. `lang` is the Chatterbox language tag
+    /// (`ru`, `en`, etc.), and `voice_path` is a 24 kHz mono reference WAV.
+    Chatterbox {
+        model_dir: std::path::PathBuf,
+        voice_path: std::path::PathBuf,
+        lang: &'static str,
+    },
     /// macOS system TTS via AVSpeechSynthesizer (#141). The voice id is
     /// whatever the user passed after the `macos-` prefix — forwarded to the
     /// Swift helper, which tries `AVSpeechSynthesisVoice(identifier:)` first
@@ -67,6 +74,7 @@ impl ResolvedVoice {
         match self {
             Self::Kokoro { espeak_lang, .. } => espeak_lang,
             Self::Vosk { .. } => "",
+            Self::Chatterbox { lang, .. } => lang,
             // AVSpeech does its own G2P; the espeak language tag is unused.
             #[cfg(all(feature = "system_tts", target_os = "macos"))]
             Self::AVSpeech { .. } => "",
@@ -74,16 +82,27 @@ impl ResolvedVoice {
     }
 }
 
-/// Parse a voice id like `en-am_michael` or `ru-ruslan` into engine + paths.
+/// Parse a voice id like `en-am_michael` or `ru-chatterbox-m01` into engine + paths.
 /// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
 /// The special `macos-*` prefix routes to AVSpeechSynthesizer on supported builds.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
+    let voice_as_path = Path::new(voice_id);
+    if voice_as_path.exists() {
+        return resolve_chatterbox_reference(cache_dir, "en", voice_as_path);
+    }
     let (lang, name) = voice_id.split_once('-').ok_or_else(|| {
         anyhow::anyhow!("voice id must be in 'lang-name' form (got '{voice_id}')")
     })?;
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
         "ru" => {
+            if name == "chatterbox-m01" {
+                return resolve_chatterbox_reference(
+                    cache_dir,
+                    "ru",
+                    &cache_dir.join("models/chatterbox/default_voice.wav"),
+                );
+            }
             let suffix = name.strip_prefix("vosk-").unwrap_or(name);
             resolve_vosk_ru(cache_dir, voice_id, suffix)
         }
@@ -106,6 +125,28 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
             anyhow::bail!("language '{other}' not supported (use 'en-*', 'ru-*', or 'macos-*')")
         }
     }
+}
+
+fn resolve_chatterbox_reference(
+    cache_dir: &Path,
+    lang: &'static str,
+    voice_path: &Path,
+) -> anyhow::Result<ResolvedVoice> {
+    let model_dir = crate::models::model_dir_at(crate::models::ModelKind::Chatterbox, cache_dir);
+    if !crate::models::is_cached_in(crate::models::ModelKind::Chatterbox, &model_dir) {
+        anyhow::bail!("Chatterbox TTS model not installed. run: kesha install --tts");
+    }
+    if !voice_path.exists() {
+        anyhow::bail!(
+            "Chatterbox reference voice not found at {}. run: kesha install --tts",
+            voice_path.display()
+        );
+    }
+    Ok(ResolvedVoice::Chatterbox {
+        model_dir,
+        voice_path: voice_path.to_path_buf(),
+        lang,
+    })
 }
 
 fn resolve_kokoro(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
@@ -232,6 +273,41 @@ mod tests {
                 assert_eq!(espeak_lang, "en-us");
             }
             other => panic!("expected Kokoro, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_installed_chatterbox_voice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("models/chatterbox");
+        std::fs::create_dir_all(dir.join("onnx")).unwrap();
+        for rel in [
+            "onnx/speech_encoder.onnx",
+            "onnx/speech_encoder.onnx_data",
+            "onnx/embed_tokens.onnx",
+            "onnx/embed_tokens.onnx_data",
+            "onnx/language_model.onnx",
+            "onnx/language_model.onnx_data",
+            "onnx/conditional_decoder.onnx",
+            "onnx/conditional_decoder.onnx_data",
+            "tokenizer.json",
+            "default_voice.wav",
+        ] {
+            std::fs::write(dir.join(rel), b"dummy").unwrap();
+        }
+
+        let r = resolve_voice(tmp.path(), "ru-chatterbox-m01").unwrap();
+        match r {
+            ResolvedVoice::Chatterbox {
+                model_dir,
+                voice_path,
+                lang,
+            } => {
+                assert!(model_dir.ends_with("models/chatterbox"));
+                assert!(voice_path.ends_with("models/chatterbox/default_voice.wav"));
+                assert_eq!(lang, "ru");
+            }
+            other => panic!("expected Chatterbox, got {other:?}"),
         }
     }
 

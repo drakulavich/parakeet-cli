@@ -14,7 +14,7 @@
 <p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), works on any platform (ONNX fallback).<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
 
 - **Speech-to-text** — 25 languages, ~15x faster than Whisper on Apple Silicon, ~2.5x on CPU
-- **Text-to-speech** — Kokoro (EN) + Vosk-TTS (RU) + macOS system voices, SSML preview
+- **Text-to-speech** — Kokoro (EN) + Chatterbox (RU) + macOS system voices, SSML preview
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
 
@@ -100,12 +100,12 @@ Each segment gets a `speaker` integer (cluster ID, stable within one file). Linu
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian) — voice auto-picks from the text's language:
+Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX (Russian on Linux/Windows) — voice auto-picks from the text's language:
 
 ```bash
-kesha install --tts                      # ~990MB (Kokoro + Vosk-TTS RU, opt-in)
+kesha install --tts                      # ~3.3GB (Kokoro + Chatterbox, opt-in)
 kesha say "Hello, world" > hello.wav
-kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
+kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-chatterbox-m01 elsewhere)
 ```
 
 **Russian abbreviations** (`ru-vosk-*`): all-uppercase Cyrillic 2-5-char tokens auto-expand letter-by-letter when not pronounceable as a Russian syllable (ФСБ → "эф-эс-бэ", ВОЗ → "воз"). Disable with `--no-expand-abbrev`. See [docs/tts.md#russian-abbreviation-auto-expansion](docs/tts.md#russian-abbreviation-auto-expansion).
@@ -158,7 +158,7 @@ See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + Engl
 | SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
 | Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
-| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | ~990MB | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
+| Kokoro-82M / Chatterbox (opt-in) | Text-to-speech | ~3.3GB | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) · [Chatterbox](https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX) |
 
 All models run through `kesha-engine` — a Rust binary using [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other platforms.
 

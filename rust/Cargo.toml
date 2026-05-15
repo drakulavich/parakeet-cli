@@ -26,7 +26,7 @@ default = ["onnx", "tts"]
 # invalidAudioData")` (see #259) interleaves with kesha-engine's JSON output.
 coreml = ["dep:fluidaudio-rs", "dep:tempfile", "dep:libc"]
 onnx = []
-tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
+tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg", "dep:tokenizers"]
 # macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
 # Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
 # non-macOS targets even when enabled.
@@ -79,6 +79,7 @@ ssml-parser = { version = "0.1", optional = true }
 # is a pure-Rust container muxer. Both are MIT/Apache-2.0 — license-compatible.
 opus = { version = "0.3", optional = true }
 ogg = { version = "0.9", optional = true }
+tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-regex"], optional = true }
 
 tempfile = { version = "3", optional = true }
 libc = { version = "0.2", optional = true }

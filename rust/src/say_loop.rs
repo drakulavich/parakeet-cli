@@ -305,6 +305,28 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                 tts::encode::encode(&audio, sample_rate, format).map_err(|e| format!("encode: {e}"))
             }
         }
+        tts::voices::ResolvedVoice::Chatterbox {
+            model_dir,
+            voice_path,
+            lang: _,
+        } => {
+            if req.ssml {
+                return Err("SSML is not yet supported with Chatterbox voices".into());
+            }
+            tts::say(tts::SayOptions {
+                text: &req.text,
+                lang: espeak_lang,
+                engine: tts::EngineChoice::Chatterbox {
+                    model_dir: &model_dir,
+                    voice_path: &voice_path,
+                    lang: espeak_lang,
+                },
+                ssml: false,
+                format,
+                expand_abbrev: req.expand_abbrev,
+            })
+            .map_err(|e| e.to_string())
+        }
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
             // AVSpeech is a Swift sidecar — no in-process state to cache.

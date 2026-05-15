@@ -110,7 +110,8 @@ function showDiskUsage(binPath: string): void {
     { label: "Language ID", path: join(cache, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cache, "models/silero-vad") },
     { label: "TTS (Kokoro)", path: join(cache, "models/kokoro-82m") },
-    { label: "TTS (Vosk)", path: join(cache, "models/vosk-ru") },
+    { label: "TTS (Chatterbox)", path: join(cache, "models/chatterbox") },
+    { label: "TTS (Vosk legacy)", path: join(cache, "models/vosk-ru") },
   ];
 
   const rows: Array<{ label: string; size: number }> = [];
@@ -178,16 +179,21 @@ function listInstalledVoices(): string[] {
     /* Kokoro not installed */
   }
   try {
-    // Vosk-TTS Russian is a single multi-speaker model. Mirror the Rust-side
-    // gate (models::is_vosk_ru_cached) — checking model.onnx + bert/model.onnx
-    // avoids advertising voices that would fail to load on a partial install.
+    statSync(join(cache, "models", "chatterbox", "onnx", "speech_encoder.onnx"));
+    statSync(join(cache, "models", "chatterbox", "onnx", "language_model.onnx"));
+    statSync(join(cache, "models", "chatterbox", "default_voice.wav"));
+    voices.push("ru-chatterbox-m01");
+  } catch {
+    /* Chatterbox not installed */
+  }
+  try {
+    // Legacy installs may still have Vosk cached; keep explicit voices
+    // discoverable even though new `kesha install --tts` no longer fetches it.
     statSync(join(cache, "models", "vosk-ru", "model.onnx"));
     statSync(join(cache, "models", "vosk-ru", "bert", "model.onnx"));
-    for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
-      voices.push(`ru-vosk-${id}`);
-    }
+    for (const id of ["f01", "f02", "f03", "m01", "m02"]) voices.push(`ru-vosk-${id}`);
   } catch {
-    /* Vosk not installed */
+    /* Legacy Vosk not installed */
   }
   return voices.sort();
 }

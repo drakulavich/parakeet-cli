@@ -1,7 +1,6 @@
 /**
  * Darwin defaults to AVSpeech Milena — zero install, no model download required.
- * Linux/Windows fall through to Vosk-TTS `ru-vosk-m02` (male, per CLAUDE.md
- * "DEFAULT TTS VOICES MUST BE MALE"; replaces Piper-ruslan as of #213).
+ * Linux/Windows fall through to Chatterbox `ru-chatterbox-m01`.
  */
 const RU_DARWIN_FALLBACK_VOICE = "macos-com.apple.voice.compact.ru-RU.Milena";
 
@@ -16,7 +15,7 @@ export function pickVoiceForLang(
     case "en":
       return "en-am_michael";
     case "ru":
-      return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-vosk-m02";
+      return platform === "darwin" ? RU_DARWIN_FALLBACK_VOICE : "ru-chatterbox-m01";
     default:
       return undefined;
   }

@@ -222,7 +222,7 @@ async function downloadSidecar(
 }
 
 export interface InstallOptions {
-  /** Also install Kokoro + Vosk-TTS models. */
+  /** Also install Kokoro + Chatterbox TTS models. */
   tts?: boolean;
   /** Also install Silero VAD model for long-audio preprocessing. */
   vad?: boolean;

@@ -14,7 +14,8 @@ use std::time::Instant;
 
 use super::encode::OutputFormat;
 use super::{
-    en, encode, g2p, kokoro, ru, sessions, ssml, EngineChoice, SayOptions, TtsError, MAX_TEXT_CHARS,
+    chatterbox, en, encode, g2p, kokoro, ru, sessions, ssml, EngineChoice, SayOptions, TtsError,
+    MAX_TEXT_CHARS,
 };
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -89,6 +90,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     let engine_label: &str = match &opts.engine {
         EngineChoice::Kokoro { .. } => "kokoro",
         EngineChoice::Vosk { .. } => "vosk",
+        EngineChoice::Chatterbox { .. } => "chatterbox",
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => "avspeech",
     };
@@ -141,6 +143,20 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         );
     }
 
+    if let EngineChoice::Chatterbox {
+        model_dir,
+        voice_path,
+        lang,
+    } = &opts.engine
+    {
+        if opts.ssml {
+            return Err(TtsError::SynthesisFailed(
+                "SSML is not yet supported with Chatterbox voices".into(),
+            ));
+        }
+        return say_with_chatterbox(opts.text, model_dir, voice_path, lang, opts.format);
+    }
+
     if opts.ssml {
         return say_ssml(&opts);
     }
@@ -186,6 +202,7 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         // Vosk and AVSpeech are handled by early-returns above. Keep guard arms
         // so the match stays exhaustive when those features are enabled.
         EngineChoice::Vosk { .. } => unreachable!("handled by early return above"),
+        EngineChoice::Chatterbox { .. } => unreachable!("handled by early return above"),
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => unreachable!("handled by early return above"),
     }
@@ -218,6 +235,8 @@ fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
         ),
         // Vosk + SSML is handled by the early-return in say(); this arm keeps the match exhaustive.
         EngineChoice::Vosk { .. } => unreachable!("handled by early return in say()"),
+        // Chatterbox + SSML is rejected by the early-return in say().
+        EngineChoice::Chatterbox { .. } => unreachable!("handled by early return in say()"),
         // AVSpeech + SSML is rejected up-front in `say()`; this arm keeps the match exhaustive.
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => {
@@ -388,6 +407,21 @@ fn say_with_vosk(
         .infer(model_dir, normalized.as_ref(), speaker_id, speed)
         .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
     encode_or_fail(&audio, sample_rate, format)
+}
+
+fn say_with_chatterbox(
+    text: &str,
+    model_dir: &Path,
+    voice_path: &Path,
+    lang: &str,
+    format: OutputFormat,
+) -> Result<Vec<u8>, TtsError> {
+    let mut engine = chatterbox::Chatterbox::load(model_dir)
+        .map_err(|e| TtsError::SynthesisFailed(format!("chatterbox load: {e}")))?;
+    let samples = engine
+        .infer(text, lang, voice_path)
+        .map_err(|e| TtsError::SynthesisFailed(format!("chatterbox: {e}")))?;
+    encode_or_fail(&samples, chatterbox::SAMPLE_RATE, format)
 }
 
 fn synth_segments_vosk(
