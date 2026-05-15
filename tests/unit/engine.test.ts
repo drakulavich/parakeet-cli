@@ -88,4 +88,16 @@ describe("spawnStdioWithDebugFd", () => {
     process.env.KESHA_DEBUG_FD = "-1";
     expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
   });
+
+  test("returns base unchanged on decimal fd (Number.isInteger rejects)", () => {
+    process.env.KESHA_DEBUG_FD = "3.5";
+    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
+  });
+
+  test("returns base unchanged on fd above MAX_FORWARDED_FD (#323 P2)", () => {
+    // 1024 is the cap; anything higher would allocate a giant `ignore`
+    // padding array. Legitimate users never have an fd this high.
+    process.env.KESHA_DEBUG_FD = "1000000";
+    expect(spawnStdioWithDebugFd(["ignore", "pipe", "pipe"])).toEqual(["ignore", "pipe", "pipe"]);
+  });
 });

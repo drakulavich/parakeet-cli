@@ -54,6 +54,17 @@ export function isEngineInstalled(): boolean {
 type SpawnStdioEntry = "inherit" | "pipe" | "ignore" | number;
 
 /**
+ * Upper bound on the fd number we'll forward (#323 Greptile P2).
+ *
+ * The `stdio` array is index-addressed, so `KESHA_DEBUG_FD=1000000` would
+ * allocate a million-entry array of `"ignore"` strings before the spawn.
+ * 1024 is the conservative POSIX `RLIMIT_NOFILE` default — anything
+ * above it can't be open in the parent anyway, so capping is a no-op
+ * for legitimate users and a DoS guard for bogus input.
+ */
+const MAX_FORWARDED_FD = 1024;
+
+/**
  * Build a `stdio` array for `Bun.spawn`, forwarding `KESHA_DEBUG_FD` (#321 F19).
  *
  * The engine's NDJSON debug sink looks for `KESHA_DEBUG_FD=N` and writes
@@ -80,7 +91,7 @@ export function spawnStdioWithDebugFd(
   const envFd = process.env.KESHA_DEBUG_FD;
   if (!envFd) return base;
   const fd = Number(envFd);
-  if (!Number.isInteger(fd) || fd < 3) return base;
+  if (!Number.isInteger(fd) || fd < 3 || fd > MAX_FORWARDED_FD) return base;
   const out: SpawnStdioEntry[] = [...base];
   while (out.length < fd) out.push("ignore");
   out[fd] = fd;
