@@ -66,7 +66,8 @@ enum Commands {
         /// Re-download even if cached
         #[arg(long)]
         no_cache: bool,
-        /// Also install TTS models (Kokoro EN + Chatterbox multilingual, ~3.3GB).
+        /// Also install TTS models (Kokoro EN + Chatterbox 23 languages,
+        /// one bundled download, ~3.3GB).
         #[cfg(feature = "tts")]
         #[arg(long)]
         tts: bool,

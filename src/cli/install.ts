@@ -73,7 +73,7 @@ export const installCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description: "Also install TTS models (Kokoro EN + Chatterbox multilingual, ~3.3GB)",
+      description: "Also install TTS models (Kokoro EN + Chatterbox 23 languages, one bundled download, ~3.3GB)",
       default: false,
     },
     vad: {

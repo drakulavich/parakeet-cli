@@ -156,6 +156,9 @@ pub fn run(a: SayArgs) -> i32 {
         voice_ids.sort();
         if voice_ids.is_empty() {
             println!("No voices installed. Run: kesha install --tts");
+            println!(
+                "Chatterbox languages install together in one bundle; use <lang>-chatterbox-m01 after install."
+            );
         } else {
             for id in voice_ids {
                 println!("{id}");

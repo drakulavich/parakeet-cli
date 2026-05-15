@@ -1,7 +1,19 @@
 import { describe, it, expect } from "bun:test";
-import { pickVoiceForLang } from "../../src/voice-routing";
+import { AUTO_VOICE_BY_LANG, pickVoiceForLang } from "../../src/voice-routing";
+
+const CHATTERBOX_LANGS_EXCEPT_EN = [
+  "ar", "da", "de", "el", "es", "fi", "fr", "he", "hi", "it", "ja", "ko",
+  "ms", "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh",
+];
 
 describe("pickVoiceForLang (auto-routing)", () => {
+  it("keeps an explicit auto-routing dictionary", () => {
+    expect(AUTO_VOICE_BY_LANG.en).toBe("en-am_michael");
+    for (const lang of CHATTERBOX_LANGS_EXCEPT_EN) {
+      expect(AUTO_VOICE_BY_LANG[lang]).toBe(`${lang}-chatterbox-m01`);
+    }
+  });
+
   it("returns en-am_michael for English with high confidence", () => {
     expect(pickVoiceForLang("en", 0.95)).toBe("en-am_michael");
   });

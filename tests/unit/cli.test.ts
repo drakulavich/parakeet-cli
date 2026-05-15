@@ -17,6 +17,12 @@ describe("CLI help", () => {
     expect(usage).toContain("--no-cache");
   });
 
+  test("install help explains Chatterbox languages install as one bundle", async () => {
+    const usage = await renderUsage(installCommand);
+    expect(usage).toContain("Chatterbox 23 languages");
+    expect(usage).toContain("one bundled download");
+  });
+
   test("main help contains --json flag", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("--json");
