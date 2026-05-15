@@ -77,6 +77,22 @@ impl TranscribeOptionsBuilder<marker::NoSegments> {
 }
 
 impl TranscribeOptionsBuilder<marker::WithSegments> {
+    /// Override the VAD preprocessing mode. Mirrors the same method on
+    /// the `NoSegments` state so call-site ordering doesn't matter:
+    /// `Builder::new().with_segments().vad(VadMode::On)` produces the
+    /// same options as `Builder::new().vad(VadMode::On).with_segments()`.
+    /// Greptile P2 on #318.
+    ///
+    /// `#[allow(dead_code)]` because today's only call site
+    /// (`cli/transcribe.rs::run`) chains `vad()` BEFORE `with_segments()`
+    /// — the method exists for ergonomics + symmetry with the
+    /// `NoSegments` impl, not for an existing consumer.
+    #[allow(dead_code)]
+    pub fn vad(mut self, mode: VadMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
     /// Enable speaker diarization labels on each segment. Only callable
     /// in the `WithSegments` state — the type-state mirrors the runtime
     /// `anyhow::ensure!` guard in [`super::transcribe_with_options`].
@@ -145,5 +161,26 @@ mod tests {
         assert_eq!(opts.mode, VadMode::Auto);
         assert!(!opts.with_segments);
         assert!(!opts.with_speakers);
+    }
+
+    #[test]
+    fn vad_is_callable_in_both_states_with_identical_results() {
+        // `vad()` is available before AND after `with_segments()`. Greptile
+        // P2 on #318 flagged the original "only NoSegments has vad()"
+        // as a foot-gun; lock the order-independence in.
+        let pre = TranscribeOptionsBuilder::new()
+            .vad(VadMode::On)
+            .with_segments()
+            .with_speakers()
+            .build();
+        let post = TranscribeOptionsBuilder::new()
+            .with_segments()
+            .vad(VadMode::On)
+            .with_speakers()
+            .build();
+        assert_eq!(pre.mode, VadMode::On);
+        assert_eq!(post.mode, VadMode::On);
+        assert!(pre.with_segments && post.with_segments);
+        assert!(pre.with_speakers && post.with_speakers);
     }
 }
