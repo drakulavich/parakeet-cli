@@ -24,7 +24,16 @@ fn json_sink_emits_ndjson_with_event_and_t_ms_to_configured_fd() {
     // env once via `OnceLock::get_or_init`. Subsequent changes are
     // silently ignored, which is intentional (the writer's fd identity
     // must be stable for the engine's lifetime).
-    std::env::set_var("KESHA_DEBUG_FD", fd.to_string());
+    //
+    // SAFETY: `std::env::set_var` is marked `unsafe` from Rust 1.84+
+    // because concurrent setenv/getenv in a multi-threaded process is
+    // UB on POSIX. This test runs as its own integration binary
+    // (`#![cfg(unix)]` only, single `#[test]` per file) and CI runs it
+    // under nextest — process-per-test isolation. No other thread is
+    // alive when this call happens. Greptile P2 on #321.
+    unsafe {
+        std::env::set_var("KESHA_DEBUG_FD", fd.to_string());
+    }
 
     kesha_engine::debug::trace_json("test.first", serde_json::json!({"x": 1, "label": "ok"}));
     kesha_engine::debug::trace_json("test.second", serde_json::json!({"y": 2}));
