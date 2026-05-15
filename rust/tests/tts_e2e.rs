@@ -3,18 +3,17 @@
 
 #![cfg(feature = "tts")]
 
+mod common;
+
 use std::path::Path;
 
 use kesha_engine::tts::{self, EngineChoice, OutputFormat, SayOptions, TtsError};
 
 #[test]
 fn kokoro_hello_world_produces_wav() {
-    let (model, voice) = match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => (m, v),
-        _ => {
-            eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
-            return;
-        }
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
+        eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
+        return;
     };
     let wav = tts::say(SayOptions {
         text: "Hello, world",
@@ -74,12 +73,9 @@ fn too_long_errors() {
 
 #[test]
 fn kokoro_ssml_with_break_produces_wav() {
-    let (model, voice) = match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => (m, v),
-        _ => {
-            eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
-            return;
-        }
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
+        eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
+        return;
     };
     let wav = tts::say(SayOptions {
         text: r#"<speak>Hello <break time="300ms"/> world</speak>"#,

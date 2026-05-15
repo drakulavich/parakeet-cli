@@ -1,11 +1,12 @@
 #![cfg(feature = "tts")]
 
+mod common;
+
 use std::process::Command;
 
 #[test]
 fn capabilities_advertises_tts() {
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .arg("--capabilities-json")
         .output()
         .expect("run");
@@ -19,8 +20,7 @@ fn capabilities_advertises_tts() {
 
 #[test]
 fn install_has_tts_flag() {
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args(["install", "--help"])
         .output()
         .expect("run");
@@ -34,8 +34,7 @@ fn install_has_tts_flag() {
 
 #[test]
 fn say_subcommand_exists() {
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args(["say", "--help"])
         .output()
         .expect("run");
@@ -51,15 +50,11 @@ fn say_subcommand_exists() {
 
 #[test]
 fn say_with_explicit_paths_produces_wav() {
-    let (model, voice) = match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => (m, v),
-        _ => {
-            eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
-            return;
-        }
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
+        eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
+        return;
     };
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args([
             "say",
             "Hello, world",
@@ -88,18 +83,14 @@ fn say_with_explicit_paths_produces_wav() {
 
 #[test]
 fn say_reads_stdin_when_no_positional() {
-    let (model, voice) = match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => (m, v),
-        _ => {
-            eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
-            return;
-        }
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
+        eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
+        return;
     };
     use std::io::Write;
     use std::process::Stdio;
 
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let mut child = Command::new(bin)
+    let mut child = Command::new(common::engine_bin())
         .args([
             "say",
             "--model",
@@ -131,8 +122,7 @@ fn say_reads_stdin_when_no_positional() {
 
 #[test]
 fn empty_text_exits_2() {
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args([
             "say",
             "",
@@ -154,8 +144,7 @@ fn empty_text_exits_2() {
 #[test]
 fn missing_voice_in_cache_exits_1_with_install_hint() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .env("KESHA_CACHE_DIR", tmp.path())
         .args(["say", "Hi"])
         .output()
@@ -175,12 +164,9 @@ fn missing_voice_in_cache_exits_1_with_install_hint() {
 
 #[test]
 fn resolves_from_cache_when_installed() {
-    let (model, voice) = match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => (m, v),
-        _ => {
-            eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
-            return;
-        }
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
+        eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
+        return;
     };
     // misaki-rs is embedded — no G2P model cache required post-#213.
     let tmp = tempfile::tempdir().unwrap();
@@ -194,8 +180,7 @@ fn resolves_from_cache_when_installed() {
     // run-cargo-test.sh now points at am_michael.bin.
     std::fs::copy(&voice, voices_dir.join("am_michael.bin")).unwrap();
 
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .env("KESHA_CACHE_DIR", tmp.path())
         .env("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib")
         .args(["say", "Hello"])
@@ -212,8 +197,7 @@ fn resolves_from_cache_when_installed() {
 #[test]
 fn list_voices_empty_on_fresh_cache() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .env("KESHA_CACHE_DIR", tmp.path())
         .args(["say", "--list-voices"])
         .output()
@@ -232,8 +216,7 @@ fn list_voices_shows_installed() {
     let voices_dir = tmp.path().join("models/kokoro-82m/voices");
     std::fs::create_dir_all(&voices_dir).unwrap();
     std::fs::write(voices_dir.join("af_heart.bin"), b"").unwrap();
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .env("KESHA_CACHE_DIR", tmp.path())
         .args(["say", "--list-voices"])
         .output()
@@ -248,9 +231,8 @@ fn list_voices_shows_installed() {
 
 #[test]
 fn text_too_long_exits_5() {
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
     let huge = "a".repeat(10_000);
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args([
             "say",
             &huge,
@@ -272,10 +254,9 @@ fn text_too_long_exits_5() {
 #[test]
 fn synthesis_failure_exits_4() {
     // Missing model file at runtime -> SynthesisFailed -> exit 4
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
     let voice_tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(voice_tmp.path(), vec![0u8; 510 * 256 * 4]).unwrap();
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args([
             "say",
             "Hi",
@@ -296,16 +277,12 @@ fn synthesis_failure_exits_4() {
 
 #[test]
 fn say_writes_to_file_with_out_flag() {
-    let (model, voice) = match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => (m, v),
-        _ => {
-            eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
-            return;
-        }
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
+        eprintln!("skipping: set KOKORO_MODEL + KOKORO_VOICE");
+        return;
     };
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    let bin = env!("CARGO_BIN_EXE_kesha-engine");
-    let out = Command::new(bin)
+    let out = Command::new(common::engine_bin())
         .args([
             "say",
             "Hi",

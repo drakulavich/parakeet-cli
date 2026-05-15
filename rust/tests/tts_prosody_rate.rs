@@ -6,15 +6,13 @@
 
 #![cfg(feature = "tts")]
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::Path;
 use std::process::Command;
 
-fn engine_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_kesha-engine"))
-}
-
 fn say_ssml(voice: &str, ssml: &str, out: &Path) -> bool {
-    Command::new(engine_binary())
+    Command::new(common::engine_bin())
         .args([
             "say",
             "--voice",
@@ -111,7 +109,7 @@ fn macos_prosody_rate_ssml_rejected() {
         .unwrap();
     let out = tmp.path().join("macos.wav");
     let ssml = r#"<speak><prosody rate="fast">Hello there.</prosody></speak>"#;
-    let result = Command::new(engine_binary())
+    let result = Command::new(common::engine_bin())
         .args([
             "say",
             "--voice",
