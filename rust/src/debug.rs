@@ -165,25 +165,46 @@ fn json_sink() -> Option<&'static Mutex<File>> {
     None
 }
 
+/// Returns `true` when [`trace_json`] would write to a configured sink.
+///
+/// Public so the [`dtrace_json!`] macro can short-circuit the
+/// `serde_json::json!` allocation when the sink is inactive — matching
+/// the zero-heap-allocation contract of the text-path [`dtrace!`]
+/// macro (Greptile P2 on #321).
+pub fn json_sink_is_active() -> bool {
+    json_sink().is_some()
+}
+
 /// Emit one structured NDJSON event to the JSON sink, if configured.
 ///
 /// `event` is the dotted event name (e.g. `"asr.backend_loaded"`).
-/// `fields` is a JSON object built with [`serde_json::json!`] —
-/// arbitrary serialisable shape. Two reserved keys are added by the
+/// `fields` MUST be a [`serde_json::Value::Object`] — a non-object
+/// payload trips a `debug_assert!` in dev/test builds and is coerced
+/// to an empty map in release. Two reserved keys are added by the
 /// writer and override any caller-provided values of the same name:
 /// `t_ms` (process-relative timestamp from [`engine_t0`]) and `event`.
 ///
-/// No-op when `KESHA_DEBUG_FD` is unset or invalid. The `fields` value
-/// is constructed by the caller before the no-op check fires — call
-/// sites should use the [`dtrace_json!`] macro instead, which gates
-/// the construction on the same check.
+/// No-op when `KESHA_DEBUG_FD` is unset or invalid. Call sites should
+/// use the [`dtrace_json!`] macro instead — it gates `serde_json::json!`
+/// construction on [`json_sink_is_active`] so disabled events pay
+/// nothing.
 pub fn trace_json(event: &str, fields: serde_json::Value) {
     let Some(sink) = json_sink() else {
         return;
     };
     let mut payload = match fields {
         serde_json::Value::Object(map) => map,
-        _ => serde_json::Map::new(),
+        other => {
+            // Non-object payloads are call-site bugs (the macro grammar
+            // accepts them today but the writer can't merge them with
+            // `t_ms` / `event`). Catch in dev/test; degrade to empty
+            // map in release so production stays panic-free.
+            debug_assert!(
+                false,
+                "dtrace_json! expects a JSON object payload, got: {other:?}"
+            );
+            serde_json::Map::new()
+        }
     };
     let t = engine_t0().elapsed().as_millis();
     payload.insert(
@@ -210,7 +231,7 @@ pub fn trace_json(event: &str, fields: serde_json::Value) {
     }
 }
 
-/// Emit a structured NDJSON event when [`json_sink`] is configured.
+/// Emit a structured NDJSON event when [`json_sink_is_active`].
 ///
 /// Usage:
 /// ```ignore
@@ -218,13 +239,15 @@ pub fn trace_json(event: &str, fields: serde_json::Value) {
 /// dtrace_json!("vad.detect", { "dt_ms": dt, "segments": spans.len() });
 /// ```
 ///
-/// Cheap when off: the `serde_json::json!` value still allocates, so
-/// gate any expensive field computation on `cfg!(debug_assertions)` or
-/// behind a `let value = …` block when the cost matters at the call site.
+/// Zero-cost when the sink is unset: the `if json_sink_is_active()`
+/// gate sits in front of `serde_json::json!`, so disabled events skip
+/// the heap allocation that the eager form (Greptile P2 on #321) had.
 #[macro_export]
 macro_rules! dtrace_json {
     ($event:expr, $fields:tt) => {
-        $crate::debug::trace_json($event, ::serde_json::json!($fields))
+        if $crate::debug::json_sink_is_active() {
+            $crate::debug::trace_json($event, ::serde_json::json!($fields))
+        }
     };
 }
 
