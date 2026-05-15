@@ -8,9 +8,9 @@ use std::time::Instant;
 
 use crate::audio;
 use crate::backend;
-use crate::dtrace;
 use crate::models;
 use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
+use crate::{dtrace, dtrace_json};
 
 /// Capability-flag string surfaced via `--capabilities-json`. Single source of
 /// truth so the engine, the TS CLI gate, and the integration tests can't drift.
@@ -248,7 +248,9 @@ fn transcribe_plain(
 ) -> Result<TranscriptionOutput> {
     let t0 = Instant::now();
     let mut be = backend::create_backend(model_dir)?;
-    dtrace!("asr::backend_loaded dt={}ms", t0.elapsed().as_millis());
+    let dt_ms = t0.elapsed().as_millis() as u64;
+    dtrace!("asr::backend_loaded dt={dt_ms}ms");
+    dtrace_json!("asr.backend_loaded", { "dt_ms": dt_ms });
     let t1 = Instant::now();
     let text = be.transcribe(audio_path)?;
     dtrace!(
