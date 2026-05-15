@@ -2,37 +2,44 @@
 # Run with: vhs demo.tape
 # Output:    demo.gif (committed at repo root, referenced by README.md).
 #
-# Shows the hero use case: transcribe English + Russian audio with
-# automatic language detection, no flags beyond `--format transcript`.
+# Two consecutive transcriptions on two languages, two output formats:
+#   1. English voice message → `--format transcript`   (human-friendly)
+#   2. Russian voice message → `--json`                (machine/agent)
+#
+# Demonstrates: multilingual ASR, automatic language detection, and the
+# fact that the same engine answers in whichever shape the consumer asks
+# for (transcript line + lang tail vs structured JSON envelope).
 
 Output demo.gif
 
-# Width 1000 fits the English transcript line ("Please check your email...
-# about the deployment.") without wrapping; Height 400 is sized to the
-# 4-5 visible lines of two-command output.
-Set Width 1000
-Set Height 400
+Set Shell "bash"
 
-Set FontSize 14
+# Larger canvas so JSON output fits without wrapping on small fonts.
+Set Width 1500
+Set Height 940
+Set FontSize 22
 Set Theme "Catppuccin Mocha"
-Set Padding 16
+Set Padding 24
 
 # Slight typing slowdown so the viewer can register the command before
 # the transcription output appears.
 Set TypingSpeed 60ms
 
-Sleep 800ms
+Sleep 1s
 
-# English transcription — short voice message, clean output.
+# 1) English transcript — hero one-liner. Voice message in, plain text +
+#    `[lang: en, confidence: 1.00]` tail out.
 Type "kesha --format transcript fixtures/benchmark-en/01-check-email.ogg"
-Sleep 400ms
+Sleep 500ms
 Enter
-Sleep 4500ms
+# Sleep long enough for the user to read the 2-line output comfortably.
+Sleep 6s
 
-# Russian transcription — same shape, different language. The
-# `[lang: ru, confidence: 1.00]` tail demonstrates automatic language
-# detection without any flags.
-Type "kesha --format transcript fixtures/benchmark/03-ty-dobavil-sebe-v-pamyat.ogg"
-Sleep 400ms
+# 2) Russian JSON — same engine, different consumer. Stable JSON envelope
+#    with `text`, `lang`, `audioLanguage`, `textLanguage` — the shape
+#    agents (OpenClaw skill, MCP tools) consume.
+Type "kesha --json fixtures/benchmark/03-ty-dobavil-sebe-v-pamyat.ogg"
+Sleep 500ms
 Enter
-Sleep 4000ms
+# JSON output is ~14 lines; give the viewer enough time to scan it.
+Sleep 8s
