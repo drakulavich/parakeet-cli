@@ -68,14 +68,17 @@ describe("showStatus", () => {
   const savedCacheDir = process.env.KESHA_CACHE_DIR;
   const savedHome = process.env.HOME;
 
-  afterEach(() => {
+  function restoreEnv() {
     if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
     else process.env.KESHA_ENGINE_BIN = savedEngineBin;
     if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
     else process.env.KESHA_CACHE_DIR = savedCacheDir;
     if (savedHome === undefined) delete process.env.HOME;
     else process.env.HOME = savedHome;
-  });
+  }
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
 
   test("does not consume the star prompt marker slot", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-test-"));
