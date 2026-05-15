@@ -211,6 +211,8 @@ Past drift this rule prevents: #136 acceptance list had four items; PR #159 clos
 
 Any plan that names a specific upstream artifact ("Silero via ONNX", "statically-linked espeak-ng", "FluidAudio CoreML Kokoro") MUST be validated with a throwaway spike BEFORE the implementation phase commits to it.
 
+FluidAudio KokoroAne spike result (2026-05-15): FluidAudio `main` has `KokoroAneManager`, but published `fluidaudio-rs 0.14.1` does not expose Rust/FFI TTS synthesis APIs despite a `tts` feature. Kesha cannot switch Kokoro to FluidAudio by enabling a crate feature. Use a macOS Swift sidecar or upstream Rust bindings first; preserve explicit install/no-auto-download semantics and the male default voice rule. See `docs/superpowers/specs/2026-05-15-fluidaudio-kokoro-ane-spike.md`.
+
 - The spike downloads / builds the thing and runs it end-to-end — not just "checks if the repo exists."
 - Past pivots this rule would have prevented earlier: espeak-ng turned out to be dynamic-link-only in `espeakng-sys` (→ pivoted to system-dep + issue #124); Silero TTS ships PyTorch-only and has no public ONNX export (→ pivoted to Piper in M3).
 - Spike artifacts go in `/tmp/<name>-spike/` and are deleted after the finding is recorded in the plan doc.
