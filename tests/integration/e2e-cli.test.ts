@@ -1,10 +1,11 @@
-import { describe, test, expect } from "bun:test";
-import { mkdtempSync } from "fs";
+import { afterEach, describe, test, expect } from "bun:test";
+import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
 const CWD = import.meta.dir + "/../..";
 const CLI_TIMEOUT_MS = 4_000;
+const tempDirs: string[] = [];
 
 async function runCli(
   args: string[],
@@ -52,8 +53,15 @@ async function runCli(
 
 function emptyKeshaEnv(): Record<string, string> {
   const dir = mkdtempSync(join(tmpdir(), "kesha-empty-cli-"));
+  tempDirs.push(dir);
   return { HOME: dir, KESHA_CACHE_DIR: dir };
 }
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe("e2e-cli", () => {
   test("--version prints version and exits 0", async () => {
@@ -126,7 +134,7 @@ describe("e2e-cli", () => {
     expect(stderr).toContain("unknown command 'xyzxyzxyz'");
     expect(output).not.toContain("Did you mean");
     expect(output).not.toContain("FluidAudio");
-    expect(output.toLowerCase()).not.toContain("audio file not found");
+    expect(output.toLowerCase()).not.toContain("file not found");
   });
 
   test("--json + --toon are mutually exclusive → exit 2 (#138)", async () => {
