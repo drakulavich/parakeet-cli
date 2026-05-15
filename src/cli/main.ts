@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import { existsSync } from "fs";
 import { detect } from "tinyld";
 import { transcribeWithSegments } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
@@ -206,6 +207,12 @@ export const mainCommand = defineCommand({
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
 
     for (const file of files) {
+      if (!existsSync(file)) {
+        hasError = true;
+        log.error(`${file}: File not found`);
+        continue;
+      }
+
       const startedAt = performance.now();
       try {
         // Run audio lang-id and transcription concurrently.

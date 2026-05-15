@@ -1,21 +1,58 @@
 import { describe, test, expect } from "bun:test";
+import { mkdtempSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 const CWD = import.meta.dir + "/../..";
+const CLI_TIMEOUT_MS = 4_000;
 
-async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runCli(
+  args: string[],
+  opts: { env?: Record<string, string> } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
     cwd: CWD,
+    env: opts.env ? { ...process.env, ...opts.env } : process.env,
   });
 
+  const stdoutPromise = new Response(proc.stdout).text();
+  const stderrPromise = new Response(proc.stderr).text();
+  let timeout: Timer | undefined;
+  const timeoutPromise = new Promise<"timeout">((resolve) => {
+    timeout = setTimeout(() => resolve("timeout"), CLI_TIMEOUT_MS);
+  });
+  const exitOrTimeout = await Promise.race([proc.exited, timeoutPromise]);
+  if (timeout) clearTimeout(timeout);
+
+  if (exitOrTimeout === "timeout") {
+    proc.kill();
+  }
+
   const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
+    stdoutPromise,
+    stderrPromise,
     proc.exited,
   ]);
 
+  if (exitOrTimeout === "timeout") {
+    throw new Error(
+      [
+        `CLI timed out after ${CLI_TIMEOUT_MS}ms: kesha ${args.join(" ")}`,
+        `exitCode=${exitCode}`,
+        `stdout=${stdout.trim()}`,
+        `stderr=${stderr.trim()}`,
+      ].join("\n"),
+    );
+  }
+
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+}
+
+function emptyKeshaEnv(): Record<string, string> {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-empty-cli-"));
+  return { HOME: dir, KESHA_CACHE_DIR: dir };
 }
 
 describe("e2e-cli", () => {
@@ -59,6 +96,15 @@ describe("e2e-cli", () => {
     expect(stderr.toLowerCase()).toContain("file not found");
   });
 
+  test("missing file is reported before checking whether engine is installed", async () => {
+    const { stderr, exitCode } = await runCli(["nonexistent.wav"], {
+      env: emptyKeshaEnv(),
+    });
+    expect(exitCode).toBe(1);
+    expect(stderr.toLowerCase()).toContain("file not found");
+    expect(stderr).not.toContain("No transcription backend is installed");
+  });
+
   test("multiple missing files with --json outputs empty array", async () => {
     const { stdout, stderr, exitCode } = await runCli(["--json", "a.wav", "b.wav"]);
     expect(exitCode).toBe(1);
@@ -73,10 +119,14 @@ describe("e2e-cli", () => {
     expect(stderr).toContain("Did you mean");
   });
 
-  test("gibberish subcommand shows no suggestion", async () => {
-    const { stdout, stderr } = await runCli(["xyzxyzxyz"]);
+  test("gibberish bare token fails as an unknown command without engine startup", async () => {
+    const { stdout, stderr, exitCode } = await runCli(["xyzxyzxyz"]);
     const output = stdout + stderr;
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("unknown command 'xyzxyzxyz'");
     expect(output).not.toContain("Did you mean");
+    expect(output).not.toContain("FluidAudio");
+    expect(output.toLowerCase()).not.toContain("audio file not found");
   });
 
   test("--json + --toon are mutually exclusive → exit 2 (#138)", async () => {
