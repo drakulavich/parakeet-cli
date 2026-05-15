@@ -33,9 +33,10 @@ export async function transcribeWithSegments(
     throw new Error(
       "Error: No transcription backend is installed\n\n" +
       "╔══════════════════════════════════════════════════════════╗\n" +
-      "║ Please run the following command to get started:         ║\n" +
+      "║ Please run the following commands to get started:        ║\n" +
       "║                                                          ║\n" +
-      "║     bunx @drakulavich/kesha-voice-kit install               ║\n" +
+      "║     bun add -g @drakulavich/kesha-voice-kit             ║\n" +
+      "║     kesha install                                       ║\n" +
       "╚══════════════════════════════════════════════════════════╝",
     );
   }
