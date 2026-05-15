@@ -18,6 +18,10 @@
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
 
+<p align="center">
+  <img src="./demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
+</p>
+
 ## Quick Start
 
 Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
