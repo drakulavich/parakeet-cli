@@ -1,15 +1,20 @@
 use anyhow::Result;
 
-use crate::transcribe;
+use crate::transcribe::{self, TranscribeOptionsBuilder, VadMode};
 
 pub fn run(audio_path: String, json: bool, vad: bool, no_vad: bool, speakers: bool) -> Result<()> {
     if speakers && !json {
         anyhow::bail!("--speakers requires --json");
     }
-    let opts = transcribe::TranscribeOptions {
-        mode: transcribe::VadMode::from_flags(vad, no_vad),
-        with_segments: json,
-        with_speakers: speakers,
+    let mode = VadMode::from_flags(vad, no_vad);
+    let opts = if json {
+        let mut b = TranscribeOptionsBuilder::new().vad(mode).with_segments();
+        if speakers {
+            b = b.with_speakers();
+        }
+        b.build()
+    } else {
+        TranscribeOptionsBuilder::new().vad(mode).build()
     };
     let output = transcribe::transcribe_with_options(&audio_path, &opts)?;
     if json {

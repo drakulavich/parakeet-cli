@@ -1,5 +1,8 @@
 #[cfg(all(feature = "system_diarize", target_os = "macos"))]
 pub(crate) mod diarize;
+mod options;
+
+pub use options::TranscribeOptionsBuilder;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -93,6 +96,11 @@ pub struct TranscriptionOutput {
 /// `transcribe_output_with_speakers`) that grew with each new flag (#267 F5).
 ///
 /// New flags should land here as fields, not as a new top-level wrapper.
+///
+/// Prefer [`TranscribeOptionsBuilder`] over direct struct construction —
+/// the builder lifts the `with_speakers => with_segments` constraint into
+/// the type system (F18). The runtime [`anyhow::ensure!`] guard inside
+/// [`transcribe_with_options`] still fires on direct misuse.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TranscribeOptions {
     /// VAD preprocessing selector (Auto / On / Off).
