@@ -208,6 +208,7 @@ export const mainCommand = defineCommand({
     const stats = createStatsRecorder("transcribe");
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
+    const reportProgress = process.stdout.isTTY !== true;
 
     for (const file of files) {
       if (!existsSync(file)) {
@@ -221,6 +222,9 @@ export const mainCommand = defineCommand({
 
       const startedAt = performance.now();
       try {
+        if (reportProgress) {
+          console.error(`Transcribing ${file}...`);
+        }
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([
           wantsLangId
@@ -257,18 +261,22 @@ export const mainCommand = defineCommand({
         const mismatchWarning = checkLanguageMismatch(args.lang, lang);
         if (mismatchWarning) log.warn(`${file}: ${mismatchWarning}`);
 
+        const sttTimeMs = Math.round(performance.now() - startedAt);
         const result: TranscribeResult = {
           file,
           text,
           lang,
           audioLanguage,
           textLanguage: textLanguage ?? (tinyldLang ? { code: tinyldLang, confidence: 0 } : undefined),
-          sttTimeMs: Math.round(performance.now() - startedAt),
+          sttTimeMs,
         };
-        if (args.timestamps) {
+        if (args.timestamps || args.speakers) {
           result.segments = segments;
         }
         results.push(result);
+        if (reportProgress) {
+          console.error(`Transcribed ${file} (${sttTimeMs}ms)`);
+        }
       } catch (err: unknown) {
         hasError = true;
         stats.recordError("transcribe", err);

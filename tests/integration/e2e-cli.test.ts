@@ -1,6 +1,6 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -56,6 +56,48 @@ function emptyKeshaEnv(): Record<string, string> {
   const dir = mkdtempSync(join(tmpdir(), "kesha-empty-cli-"));
   tempDirs.push(dir);
   return { HOME: dir, KESHA_CACHE_DIR: dir };
+}
+
+function createFakeEngine(dir: string): string {
+  const enginePath = join(dir, "kesha-engine");
+  writeFileSync(
+    enginePath,
+    `#!/usr/bin/env bun
+const args = Bun.argv.slice(2);
+
+if (args[0] === "--capabilities-json") {
+  console.log(JSON.stringify({
+    protocolVersion: 1,
+    backend: "fake",
+    features: ["transcribe.segments", "transcribe.diarize"],
+  }));
+  process.exit(0);
+}
+
+if (args[0] === "detect-lang") {
+  console.log(JSON.stringify({ code: "ru", confidence: 0.99 }));
+  process.exit(0);
+}
+
+if (args[0] === "detect-text-lang") {
+  console.log(JSON.stringify({ code: "ru", confidence: 0.98 }));
+  process.exit(0);
+}
+
+if (args[0] === "transcribe") {
+  console.log(JSON.stringify({
+    text: "Привет с воркшопа",
+    segments: [{ start: 0, end: 1.2, text: "Привет с воркшопа", speaker: 0 }],
+  }));
+  process.exit(0);
+}
+
+console.error("unexpected fake engine args: " + JSON.stringify(args));
+process.exit(2);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
 }
 
 afterEach(() => {
@@ -196,5 +238,33 @@ describe("e2e-cli", () => {
     } finally {
       db.close();
     }
+  });
+
+  test("redirected --json --speakers reports progress on stderr and keeps stdout JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fake-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+
+    const { stdout, stderr, exitCode } = await runCli(
+      [mediaPath, "--json", "--speakers"],
+      {
+        env: {
+          HOME: dir,
+          KESHA_CACHE_DIR: dir,
+          KESHA_ENGINE_BIN: enginePath,
+        },
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain(`Transcribing ${mediaPath}...`);
+    expect(stderr).toMatch(/Transcribed .*workshop\.mp4 \(\d+ms\)/);
+
+    const parsed = JSON.parse(stdout);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].text).toBe("Привет с воркшопа");
+    expect(parsed[0].segments[0].speaker).toBe(0);
   });
 });
