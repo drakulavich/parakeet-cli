@@ -121,7 +121,10 @@ fn list_chatterbox_voices(cache: &std::path::Path) -> Vec<String> {
     if !models::is_cached_in(models::ModelKind::Chatterbox, &dir) {
         return Vec::new();
     }
-    vec!["ru-chatterbox-m01".into()]
+    tts::chatterbox::SUPPORTED_LANGS
+        .iter()
+        .map(|lang| format!("{lang}-{}", tts::voices::CHATTERBOX_DEFAULT_VOICE))
+        .collect()
 }
 
 /// Map a TTS error to the documented exit code for `kesha say`.

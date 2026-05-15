@@ -27,11 +27,9 @@ const MAX_NEW_TOKENS: usize = 4096;
 const REPETITION_PENALTY: f32 = 1.2;
 
 pub const SUPPORTED_LANGS: &[&str] = &[
-    "ar", "da", "de", "el", "en", "es", "fi", "fr", "hi", "it", "ms", "nl", "no", "pl", "pt", "ru",
-    "sv", "sw", "tr",
+    "ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it", "ja", "ko", "ms", "nl", "no",
+    "pl", "pt", "ru", "sv", "sw", "tr", "zh",
 ];
-
-const PREPROCESSING_LANGS: &[&str] = &["zh", "ja", "he", "ko"];
 
 #[derive(Clone)]
 struct TensorF32 {
@@ -226,11 +224,6 @@ impl Chatterbox {
 pub fn validate_lang(lang: &str) -> Result<()> {
     if SUPPORTED_LANGS.contains(&lang) {
         return Ok(());
-    }
-    if PREPROCESSING_LANGS.contains(&lang) {
-        anyhow::bail!(
-            "language '{lang}' requires Chatterbox text preprocessing that is not implemented yet"
-        );
     }
     anyhow::bail!(
         "unsupported Chatterbox language '{lang}'. supported: {}",
@@ -447,9 +440,16 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_preprocessing_languages_error_clearly() {
-        let err = validate_lang("ja").unwrap_err().to_string();
-        assert!(err.contains("requires Chatterbox text preprocessing"));
+    fn validates_all_supported_languages() {
+        for lang in SUPPORTED_LANGS {
+            validate_lang(lang).unwrap_or_else(|e| panic!("{lang}: {e}"));
+        }
+    }
+
+    #[test]
+    fn unsupported_languages_error_clearly() {
+        let err = validate_lang("uk").unwrap_err().to_string();
+        assert!(err.contains("unsupported Chatterbox language"));
     }
 
     #[test]

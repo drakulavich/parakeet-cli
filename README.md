@@ -14,7 +14,7 @@
 <p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), works on any platform (ONNX fallback).<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
 
 - **Speech-to-text** — 25 languages, ~15x faster than Whisper on Apple Silicon, ~2.5x on CPU
-- **Text-to-speech** — Kokoro (EN) + Chatterbox (RU) + macOS system voices, SSML preview
+- **Text-to-speech** — Kokoro (EN) + Chatterbox (23 languages) + macOS system voices, SSML preview
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
 
@@ -100,13 +100,15 @@ Each segment gets a `speaker` integer (cluster ID, stable within one file). Linu
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX (Russian on Linux/Windows) — voice auto-picks from the text's language:
+Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX (23 languages) — voice auto-picks from the text's language:
 
 ```bash
 kesha install --tts                      # ~3.3GB (Kokoro + Chatterbox, opt-in)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav     # auto-routes (Milena on darwin, ru-chatterbox-m01 elsewhere)
 ```
+
+Chatterbox voice ids use `<lang>-chatterbox-m01` for `ar`, `da`, `de`, `el`, `en`, `es`, `fi`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ms`, `nl`, `no`, `pl`, `pt`, `ru`, `sv`, `sw`, `tr`, `zh`.
 
 **Russian abbreviations** (`ru-vosk-*`): all-uppercase Cyrillic 2-5-char tokens auto-expand letter-by-letter when not pronounceable as a Russian syllable (ФСБ → "эф-эс-бэ", ВОЗ → "воз"). Disable with `--no-expand-abbrev`. See [docs/tts.md#russian-abbreviation-auto-expansion](docs/tts.md#russian-abbreviation-auto-expansion).
 

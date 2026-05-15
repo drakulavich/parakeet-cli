@@ -40,6 +40,7 @@ pub fn select_style(voice: &[f32], token_count: usize) -> &[f32] {
 
 /// Default voice id used when neither `--voice` nor auto-routing resolves one.
 pub const DEFAULT_VOICE_ID: &str = "en-am_michael";
+pub const CHATTERBOX_DEFAULT_VOICE: &str = "chatterbox-m01";
 
 /// Resolved engine + paths for a given voice id.
 #[derive(Debug)]
@@ -94,9 +95,14 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
         anyhow::anyhow!("voice id must be in 'lang-name' form (got '{voice_id}')")
     })?;
     match lang {
+        "en" if name == CHATTERBOX_DEFAULT_VOICE => resolve_chatterbox_reference(
+            cache_dir,
+            "en",
+            &cache_dir.join("models/chatterbox/default_voice.wav"),
+        ),
         "en" => resolve_kokoro(cache_dir, voice_id, name),
         "ru" => {
-            if name == "chatterbox-m01" {
+            if name == CHATTERBOX_DEFAULT_VOICE {
                 return resolve_chatterbox_reference(
                     cache_dir,
                     "ru",
@@ -122,7 +128,22 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
             "'macos-*' voices require a macOS build with --features system_tts (got '{voice_id}')"
         ),
         other => {
-            anyhow::bail!("language '{other}' not supported (use 'en-*', 'ru-*', or 'macos-*')")
+            if name == CHATTERBOX_DEFAULT_VOICE {
+                if let Some(lang) = crate::tts::chatterbox::SUPPORTED_LANGS
+                    .iter()
+                    .copied()
+                    .find(|candidate| *candidate == other)
+                {
+                    return resolve_chatterbox_reference(
+                        cache_dir,
+                        lang,
+                        &cache_dir.join("models/chatterbox/default_voice.wav"),
+                    );
+                }
+            }
+            anyhow::bail!(
+                "language '{other}' not supported (use 'en-*', 'macos-*', or '<lang>-chatterbox-m01')"
+            )
         }
     }
 }
@@ -257,6 +278,25 @@ mod tests {
         std::fs::write(cache.join("models/kokoro-82m/model.onnx"), b"dummy").unwrap();
     }
 
+    fn populate_chatterbox(cache: &Path) {
+        let dir = cache.join("models/chatterbox");
+        std::fs::create_dir_all(dir.join("onnx")).unwrap();
+        for rel in [
+            "onnx/speech_encoder.onnx",
+            "onnx/speech_encoder.onnx_data",
+            "onnx/embed_tokens.onnx",
+            "onnx/embed_tokens.onnx_data",
+            "onnx/language_model.onnx",
+            "onnx/language_model.onnx_data",
+            "onnx/conditional_decoder.onnx",
+            "onnx/conditional_decoder.onnx_data",
+            "tokenizer.json",
+            "default_voice.wav",
+        ] {
+            std::fs::write(dir.join(rel), b"dummy").unwrap();
+        }
+    }
+
     #[test]
     fn resolve_installed_kokoro_voice() {
         let tmp = tempfile::tempdir().unwrap();
@@ -279,22 +319,7 @@ mod tests {
     #[test]
     fn resolve_installed_chatterbox_voice() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("models/chatterbox");
-        std::fs::create_dir_all(dir.join("onnx")).unwrap();
-        for rel in [
-            "onnx/speech_encoder.onnx",
-            "onnx/speech_encoder.onnx_data",
-            "onnx/embed_tokens.onnx",
-            "onnx/embed_tokens.onnx_data",
-            "onnx/language_model.onnx",
-            "onnx/language_model.onnx_data",
-            "onnx/conditional_decoder.onnx",
-            "onnx/conditional_decoder.onnx_data",
-            "tokenizer.json",
-            "default_voice.wav",
-        ] {
-            std::fs::write(dir.join(rel), b"dummy").unwrap();
-        }
+        populate_chatterbox(tmp.path());
 
         let r = resolve_voice(tmp.path(), "ru-chatterbox-m01").unwrap();
         match r {
@@ -308,6 +333,20 @@ mod tests {
                 assert_eq!(lang, "ru");
             }
             other => panic!("expected Chatterbox, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_all_chatterbox_languages() {
+        let tmp = tempfile::tempdir().unwrap();
+        populate_chatterbox(tmp.path());
+
+        for lang in crate::tts::chatterbox::SUPPORTED_LANGS {
+            let voice = format!("{lang}-chatterbox-m01");
+            match resolve_voice(tmp.path(), &voice).unwrap() {
+                ResolvedVoice::Chatterbox { lang: got, .. } => assert_eq!(got, *lang, "{voice}"),
+                other => panic!("{voice}: expected Chatterbox, got {other:?}"),
+            }
         }
     }
 

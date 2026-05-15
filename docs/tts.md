@@ -1,6 +1,6 @@
 # Text-to-Speech
 
-Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX (Russian on Linux/Windows). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` routes to macOS AVSpeech on darwin and Chatterbox elsewhere. Pass `--voice` to override.
+Kesha speaks back via Kokoro-82M (English) and Chatterbox Multilingual ONNX. Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` routes to macOS AVSpeech on darwin and Chatterbox elsewhere, and other Chatterbox languages route to Chatterbox. Pass `--voice` to override.
 
 ```bash
 kesha install --tts                 # ~3.3GB (Kokoro + Chatterbox, opt-in)
@@ -16,14 +16,17 @@ Output format: WAV mono float32 (24 kHz for Kokoro and Chatterbox, 22.05 kHz for
 
 Grapheme-to-phoneme:
 - **English** uses [misaki-rs](https://github.com/MicheleYin/misaki-rs) — a self-contained Rust port of [hexgrad/misaki](https://github.com/hexgrad/misaki) (the G2P Kokoro was trained against). Lexicon and POS-tagger weights are embedded at compile time, no system deps. Out-of-vocabulary words spell letter-by-letter — proper-noun fallback is tracked as a follow-up.
-- **Russian** on Linux/Windows is handled by [Chatterbox Multilingual ONNX](https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX) from raw text plus a language tag and reference WAV. No separate G2P pass, no system `espeak-ng`, no Python.
-- **Other languages**: not supported by the on-disk engines we ship today — tracked per-language in [#212](https://github.com/drakulavich/kesha-voice-kit/issues/212).
+- **Chatterbox languages** are handled by [Chatterbox Multilingual ONNX](https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX) from raw text plus a language tag and reference WAV. No separate G2P pass, no system `espeak-ng`, no Python.
+
+Chatterbox voice ids use `<lang>-chatterbox-m01`. Supported language tags:
+
+`ar`, `da`, `de`, `el`, `en`, `es`, `fi`, `fr`, `he`, `hi`, `it`, `ja`, `ko`, `ms`, `nl`, `no`, `pl`, `pt`, `ru`, `sv`, `sw`, `tr`, `zh`
 
 Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am_michael` for English Kokoro, `ru-chatterbox-m01` for Russian Chatterbox on Linux/Windows. The darwin Russian fallback uses `Milena` (AVSpeech) for the zero-install path.
 
 **Supported voices:**
 - English: `en-am_michael` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/` (`am_*`/`bm_*` male, `af_*`/`bf_*` female).
-- Russian: `ru-chatterbox-m01` (Chatterbox default reference voice). Legacy cached Vosk installs may still expose `ru-vosk-m02`, `ru-vosk-m01`, and `ru-vosk-f01`/`f02`/`f03`, but fresh `kesha install --tts` no longer downloads Vosk.
+- Chatterbox: `<lang>-chatterbox-m01` for each supported tag above, all using the bundled default reference voice. Legacy cached Vosk installs may still expose `ru-vosk-m02`, `ru-vosk-m01`, and `ru-vosk-f01`/`f02`/`f03`, but fresh `kesha install --tts` no longer downloads Vosk.
 - macOS system voices: `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
 
 ## macOS system voices

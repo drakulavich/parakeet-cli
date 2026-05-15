@@ -170,6 +170,10 @@ export function activeModelMirror(): string | null {
 function listInstalledVoices(): string[] {
   const cache = kesheCacheDir();
   const voices: string[] = [];
+  const chatterboxLangs = [
+    "ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it", "ja",
+    "ko", "ms", "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh",
+  ];
   try {
     const kokoro = readdirSync(join(cache, "models", "kokoro-82m", "voices"));
     for (const f of kokoro) {
@@ -182,7 +186,7 @@ function listInstalledVoices(): string[] {
     statSync(join(cache, "models", "chatterbox", "onnx", "speech_encoder.onnx"));
     statSync(join(cache, "models", "chatterbox", "onnx", "language_model.onnx"));
     statSync(join(cache, "models", "chatterbox", "default_voice.wav"));
-    voices.push("ru-chatterbox-m01");
+    for (const lang of chatterboxLangs) voices.push(`${lang}-chatterbox-m01`);
   } catch {
     /* Chatterbox not installed */
   }

@@ -17,13 +17,20 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("ru", 0.95, "win32")).toBe("ru-chatterbox-m01");
   });
 
+  it("routes Chatterbox-supported languages", () => {
+    expect(pickVoiceForLang("de", 0.95, "linux")).toBe("de-chatterbox-m01");
+    expect(pickVoiceForLang("fr", 0.95, "linux")).toBe("fr-chatterbox-m01");
+    expect(pickVoiceForLang("zh", 0.95, "linux")).toBe("zh-chatterbox-m01");
+    expect(pickVoiceForLang("de", 0.95, "darwin")).toBe("de-chatterbox-m01");
+  });
+
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {
     expect(pickVoiceForLang("ru", 0.3)).toBeUndefined();
   });
 
   it("returns undefined for unsupported languages", () => {
-    expect(pickVoiceForLang("fr", 0.95)).toBeUndefined();
-    expect(pickVoiceForLang("de", 0.95)).toBeUndefined();
+    expect(pickVoiceForLang("uk", 0.95)).toBeUndefined();
+    expect(pickVoiceForLang("cs", 0.95)).toBeUndefined();
   });
 
   it("returns undefined when code is missing", () => {
