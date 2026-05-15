@@ -52,7 +52,12 @@ export async function showStatus(): Promise<void> {
   log.info(formatStatusLine("Binary", installed ? binPath : null, installed));
 
   if (installed) {
-    const caps = await getEngineCapabilities();
+    let caps: Awaited<ReturnType<typeof getEngineCapabilities>> = null;
+    try {
+      caps = await getEngineCapabilities();
+    } catch {
+      caps = null;
+    }
     if (caps) {
       log.info(formatStatusLine("Backend", caps.backend, true));
       log.info(formatStatusLine("Protocol", `v${caps.protocolVersion}`, true));

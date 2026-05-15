@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { formatStatusLine, activeModelMirror, showStatus } from "../../src/status";
@@ -85,16 +85,7 @@ describe("showStatus", () => {
     const binDir = join(dir, "engine", "bin");
     mkdirSync(binDir, { recursive: true });
     const binPath = join(binDir, "kesha-engine");
-    writeFileSync(
-      binPath,
-      [
-        "#!/bin/sh",
-        "if [ \"$1\" = \"--capabilities-json\" ]; then",
-        "  echo '{\"protocolVersion\":2,\"backend\":\"test\",\"features\":[\"transcribe\"]}'",
-        "fi",
-      ].join("\n"),
-    );
-    chmodSync(binPath, 0o755);
+    writeFileSync(binPath, "not a real executable");
 
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = dir;
