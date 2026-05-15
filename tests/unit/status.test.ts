@@ -1,5 +1,9 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { formatStatusLine, activeModelMirror } from "../../src/status";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+import { formatStatusLine, activeModelMirror, showStatus } from "../../src/status";
+import { starSeenPath } from "../../src/star";
 
 describe("formatStatusLine", () => {
   test("formats installed component", () => {
@@ -56,5 +60,54 @@ describe("activeModelMirror (#121)", () => {
   test("strips trailing slashes to match the Rust side", () => {
     process.env.KESHA_MODEL_MIRROR = "https://mirror.example.com/kesha///";
     expect(activeModelMirror()).toBe("https://mirror.example.com/kesha");
+  });
+});
+
+describe("showStatus", () => {
+  const savedEngineBin = process.env.KESHA_ENGINE_BIN;
+  const savedCacheDir = process.env.KESHA_CACHE_DIR;
+  const savedHome = process.env.HOME;
+
+  afterEach(() => {
+    if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+    else process.env.KESHA_ENGINE_BIN = savedEngineBin;
+    if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
+    else process.env.KESHA_CACHE_DIR = savedCacheDir;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+  });
+
+  test("does not consume the star prompt marker slot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-test-"));
+    const binDir = join(dir, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      [
+        "#!/bin/sh",
+        "if [ \"$1\" = \"--capabilities-json\" ]; then",
+        "  echo '{\"protocolVersion\":2,\"backend\":\"test\",\"features\":[\"transcribe\"]}'",
+        "fi",
+      ].join("\n"),
+    );
+    chmodSync(binPath, 0o755);
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = dir;
+    process.env.HOME = dir;
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      await showStatus();
+      expect(existsSync(starSeenPath(binPath))).toBe(false);
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

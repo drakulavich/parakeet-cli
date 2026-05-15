@@ -57,14 +57,13 @@ export function hasStarMarker(binPath: string): boolean {
 }
 
 /**
- * Prompt the user to star the repo if and only if `shouldShowStarPrompt`
- * agrees (first install + major-or-minor bumps, never on patch). Records
+ * Prompt the user to star the repo during `kesha install` if and only if
+ * `shouldShowStarPrompt` agrees (first install + major-or-minor bumps,
+ * never on patch). Records
  * the prompt against the current version up front so a single run never
  * prompts twice — failures from the gh subprocess below don't reopen the
- * gate. Shared by `kesha install` and `kesha status` so opt-in installs
- * (`--tts`, `--diarize`) and `status` reuse the same marker; a user who
- * saw the prompt on the base install won't see it again on the opt-in or
- * the status check.
+ * gate. Install variants (`--tts`, `--diarize`) reuse the same marker; status
+ * stays diagnostic-only and does not consume this slot.
  *
  * No-ops when the gate says skip, when `currentVersion` is null, or when
  * the user has already starred. When `gh` is missing or unauthenticated,
