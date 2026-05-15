@@ -12,6 +12,8 @@
 
 #![cfg(feature = "tts")]
 
+mod common;
+
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -21,35 +23,6 @@ use kesha_engine::tts::{self, EngineChoice, OutputFormat, SayOptions};
 // =============================================================================
 // Shared helpers
 // =============================================================================
-
-/// Return the vosk-ru model dir if the required runtime files are present;
-/// otherwise return None so callers can skip gracefully.
-///
-/// Strategy: use KESHA_CACHE_DIR when set (matches CI / local dev fixture
-/// layout), otherwise fall back to the default `~/.cache/kesha`. This mirrors
-/// what `models::vosk_ru_model_dir()` does in production — no staging copy
-/// needed because these tests are read-only.
-fn vosk_model_dir_or_skip() -> Option<PathBuf> {
-    let base = if let Ok(dir) = std::env::var("KESHA_CACHE_DIR") {
-        PathBuf::from(dir)
-    } else {
-        // Same logic as models::cache_dir() for the default path.
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        PathBuf::from(home).join(".cache/kesha")
-    };
-
-    let model_dir = base.join("models/vosk-ru");
-
-    // Mirror models::is_vosk_ru_cached() — keep gates aligned.
-    if model_dir.join("model.onnx").exists()
-        && model_dir.join("dictionary").exists()
-        && model_dir.join("bert/model.onnx").exists()
-    {
-        Some(model_dir)
-    } else {
-        None
-    }
-}
 
 /// Cold synthesis via `tts::say()` — kept for direct-call regression coverage.
 fn synth_cold(text: &str, ssml: bool, expand_abbrev: bool, model_dir: &PathBuf) -> Vec<u8> {
@@ -94,8 +67,7 @@ impl LoopEngine {
     /// Spawn the engine subprocess. Returns `None` when the vosk-ru models
     /// are not installed (same skip gate as the cold-path tests).
     fn spawn() -> Option<Self> {
-        vosk_model_dir_or_skip()?;
-        let bin = env!("CARGO_BIN_EXE_kesha-engine");
+        common::vosk_ru_cache_dir_or_skip()?;
         // Capture stderr to a tempfile so tests can assert warn-once dedup. (#237)
         let stderr_path = std::env::temp_dir().join(format!(
             "kesha-loop-test-{}-{}.stderr.log",
@@ -106,7 +78,7 @@ impl LoopEngine {
                 .unwrap_or(0),
         ));
         let stderr_file = std::fs::File::create(&stderr_path).expect("create stderr log");
-        let mut child = Command::new(bin)
+        let mut child = Command::new(common::engine_bin())
             .args(["say", "--voice", "ru-vosk-m02", "--stdin-loop"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -210,15 +182,13 @@ impl Drop for LoopEngine {
 /// ФСБ has no vowels → always spells.
 #[test]
 fn auto_expand_plain_fsb_is_longer_than_noexpand() {
-    let model_dir = match vosk_model_dir_or_skip() {
-        Some(d) => d,
-        None => {
-            eprintln!(
-                "skipping auto_expand_plain_fsb_is_longer_than_noexpand: vosk-ru models not found"
-            );
-            return;
-        }
+    let Some(base) = common::vosk_ru_cache_dir_or_skip() else {
+        eprintln!(
+            "skipping auto_expand_plain_fsb_is_longer_than_noexpand: vosk-ru models not found"
+        );
+        return;
     };
+    let model_dir = base.join("models/vosk-ru");
 
     let expanded = synth_cold(
         "ФСБ", /*ssml=*/ false, /*expand_abbrev=*/ true, &model_dir,

@@ -15,15 +15,13 @@
 
 #![cfg(feature = "system_diarize")]
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn engine_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_kesha-engine"))
-}
-
-fn say(exe: &Path, text: &str, voice: &str, out: &Path) -> bool {
-    Command::new(exe)
+fn say(text: &str, voice: &str, out: &Path) -> bool {
+    Command::new(common::engine_bin())
         .args(["say", "--voice", voice, "--out", out.to_str().unwrap()])
         .arg(text)
         .status()
@@ -60,7 +58,7 @@ fn concat_wavs(inputs: &[PathBuf], out: &Path) {
 
 #[test]
 fn two_speaker_dialogue_yields_two_clusters() {
-    let exe = engine_binary();
+    let exe = PathBuf::from(common::engine_bin());
     if !exe.exists() {
         eprintln!("skipping: engine binary not found at {}", exe.display());
         return;
@@ -81,17 +79,14 @@ fn two_speaker_dialogue_yields_two_clusters() {
     // sufficiently different voices for diarization to cluster them apart, and an
     // American male + American female pair satisfies that constraint cleanly.
     if !say(
-        &exe,
         "Hello everyone, this is the first speaker beginning the call.",
         "en-am_michael",
         &p1a,
     ) || !say(
-        &exe,
         "Hi, this is the second speaker responding now.",
         "en-af_heart",
         &p2,
     ) || !say(
-        &exe,
         "Yes thanks for joining, the first speaker again.",
         "en-am_michael",
         &p1b,

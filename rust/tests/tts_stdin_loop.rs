@@ -13,8 +13,10 @@
 
 #![cfg(feature = "tts")]
 
+mod common;
+
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
@@ -62,8 +64,7 @@ impl LoopChild {
     }
 
     fn spawn_with_cache(cache_dir: Option<&std::path::Path>) -> Self {
-        let bin = env!("CARGO_BIN_EXE_kesha-engine");
-        let mut cmd = Command::new(bin);
+        let mut cmd = Command::new(common::engine_bin());
         // Stderr is `null` so ORT runtime warnings can't fill a 64 KB pipe
         // we never drain — that would deadlock the engine on its next write
         // and the test would hang forever waiting for a frame.
@@ -156,32 +157,6 @@ fn unknown_voice_returns_err_frame_with_request_id() {
 // Real synthesis (gated on env vars set by run_smoke_tests / smoke harness)
 // ---------------------------------------------------------------------------
 
-fn kokoro_paths() -> Option<(String, String)> {
-    match (std::env::var("KOKORO_MODEL"), std::env::var("KOKORO_VOICE")) {
-        (Ok(m), Ok(v)) => Some((m, v)),
-        _ => None,
-    }
-}
-
-fn vosk_cache_dir_or_skip() -> Option<PathBuf> {
-    let base = if let Ok(dir) = std::env::var("KESHA_CACHE_DIR") {
-        PathBuf::from(dir)
-    } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        PathBuf::from(home).join(".cache/kesha")
-    };
-
-    let model_dir = base.join("models/vosk-ru");
-    if model_dir.join("model.onnx").exists()
-        && model_dir.join("dictionary").exists()
-        && model_dir.join("bert/model.onnx").exists()
-    {
-        Some(base)
-    } else {
-        None
-    }
-}
-
 fn synth_vosk_reference(text: &str, ssml: bool, model_dir: &Path) -> Vec<u8> {
     tts::say(SayOptions {
         text,
@@ -206,7 +181,7 @@ fn loop_synthesises_kokoro_and_caches_session() {
     // (`$KESHA_CACHE_DIR/models/kokoro-82m/{model.onnx,voices/am_michael.bin}`)
     // and point the spawned engine at it. Same approach as
     // `tts_smoke.rs::resolves_from_cache_when_installed`.
-    let Some((model, voice)) = kokoro_paths() else {
+    let Some((model, voice)) = common::kokoro_paths_or_skip() else {
         eprintln!("skipping: KOKORO_MODEL + KOKORO_VOICE not set");
         return;
     };
@@ -258,7 +233,7 @@ fn loop_synthesises_kokoro_and_caches_session() {
 
 #[test]
 fn loop_applies_russian_acronym_normalization_for_vosk() {
-    let Some(cache_dir) = vosk_cache_dir_or_skip() else {
+    let Some(cache_dir) = common::vosk_ru_cache_dir_or_skip() else {
         eprintln!("skipping: vosk-ru models not found");
         return;
     };

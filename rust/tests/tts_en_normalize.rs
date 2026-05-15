@@ -10,37 +10,10 @@
 
 #![cfg(feature = "tts")]
 
+mod common;
+
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-// =============================================================================
-// Skip gate
-// =============================================================================
-
-/// Return the Kokoro model path if the required runtime files are present;
-/// otherwise return None so callers can skip gracefully.
-///
-/// Strategy: use KESHA_CACHE_DIR when set (matches CI / local dev fixture
-/// layout), otherwise fall back to the default `~/.cache/kesha`. This mirrors
-/// what `models::cache_dir()` does in production.
-fn kokoro_model_path_or_skip() -> Option<PathBuf> {
-    let base = if let Ok(dir) = std::env::var("KESHA_CACHE_DIR") {
-        PathBuf::from(dir)
-    } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        PathBuf::from(home).join(".cache/kesha")
-    };
-
-    let model = base.join("models/kokoro-82m/model.onnx");
-    let voice = base.join("models/kokoro-82m/voices/am_michael.bin");
-
-    if model.exists() && voice.exists() {
-        Some(base)
-    } else {
-        None
-    }
-}
 
 // =============================================================================
 // stdin-loop engine wrapper
@@ -65,9 +38,8 @@ impl KokoroLoopEngine {
     /// Spawn the engine subprocess. Returns `None` when the Kokoro models are
     /// not installed (same skip gate as the other Kokoro tests).
     fn spawn() -> Option<Self> {
-        kokoro_model_path_or_skip()?;
-        let bin = env!("CARGO_BIN_EXE_kesha-engine");
-        let mut child = Command::new(bin)
+        common::kokoro_cache_dir_or_skip()?;
+        let mut child = Command::new(common::engine_bin())
             .args(["say", "--voice", "en-am_michael", "--stdin-loop"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
