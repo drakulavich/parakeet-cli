@@ -56,3 +56,27 @@ fn ensure_audio_track_accepts_isomp4_aac_fixture() {
         "expected Some duration for the silence.m4a fixture, got None"
     );
 }
+
+#[test]
+fn ensure_audio_track_accepts_uppercase_extension() {
+    // F21: `build_hint` lowercases the extension before handing it to
+    // symphonia. Symphonia's matching is case-insensitive today, but
+    // normalising at the boundary is a defensive zero-cost guard. This
+    // test pins the normalisation: copy the m4a fixture to a tempfile
+    // with `.M4A` (uppercase) and verify probe still succeeds. If a
+    // future refactor drops the lowercase pass and symphonia tightens
+    // its matching upstream, this test goes red.
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("silence.m4a");
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-uppercase-ext-")
+        .suffix(".M4A")
+        .tempfile()
+        .expect("create tempfile with uppercase extension");
+    std::fs::copy(&fixture, tmp.path()).expect("copy fixture into uppercase tempfile");
+
+    audio::ensure_audio_track(tmp.path().to_str().unwrap())
+        .expect("uppercase .M4A extension should still probe successfully");
+}

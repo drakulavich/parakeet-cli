@@ -24,6 +24,27 @@ fn get_codec_registry() -> CodecRegistry {
     registry
 }
 
+/// Build a [`Hint`] from a file path's extension, normalised to lowercase.
+///
+/// Symphonia's internal extension matching is case-insensitive today,
+/// but normalising at the boundary is a defensive zero-cost guard
+/// against an upstream contract change. Inputs like `recording.OGG`
+/// from Windows downloads or `.M4A` from a screen-recorder export
+/// continue to probe correctly even if symphonia tightens the match.
+///
+/// Returns an empty [`Hint`] when the path has no extension or the
+/// extension is non-UTF-8.
+fn build_hint(path: &str) -> Hint {
+    let mut hint = Hint::new();
+    if let Some(ext) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
+        hint.with_extension(&ext.to_ascii_lowercase());
+    }
+    hint
+}
+
 /// Open `path`, probe format + select the first supported audio track.
 /// Shared by `decode_audio` and `probe_duration_seconds` so container
 /// detection + error messages live in one place.
@@ -31,13 +52,7 @@ fn open_format(path: &str) -> Result<(Box<dyn FormatReader>, u32, CodecParameter
     let src = std::fs::File::open(path).with_context(|| format!("file not found: {path}"))?;
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
-    let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-    {
-        hint.with_extension(ext);
-    }
+    let hint = build_hint(path);
 
     let mut probe = Probe::default();
     symphonia::default::register_enabled_formats(&mut probe);
