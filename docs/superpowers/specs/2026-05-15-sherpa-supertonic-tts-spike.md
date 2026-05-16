@@ -46,7 +46,8 @@ Official documentation:
 - The model archive is:
   `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`.
 - The release asset is 128,774,318 bytes with digest
-  `sha256:82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427`.
+  `82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427`
+  (plain hex, matching `models.rs` format).
 - The unpacked model directory is about 145 MB.
 
 Local source inspection:

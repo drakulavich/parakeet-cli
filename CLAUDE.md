@@ -214,7 +214,7 @@ Any plan that names a specific upstream artifact ("Silero via ONNX", "statically
 - The spike downloads / builds the thing and runs it end-to-end — not just "checks if the repo exists."
 - Past pivots this rule would have prevented earlier: espeak-ng turned out to be dynamic-link-only in `espeakng-sys` (→ pivoted to system-dep + issue #124); Silero TTS ships PyTorch-only and has no public ONNX export (→ pivoted to Piper in M3).
 - Spike artifacts go in `/tmp/<name>-spike/` and are deleted after the finding is recorded in the plan doc.
-- 2026-05-15 sherpa-onnx SupertonicTTS 3 spike: viable Rust API path exists (`sherpa-onnx = 1.13.2`, Apache-2.0) with `OfflineTtsSupertonicModelConfig`, 31 documented language codes, and a 128,774,318-byte ONNX archive pinned by GitHub digest `sha256:82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427`. Do not default-route it until numeric `sid` values are audited for male default voices.
+- 2026-05-15 sherpa-onnx SupertonicTTS 3 spike: viable Rust API path exists (`sherpa-onnx = 1.13.2`, Apache-2.0) with `OfflineTtsSupertonicModelConfig`, 31 documented language codes, and a 128,774,318-byte ONNX archive pinned at `82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427` (plain hex, matching `models.rs` format). Do not default-route it until numeric `sid` values are audited for male default voices.
 
 ### MODEL HASHES ARE PINNED — UPSTREAM BUMPS GO THROUGH A PR
 
