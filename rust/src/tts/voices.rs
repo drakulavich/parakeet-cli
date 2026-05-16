@@ -49,6 +49,16 @@ pub enum ResolvedVoice {
         voice_path: std::path::PathBuf,
         espeak_lang: &'static str,
     },
+    /// Kokoro via FluidAudio CoreML sidecar on darwin-arm64.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    FluidKokoro {
+        voice_id: String,
+        espeak_lang: &'static str,
+    },
     /// Vosk-TTS multi-speaker Russian (replaces Piper-ru per spec/PR for #210).
     Vosk {
         model_dir: std::path::PathBuf,
@@ -66,6 +76,12 @@ impl ResolvedVoice {
     pub fn espeak_lang(&self) -> &'static str {
         match self {
             Self::Kokoro { espeak_lang, .. } => espeak_lang,
+            #[cfg(all(
+                feature = "system_kokoro",
+                target_os = "macos",
+                target_arch = "aarch64"
+            ))]
+            Self::FluidKokoro { espeak_lang, .. } => espeak_lang,
             Self::Vosk { .. } => "",
             // AVSpeech does its own G2P; the espeak language tag is unused.
             #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -108,25 +124,44 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     }
 }
 
-fn resolve_kokoro(cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
-    let model_path = cache_dir.join("models/kokoro-82m/model.onnx");
-    let voice_path = cache_dir
-        .join("models/kokoro-82m/voices")
-        .join(format!("{name}.bin"));
-    if !voice_path.exists() {
-        anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
+fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    {
+        if !crate::tts::fluid_kokoro::supports_voice(name) {
+            anyhow::bail!(
+                "unknown FluidAudio Kokoro voice '{voice_id}'. run: kesha say --list-voices"
+            );
+        }
+        return Ok(ResolvedVoice::FluidKokoro {
+            voice_id: name.to_string(),
+            espeak_lang: "en-us",
+        });
     }
-    if !model_path.exists() {
-        anyhow::bail!(
-            "kokoro model not installed at {}. run: kesha install --tts",
-            model_path.display()
-        );
+    #[allow(unreachable_code)]
+    {
+        let model_path = _cache_dir.join("models/kokoro-82m/model.onnx");
+        let voice_path = _cache_dir
+            .join("models/kokoro-82m/voices")
+            .join(format!("{name}.bin"));
+        if !voice_path.exists() {
+            anyhow::bail!("voice '{voice_id}' not installed. run: kesha install --tts");
+        }
+        if !model_path.exists() {
+            anyhow::bail!(
+                "kokoro model not installed at {}. run: kesha install --tts",
+                model_path.display()
+            );
+        }
+        Ok(ResolvedVoice::Kokoro {
+            model_path,
+            voice_path,
+            espeak_lang: "en-us",
+        })
     }
-    Ok(ResolvedVoice::Kokoro {
-        model_path,
-        voice_path,
-        espeak_lang: "en-us",
-    })
 }
 
 fn resolve_vosk_ru(
@@ -209,6 +244,11 @@ mod tests {
         assert_eq!(s[VOICE_COLS - 1], 8.0);
     }
 
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
     fn populate_cache(cache: &Path) {
         let voices = cache.join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
@@ -216,6 +256,11 @@ mod tests {
         std::fs::write(cache.join("models/kokoro-82m/model.onnx"), b"dummy").unwrap();
     }
 
+    #[cfg(not(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )))]
     #[test]
     fn resolve_installed_kokoro_voice() {
         let tmp = tempfile::tempdir().unwrap();
@@ -232,6 +277,27 @@ mod tests {
                 assert_eq!(espeak_lang, "en-us");
             }
             other => panic!("expected Kokoro, got {other:?}"),
+        }
+    }
+
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    #[test]
+    fn resolve_kokoro_voice_uses_fluid_audio_on_darwin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = resolve_voice(tmp.path(), "en-am_michael").unwrap();
+        match r {
+            ResolvedVoice::FluidKokoro {
+                voice_id,
+                espeak_lang,
+            } => {
+                assert_eq!(voice_id, "am_michael");
+                assert_eq!(espeak_lang, "en-us");
+            }
+            other => panic!("expected FluidKokoro, got {other:?}"),
         }
     }
 

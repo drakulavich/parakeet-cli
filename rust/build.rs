@@ -15,6 +15,15 @@ fn main() {
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
     build_avspeech_helper();
 
+    // `system_kokoro`: compile the FluidAudio Kokoro helper on macOS arm64.
+    // Writes the sidecar binary to $OUT_DIR/kesha-kokoro.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    build_kokoro_sidecar();
+
     // `system_diarize` (#199): compile the kesha-diarize Swift sidecar on macOS arm64.
     // Writes the sidecar binary to $OUT_DIR/kesha-diarize. Silently no-op on
     // other targets so `--features system_diarize` works in cross-platform builds.
@@ -32,6 +41,52 @@ fn main() {
     // path in text_lang.rs). Silently no-op on Linux/Windows.
     #[cfg(all(feature = "system_text_lang", target_os = "macos"))]
     build_text_lang_helper();
+}
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn build_kokoro_sidecar() {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let swift_pkg = manifest_dir.parent().unwrap().join("swift/kesha-kokoro");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out_bin = out_dir.join("kesha-kokoro");
+
+    println!("cargo:rerun-if-changed={}", swift_pkg.display());
+    println!(
+        "cargo:rerun-if-changed={}/Sources/kesha-kokoro/main.swift",
+        swift_pkg.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/Package.swift",
+        swift_pkg.display()
+    );
+
+    let status = Command::new("swift")
+        .arg("build")
+        .arg("--configuration")
+        .arg("release")
+        .arg("--package-path")
+        .arg(&swift_pkg)
+        .status()
+        .expect(
+            "swift not found — install Xcode command-line tools or disable --features system_kokoro",
+        );
+    assert!(
+        status.success(),
+        "swift build failed for kesha-kokoro at {}",
+        swift_pkg.display()
+    );
+
+    let built = swift_pkg.join(".build/release/kesha-kokoro");
+    std::fs::copy(&built, &out_bin).expect("failed to copy kesha-kokoro sidecar to OUT_DIR");
+
+    println!("cargo:rustc-env=KESHA_KOKORO_HELPER={}", out_bin.display());
 }
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]

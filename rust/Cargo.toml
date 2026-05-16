@@ -31,6 +31,10 @@ tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
 # Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
 # non-macOS targets even when enabled.
 system_tts = ["tts"]
+# macOS arm64 Kokoro via FluidAudio CoreML sidecar. Keeps Linux/Windows on the
+# existing ONNX Kokoro path while darwin-arm64 release builds avoid ONNX for
+# English TTS.
+system_kokoro = ["tts"]
 # darwin-arm64 speaker diarization via FluidAudio (#199). Requires FluidAudio's
 # diarization SDK and companion helper binary. Darwin-only.
 system_diarize = []

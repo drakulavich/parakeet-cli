@@ -22,7 +22,7 @@ Local voice toolkit: transcribe voice messages to text, synthesize speech, detec
 ## When to use
 
 - **Voice memo arrived** (Telegram, WhatsApp, Slack, Signal .ogg/.opus/.m4a): transcribe with `kesha --json <path>` and branch on the detected language.
-- **Need to reply with audio (file playback)**: synthesize with `kesha say "<text>" > reply.wav`. Auto-routes by detected language (Kokoro-82M for English, Vosk-TTS for Russian). For other languages and ~180 more voices use `--voice macos-*` on macOS (zero model download).
+- **Need to reply with audio (file playback)**: synthesize with `kesha say "<text>" > reply.wav`. Auto-routes by detected language (Kokoro-82M for English, Vosk-TTS for Russian). On darwin-arm64, English Kokoro uses FluidAudio CoreML instead of ONNX. For other languages and ~180 more voices use `--voice macos-*` on macOS (zero model download).
 - **Need to send a voice note (Telegram, WhatsApp, Signal, Discord)**: synthesize directly into the messenger-native format with `kesha say "<text>" --format ogg-opus --out reply.ogg`. Default is mono 24 kHz @ 32 kbps — what Telegram `sendVoice` expects. No `ffmpeg` round-trip needed.
 - **Need to detect what language a file is in** before choosing a pipeline: `kesha --json audio.ogg` returns both audio-based and text-based language detection with confidence scores.
 
@@ -153,7 +153,7 @@ No system deps — English G2P is embedded (`misaki-rs`); Russian G2P is bundled
 
 **Speech-to-text (25):** Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Ukrainian.
 
-**Text-to-speech:** English (Kokoro-82M, ~70 voices), Russian (Vosk-TTS, 5 baked-in speakers — default `ru-vosk-m02`), plus any macOS system voice via `--voice macos-*`.
+**Text-to-speech:** English (Kokoro-82M; FluidAudio CoreML on darwin-arm64, ONNX elsewhere), Russian (Vosk-TTS, 5 baked-in speakers — default `ru-vosk-m02`), plus any macOS system voice via `--voice macos-*`.
 
 ## Performance
 

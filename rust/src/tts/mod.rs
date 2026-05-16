@@ -10,6 +10,12 @@ use std::path::Path;
 
 pub mod en;
 pub mod encode;
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+pub mod fluid_kokoro;
 pub mod g2p;
 pub mod kokoro;
 pub mod ru;
@@ -50,6 +56,13 @@ pub enum EngineChoice<'a> {
         voice_path: &'a Path,
         speed: f32,
     },
+    /// Kokoro via FluidAudio CoreML sidecar on darwin-arm64.
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    FluidKokoro { voice_id: &'a str, speed: f32 },
     /// macOS AVSpeechSynthesizer via the Swift sidecar (#141).
     /// `voice_id` is forwarded verbatim (an Apple identifier or a language code).
     #[cfg(all(feature = "system_tts", target_os = "macos"))]

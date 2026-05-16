@@ -273,6 +273,28 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
                     .map_err(|e| format!("encode: {e}"))
             }
         }
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
+            if req.ssml {
+                return Err("SSML is not yet supported with FluidAudio Kokoro voices".into());
+            }
+            tts::say(tts::SayOptions {
+                text: &req.text,
+                lang: espeak_lang,
+                engine: tts::EngineChoice::FluidKokoro {
+                    voice_id: &voice_id,
+                    speed: req.rate,
+                },
+                ssml: false,
+                format,
+                expand_abbrev: req.expand_abbrev,
+            })
+            .map_err(|e| e.to_string())
+        }
         tts::voices::ResolvedVoice::Vosk {
             model_dir,
             speaker_id,

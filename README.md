@@ -100,7 +100,7 @@ Each segment gets a `speaker` integer (cluster ID, stable within one file). Linu
 
 ## Text-to-speech
 
-Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian) — voice auto-picks from the text's language:
+Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian) — voice auto-picks from the text's language. On darwin-arm64, Kokoro uses FluidAudio CoreML instead of ONNX:
 
 ```bash
 kesha install --tts                      # ~990MB (Kokoro + Vosk-TTS RU, opt-in)
@@ -158,7 +158,7 @@ See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + Engl
 | SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
 | Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
-| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | ~990MB | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
+| Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | ~990MB | [FluidAudio Kokoro](https://github.com/FluidInference/FluidAudio) on darwin-arm64; ONNX Kokoro elsewhere · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
 
 All models run through `kesha-engine` — a Rust binary using [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML) on Apple Silicon and [ort](https://github.com/pykeio/ort) (ONNX Runtime) on other platforms.
 

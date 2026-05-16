@@ -118,7 +118,17 @@ const LANG_ID_FILES: &[ModelFile] = &[
 
 #[cfg(feature = "tts")]
 pub fn kokoro_manifest() -> Vec<ModelFile> {
-    vec![
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    {
+        return Vec::new();
+    }
+    #[allow(unreachable_code)]
+    {
+        vec![
         ModelFile {
             // The HF onnx-community variant produces unintelligible audio with
             // `af_heart` — confirmed by audio bisection, see #207. Use the
@@ -139,6 +149,7 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
             sha256: "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1",
         },
     ]
+    }
 }
 
 /// Vosk-TTS multi-speaker Russian model, mirrored to HF at
@@ -573,11 +584,26 @@ mod tts_tests {
     #[test]
     fn kokoro_manifest_has_expected_files() {
         let m = kokoro_manifest();
-        assert!(m.iter().any(|f| f.rel_path.ends_with("model.onnx")));
-        assert!(m.iter().any(|f| f.rel_path.ends_with("am_michael.bin")));
-        for f in &m {
-            assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
-            assert!(f.url.starts_with("https://"), "{f:?} url not https");
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        {
+            assert!(m.is_empty());
+        }
+        #[cfg(not(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        )))]
+        {
+            assert!(m.iter().any(|f| f.rel_path.ends_with("model.onnx")));
+            assert!(m.iter().any(|f| f.rel_path.ends_with("am_michael.bin")));
+            for f in &m {
+                assert_eq!(f.sha256.len(), 64, "{:?} sha256 not 64 hex chars", f);
+                assert!(f.url.starts_with("https://"), "{f:?} url not https");
+            }
         }
     }
 

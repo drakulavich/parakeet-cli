@@ -88,6 +88,12 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     }
     let engine_label: &str = match &opts.engine {
         EngineChoice::Kokoro { .. } => "kokoro",
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        EngineChoice::FluidKokoro { .. } => "fluid-kokoro",
         EngineChoice::Vosk { .. } => "vosk",
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => "avspeech",
@@ -97,6 +103,22 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         opts.lang,
         opts.ssml
     );
+
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    if let EngineChoice::FluidKokoro { voice_id, speed } = &opts.engine {
+        if opts.ssml {
+            return Err(TtsError::SynthesisFailed(
+                "SSML is not yet supported with FluidAudio Kokoro voices".into(),
+            ));
+        }
+        let wav_bytes = super::fluid_kokoro::synthesize(opts.text, voice_id, *speed, None)
+            .map_err(|e| TtsError::SynthesisFailed(format!("fluid-kokoro: {e}")))?;
+        return transcode_to(&wav_bytes, opts.format);
+    }
 
     // AVSpeech does its own G2P + synthesis inside Swift; skip espeak G2P entirely.
     #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -185,6 +207,12 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
         } => say_with_kokoro(&ipa, model_path, voice_path, speed, opts.format),
         // Vosk and AVSpeech are handled by early-returns above. Keep guard arms
         // so the match stays exhaustive when those features are enabled.
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        EngineChoice::FluidKokoro { .. } => unreachable!("handled by early return above"),
         EngineChoice::Vosk { .. } => unreachable!("handled by early return above"),
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         EngineChoice::AVSpeech { .. } => unreachable!("handled by early return above"),
@@ -216,6 +244,14 @@ fn say_ssml(opts: &SayOptions) -> Result<Vec<u8>, TtsError> {
             opts.format,
             opts.expand_abbrev,
         ),
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        EngineChoice::FluidKokoro { .. } => {
+            unreachable!("FluidAudio Kokoro + SSML rejected in say() early return")
+        }
         // Vosk + SSML is handled by the early-return in say(); this arm keeps the match exhaustive.
         EngineChoice::Vosk { .. } => unreachable!("handled by early return in say()"),
         // AVSpeech + SSML is rejected up-front in `say()`; this arm keeps the match exhaustive.
@@ -515,26 +551,40 @@ fn encode_or_fail(
         .map_err(|e| TtsError::SynthesisFailed(format!("encode: {e}")))
 }
 
-/// Decode WAV bytes the AVSpeech sidecar handed back to PCM, then re-encode in
-/// the caller's chosen format. WAV → WAV is a no-op short-circuit so we don't
-/// pay a hound round-trip for the historical default path.
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+/// Decode WAV bytes a Swift sidecar handed back to PCM, then re-encode in the
+/// caller's chosen format. WAV → WAV is a no-op short-circuit so we don't pay a
+/// hound round-trip for the historical default path.
+#[cfg(any(
+    all(feature = "system_tts", target_os = "macos"),
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )
+))]
 fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsError> {
     if matches!(format, OutputFormat::Wav) {
         return Ok(wav_bytes.to_vec());
     }
     let reader = hound::WavReader::new(std::io::Cursor::new(wav_bytes))
-        .map_err(|e| TtsError::SynthesisFailed(format!("avspeech wav decode: {e}")))?;
+        .map_err(|e| TtsError::SynthesisFailed(format!("sidecar wav decode: {e}")))?;
     let spec = reader.spec();
     let samples = wav_to_mono_f32(reader)
-        .map_err(|e| TtsError::SynthesisFailed(format!("avspeech wav decode: {e}")))?;
+        .map_err(|e| TtsError::SynthesisFailed(format!("sidecar wav decode: {e}")))?;
     encode_or_fail(&samples, spec.sample_rate, format)
 }
 
 /// Read all samples from a WAV reader, mixing stereo to mono and converting
 /// integer PCM to f32. AVSpeech emits 22.05 kHz 16-bit mono on macOS today,
 /// but we keep this generic so a future sidecar change doesn't break us.
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(any(
+    all(feature = "system_tts", target_os = "macos"),
+    all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )
+))]
 fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow::Result<Vec<f32>> {
     let spec = reader.spec();
     let channels = spec.channels as usize;

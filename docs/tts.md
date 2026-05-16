@@ -1,9 +1,9 @@
 # Text-to-Speech
 
-Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override.
+Kesha speaks back via Kokoro-82M (English) and Vosk-TTS (Russian). Voice is auto-picked from the input text's language — `en` routes to Kokoro, `ru` to Vosk. Pass `--voice` to override. On darwin-arm64 release builds, English Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path.
 
 ```bash
-kesha install --tts                 # ~990MB (Kokoro + Vosk-TTS RU, opt-in)
+kesha install --tts                 # TTS models, opt-in (Darwin Kokoro uses FluidAudio cache)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
 echo "long text" | kesha say > reply.wav
@@ -15,14 +15,14 @@ kesha say --list-voices
 Output format: WAV mono float32 (24 kHz for Kokoro, 22.05 kHz for Vosk). OGG/Opus and MP3 are tracked in follow-up issues.
 
 Grapheme-to-phoneme:
-- **English** uses [misaki-rs](https://github.com/MicheleYin/misaki-rs) — a self-contained Rust port of [hexgrad/misaki](https://github.com/hexgrad/misaki) (the G2P Kokoro was trained against). Lexicon and POS-tagger weights are embedded at compile time, no system deps. Out-of-vocabulary words spell letter-by-letter — proper-noun fallback is tracked as a follow-up.
+- **English** uses FluidAudio Kokoro CoreML on darwin-arm64 release builds. Other platforms use [misaki-rs](https://github.com/MicheleYin/misaki-rs) plus the ONNX Kokoro model.
 - **Russian** is handled internally by [Vosk-TTS](https://github.com/alphacep/vosk-tts) — text normalisation, stress, palatalisation, and a BERT prosody model all run inside the bundled ONNX (no separate G2P pass, no system `espeak-ng` dependency).
 - **Other languages**: not supported by the on-disk engines we ship today — tracked per-language in [#212](https://github.com/drakulavich/kesha-voice-kit/issues/212).
 
 Default voices are **male** per CLAUDE.md "DEFAULT TTS VOICES MUST BE MALE": `am_michael` for English Kokoro, `ru-vosk-m02` for Russian Vosk on Linux/Windows. The darwin Russian fallback uses `Milena` (AVSpeech, female) for the zero-install path; pass `--voice ru-vosk-m02` to opt into Vosk on macOS too.
 
 **Supported voices:**
-- English: `en-am_michael` (default), plus any Kokoro voice you download into `~/.cache/kesha/models/kokoro-82m/voices/` (`am_*`/`bm_*` male, `af_*`/`bf_*` female).
+- English: `en-am_michael` (default). Darwin FluidAudio builds expose the supported FluidAudio Kokoro American-English voices via `kesha say --list-voices`; ONNX builds also see any `.bin` voice you add under `~/.cache/kesha/models/kokoro-82m/voices/`.
 - Russian: 5 Vosk-TTS speakers baked into the multi-speaker model — `ru-vosk-m02` (default, male), `ru-vosk-m01` (male), `ru-vosk-f01`/`f02`/`f03` (female).
 - macOS system voices: `macos-<identifier-or-language>` routes to `AVSpeechSynthesizer`. Zero install, any of the 180+ voices already on your Mac.
 
@@ -117,7 +117,7 @@ Range clamped to 0.5×–2.0×; values outside the range are clamped silently. `
 - Relative percent (`+25%` / `-25%`) is NOT supported. The upstream `ssml-parser` strips the sign on parse, so `+N%` would silently produce the absolute `N%` rate. `kesha say --ssml` rejects relative-percent input with a clear error pointing users at absolute percent or named values. Tracked as a v2 follow-up on [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
 - Mid-utterance prosody (`<speak>Hi <prosody rate="fast">there</prosody> bye</speak>`) emits a `prosody-mid-utterance` stderr warning and synthesizes the full text at default rate. A leading or trailing structural sibling (`<break/>`, `<say-as>`, `<phoneme>`) outside the `<prosody>` also triggers the mid-utterance path. Per-segment splitting is a v2 follow-up — requires verifying boundary cuts don't produce click/pop. Tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236).
 - Nested `<prosody>` warns once (`prosody-nested`) and drops the inner attributes; inner content flows at the outer rate.
-- AVSpeech (`macos-*`) voices don't accept SSML yet (#141 follow-up); `--ssml` on a `macos-*` voice errors out before any prosody handling runs.
+- AVSpeech (`macos-*`) and Darwin FluidAudio Kokoro (`en-*` on darwin-arm64 release builds) don't accept SSML yet; `--ssml` errors out before any prosody handling runs.
 - `<prosody pitch>` and `<prosody volume>` are NOT supported in v1 — they warn-once and strip. See #236 for the v2 design considerations.
 
 Engine reports `tts.prosody_rate: true` in `--capabilities-json`. Closes [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) (rate-only conservative scope; pitch + volume deferred).
@@ -139,8 +139,8 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 | `<say-as interpret-as="characters">…</say-as>` | ✅ honored on `ru-vosk-*` (#232) and `en-*` (#244) — letter-spells via the embedded table; stripped with stderr warning on AVSpeech |
 | `<say-as interpret-as="cardinal\|ordinal\|date\|telephone\|...">` | ⚠️ stripped with stderr warning (contained text still synthesized); separate concern |
 | `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro / AVSpeech (no `+`-marker analog) |
-| `<phoneme alphabet="ipa" ph="…">` | ✅ honored on Kokoro — bypasses G2P, feeds IPA directly to inference (#193) |
-| `<prosody rate>` | ✅ honored on `ru-vosk-*` and `en-*` voices when wrapping the whole utterance — see the section above (#236). Mid-utterance / sibling-flanked: warned + stripped. |
+| `<phoneme alphabet="ipa" ph="…">` | ✅ honored on ONNX Kokoro — bypasses G2P, feeds IPA directly to inference (#193). Not yet supported by Darwin FluidAudio Kokoro. |
+| `<prosody rate>` | ✅ honored on `ru-vosk-*` and ONNX `en-*` voices when wrapping the whole utterance — see the section above (#236). Mid-utterance / sibling-flanked: warned + stripped. |
 | `<prosody pitch/volume>` | ⚠️ stripped with stderr warning; v2 follow-up tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
 | `<!DOCTYPE>` | ❌ rejected (hardening against XXE) |
 

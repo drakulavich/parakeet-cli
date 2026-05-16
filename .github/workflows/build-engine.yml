@@ -107,7 +107,7 @@ jobs:
           # rust/src/transcribe/diarize.rs::sidecar_path).
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml,tts,system_tts,system_diarize,system_text_lang
+            features: coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -228,6 +228,19 @@ jobs:
           # first, then plain kesha-diarize. The release-asset name is the
           # platform-suffixed one — same convention as say-avspeech-*.
 
+      - name: Stage FluidAudio Kokoro sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: |
+          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-kokoro -type f | head -1)
+          if [ -z "$sidecar" ]; then
+            echo "kesha-kokoro sidecar not found — system_kokoro feature may not have compiled" >&2
+            exit 1
+          fi
+          echo "Sidecar at: $sidecar"
+          cp "$sidecar" ./kesha-kokoro
+          cp "$sidecar" kesha-kokoro-darwin-arm64
+
       # detect-text-lang fast-path sidecar: replaces the per-call `swift -e`
       # shell-out. Always built on macOS by `rust/build.rs::build_text_lang_helper`
       # (no feature gate; `text_lang` itself is macOS-only at runtime).
@@ -253,9 +266,10 @@ jobs:
         # MATRIX MIRRORS CARGO DEFAULTS".
         #
         # macOS additionally checks that `say --list-voices` surfaces at
-        # least one `macos-*` entry — that exercises the Swift sidecar's
-        # --list-voices mode end-to-end, so a broken sidecar fails the
-        # build instead of shipping in a release.
+        # least one `macos-*` entry and one FluidAudio-backed Kokoro voice.
+        # That exercises the Swift sidecar voice-listing paths end-to-end,
+        # so a broken sidecar fails the build instead of shipping in a
+        # release.
         run: |
           chmod +x "${{ matrix.binary }}"
           caps=$("./${{ matrix.binary }}" --capabilities-json)
@@ -268,6 +282,11 @@ jobs:
             voices=$("./${{ matrix.binary }}" say --list-voices)
             echo "$voices" | grep -q '^macos-' || {
               echo "expected at least one macos-* voice, got:" >&2
+              echo "$voices" >&2
+              exit 1
+            }
+            echo "$voices" | grep -q '^en-am_michael' || {
+              echo "expected FluidAudio Kokoro voice en-am_michael, got:" >&2
               echo "$voices" >&2
               exit 1
             }
@@ -315,6 +334,13 @@ jobs:
         with:
           name: kesha-diarize-darwin-arm64
           path: kesha-diarize-darwin-arm64
+
+      - name: Upload FluidAudio Kokoro sidecar (macOS)
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kesha-kokoro-darwin-arm64
+          path: kesha-kokoro-darwin-arm64
 
       - name: Upload kesha-textlang sidecar (macOS)
         if: matrix.os == 'macos-14'
@@ -377,6 +403,7 @@ jobs:
             kesha-engine-linux-x64
             kesha-engine-windows-x64.exe
             say-avspeech-darwin-arm64
+            kesha-kokoro-darwin-arm64
             kesha-diarize-darwin-arm64
             kesha-textlang-darwin-arm64
           draft: true

@@ -3,6 +3,7 @@ dist/
 *.f32le
 fixtures/corrupt.bin
 swift/.build/
+swift/*/.build/
 rust/target/
 .worktrees/
 tmp-lang-id-output/

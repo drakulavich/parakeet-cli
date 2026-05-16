@@ -1,5 +1,6 @@
 import { dirname, join } from "path";
-import { existsSync, mkdirSync, chmodSync, accessSync, constants } from "fs";
+import { tmpdir } from "os";
+import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
 import {
   getEngineBinPath,
   getEngineCapabilities,
@@ -73,6 +74,13 @@ const SIDECARS: SidecarSpec[] = [
     displayName: "Diarization sidecar",
     availableHint: "--speakers available",
     unavailableHint: "--speakers unavailable",
+  },
+  {
+    fileBasename: "kesha-kokoro",
+    assetName: "kesha-kokoro-darwin-arm64",
+    displayName: "FluidAudio Kokoro sidecar",
+    availableHint: "Kokoro uses FluidAudio CoreML",
+    unavailableHint: "en-* Kokoro voices unavailable on Darwin",
   },
   {
     // Runtime resolver looks for plain `kesha-textlang` next to the engine
@@ -218,6 +226,76 @@ async function downloadSidecar(
     log.warn(
       `${spec.displayName} install failed (${e instanceof Error ? e.message : e}); ${spec.unavailableHint}.`,
     );
+  }
+}
+
+async function warmDarwinKokoro(binPath: string): Promise<void> {
+  if (process.platform !== "darwin" || process.arch !== "arm64") return;
+  const sidecarPath = join(dirname(binPath), "kesha-kokoro");
+  if (!existsSync(sidecarPath)) return;
+
+  const outPath = join(tmpdir(), `kesha-kokoro-warmup-${process.pid}.wav`);
+  log.progress("Warming FluidAudio Kokoro CoreML cache...");
+
+  const startedAt = performance.now();
+  const proc = Bun.spawn(
+    [
+      binPath,
+      "say",
+      "--voice",
+      "en-am_michael",
+      "--out",
+      outPath,
+      "Kesha warmup.",
+    ],
+    {
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+  );
+
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, 180_000);
+
+  let stderr = "";
+  try {
+    const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
+    const [stderrText, exitCode] = await Promise.all([
+      new Response(stderrStream).text(),
+      proc.exited,
+    ]);
+    stderr = stderrText.trim();
+
+    if (timedOut) {
+      log.warn("FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow.");
+      return;
+    }
+    if (exitCode !== 0) {
+      log.warn(
+        `FluidAudio Kokoro warmup failed${stderr ? `: ${stderr}` : ""}; first ` +
+          "`kesha say en-*` may still be slow.",
+      );
+      return;
+    }
+
+    log.success(
+      `FluidAudio Kokoro warmed (${Math.round(performance.now() - startedAt)}ms).`,
+    );
+  } catch (e) {
+    log.warn(
+      `FluidAudio Kokoro warmup failed (${e instanceof Error ? e.message : e}); ` +
+        "first `kesha say en-*` may still be slow.",
+    );
+  } finally {
+    clearTimeout(timer);
+    try {
+      rmSync(outPath, { force: true });
+    } catch {
+      // best-effort cleanup only
+    }
   }
 }
 
@@ -425,6 +503,10 @@ export async function downloadEngine(
   if (proc.exitCode !== 0) {
     const detail = stderr.trim();
     throw new Error(detail ? `Failed to install models: ${detail}` : "Failed to install models");
+  }
+
+  if (options.tts) {
+    await warmDarwinKokoro(binPath);
   }
 
   log.success("Backend installed successfully.");

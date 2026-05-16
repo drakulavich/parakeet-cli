@@ -82,21 +82,32 @@ pub(crate) fn resolve_output_format(
     Ok(chosen)
 }
 
-fn list_kokoro_voices(cache: &std::path::Path) -> Vec<String> {
-    let dir = cache.join("models/kokoro-82m/voices");
-    std::fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) == Some("bin") {
-                p.file_stem().map(|s| format!("en-{}", s.to_string_lossy()))
-            } else {
-                None
-            }
-        })
-        .collect()
+fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    {
+        return tts::fluid_kokoro::available_voice_ids();
+    }
+    #[allow(unreachable_code)]
+    {
+        let dir = _cache.join("models/kokoro-82m/voices");
+        std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let p = e.path();
+                if p.extension().and_then(|s| s.to_str()) == Some("bin") {
+                    p.file_stem().map(|s| format!("en-{}", s.to_string_lossy()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
@@ -206,6 +217,17 @@ pub fn run(a: SayArgs) -> i32 {
             voice_path,
             speed: a.rate,
         },
+        #[cfg(all(
+            feature = "system_kokoro",
+            target_os = "macos",
+            target_arch = "aarch64"
+        ))]
+        tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
+            tts::EngineChoice::FluidKokoro {
+                voice_id,
+                speed: a.rate,
+            }
+        }
         tts::voices::ResolvedVoice::Vosk {
             model_dir,
             speaker_id,
