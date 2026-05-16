@@ -12,6 +12,7 @@ async function runCli(
   args: string[],
   opts: { env?: Record<string, string> } = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const startedAt = performance.now();
   const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
@@ -42,6 +43,7 @@ async function runCli(
     throw new Error(
       [
         `CLI timed out after ${CLI_TIMEOUT_MS}ms: kesha ${args.join(" ")}`,
+        `elapsedMs=${Math.round(performance.now() - startedAt)}`,
         `exitCode=${exitCode}`,
         `stdout=${stdout.trim()}`,
         `stderr=${stderr.trim()}`,
@@ -100,6 +102,19 @@ process.exit(2);
   return enginePath;
 }
 
+function createFailingEngine(dir: string): string {
+  const enginePath = join(dir, "kesha-engine-fail-on-use");
+  writeFileSync(
+    enginePath,
+    `#!/usr/bin/env bun
+console.error("fake engine should not have been invoked: " + JSON.stringify(Bun.argv.slice(2)));
+process.exit(99);
+`,
+  );
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -117,6 +132,10 @@ describe("e2e-cli", () => {
     const { stdout, exitCode } = await runCli([]);
     expect(exitCode).toBe(1);
     expect(stdout).toContain("Usage:");
+    expect(stdout).toContain("kesha install");
+    expect(stdout).toContain("kesha status");
+    expect(stdout).toContain("kesha say");
+    expect(stdout).toContain("kesha stats");
   });
 
   test("--help shows description and flags", async () => {
@@ -156,6 +175,24 @@ describe("e2e-cli", () => {
     expect(stderr).not.toContain("No transcription backend is installed");
   });
 
+  test("missing file is rejected before spawning a configured engine", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fail-engine-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stderr, exitCode } = await runCli(["nonexistent.wav"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: dir,
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.toLowerCase()).toContain("file not found");
+    expect(stderr).not.toContain("fake engine should not have been invoked");
+  });
+
   test("multiple missing files with --json outputs empty array", async () => {
     const { stdout, stderr, exitCode } = await runCli(["--json", "a.wav", "b.wav"]);
     expect(exitCode).toBe(1);
@@ -178,6 +215,24 @@ describe("e2e-cli", () => {
     expect(output).not.toContain("Did you mean");
     expect(output).not.toContain("FluidAudio");
     expect(output.toLowerCase()).not.toContain("file not found");
+  });
+
+  test("gibberish bare token is rejected before spawning a configured engine", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-fail-engine-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stderr, exitCode } = await runCli(["xyzxyzxyz"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: dir,
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("unknown command 'xyzxyzxyz'");
+    expect(stderr).not.toContain("fake engine should not have been invoked");
   });
 
   test("--json + --toon are mutually exclusive → exit 2 (#138)", async () => {

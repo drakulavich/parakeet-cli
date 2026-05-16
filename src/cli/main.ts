@@ -110,9 +110,12 @@ export const mainCommand = defineCommand({
     version: pkg.version,
     description:
       "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
-      "  Run 'kesha install [--no-cache]' to download engine and models.\n" +
-      "  Run 'kesha stats enable' to collect local anonymous performance stats.\n" +
-      "  Run 'kesha status' to inspect installed backend.",
+      "\n" +
+      "Commands:\n" +
+      "  install    Download engine and models.\n" +
+      "  status     Inspect installed backend.\n" +
+      "  say        Synthesize speech from text.\n" +
+      "  stats      Manage local anonymous performance stats.",
   },
   args: {
     json: {
@@ -199,7 +202,13 @@ export const mainCommand = defineCommand({
     const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
 
     if (files.length === 0) {
-      log.info("Usage: kesha <audio_file> [audio_file ...]\n       kesha install [--no-cache]\n       kesha status");
+      log.info(
+        "Usage: kesha <audio_file> [audio_file ...]\n" +
+          "       kesha install [--no-cache]\n" +
+          "       kesha status\n" +
+          "       kesha say <text>\n" +
+          "       kesha stats [enable|disable|status|week|errors]",
+      );
       process.exit(1);
     }
 
