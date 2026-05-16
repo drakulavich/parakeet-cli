@@ -13,6 +13,7 @@ import {
   formatVerboseOutput,
 } from "../format";
 import { formatToonOutput } from "../toon";
+import { artifactFromFile, createStatsRecorder } from "../stats";
 
 const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
 
@@ -113,7 +114,8 @@ export const mainCommand = defineCommand({
       "Commands:\n" +
       "  install    Download engine and models.\n" +
       "  status     Inspect installed backend.\n" +
-      "  say        Synthesize speech from text.",
+      "  say        Synthesize speech from text.\n" +
+      "  stats      Manage local anonymous performance stats.",
   },
   args: {
     json: {
@@ -204,13 +206,15 @@ export const mainCommand = defineCommand({
         "Usage: kesha <audio_file> [audio_file ...]\n" +
           "       kesha install [--no-cache]\n" +
           "       kesha status\n" +
-          "       kesha say <text>",
+          "       kesha say <text>\n" +
+          "       kesha stats [enable|disable|status|week|errors]",
       );
       process.exit(1);
     }
 
     let hasError = false;
     const results: TranscribeResult[] = [];
+    const stats = createStatsRecorder("transcribe");
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
     const reportProgress = process.stdout.isTTY !== true;
@@ -218,9 +222,12 @@ export const mainCommand = defineCommand({
     for (const file of files) {
       if (!existsSync(file)) {
         hasError = true;
+        stats.recordError("input", new Error("File not found"), "file_not_found");
         log.error(`${file}: File not found`);
         continue;
       }
+      const inputArtifact = artifactFromFile(file, "input_audio");
+      if (inputArtifact) stats.recordArtifact(inputArtifact);
 
       const startedAt = performance.now();
       try {
@@ -229,8 +236,12 @@ export const mainCommand = defineCommand({
         }
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([
-          wantsLangId ? detectAudioLanguageEngine(file) : Promise.resolve(null),
-          transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps, speakers: args.speakers }),
+          wantsLangId
+            ? stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file))
+            : Promise.resolve(null),
+          stats.timeStage("transcribe", () =>
+            transcribeWithSegments(file, { vad: vadMode, timestamps: args.timestamps, speakers: args.speakers })
+          ),
         ]);
         const { text, segments } = transcript;
 
@@ -248,7 +259,7 @@ export const mainCommand = defineCommand({
         let textLanguage: LangDetectResult | undefined;
 
         if (wantsLangId) {
-          const engineTextResult = await detectTextLanguageEngine(text);
+          const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
           if (engineTextResult && engineTextResult.code) {
             textLanguage = engineTextResult;
           }
@@ -277,6 +288,7 @@ export const mainCommand = defineCommand({
         }
       } catch (err: unknown) {
         hasError = true;
+        stats.recordError("transcribe", err);
         const message = err instanceof Error ? err.message : String(err);
         log.error(`${file}: ${message}`);
       }
@@ -293,6 +305,8 @@ export const mainCommand = defineCommand({
     } else {
       process.stdout.write(formatTextOutput(results));
     }
+
+    stats.finish(hasError ? "failed" : "success", files.length);
 
     if (hasError) process.exit(1);
   },

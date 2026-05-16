@@ -7,6 +7,7 @@ export { installCommand } from "./cli/install";
 export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
 export { statusCommand } from "./cli/status";
+export { statsCommand } from "./cli/stats";
 export {
   mainCommand,
   detectLanguage,

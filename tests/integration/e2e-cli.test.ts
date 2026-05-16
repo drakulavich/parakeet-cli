@@ -1,4 +1,5 @@
 import { afterEach, describe, test, expect } from "bun:test";
+import { Database } from "bun:sqlite";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -134,6 +135,7 @@ describe("e2e-cli", () => {
     expect(stdout).toContain("kesha install");
     expect(stdout).toContain("kesha status");
     expect(stdout).toContain("kesha say");
+    expect(stdout).toContain("kesha stats");
   });
 
   test("--help shows description and flags", async () => {
@@ -246,6 +248,51 @@ describe("e2e-cli", () => {
     const { stderr, exitCode } = await runCli(["--timestamps", "a.wav"]);
     expect(exitCode).toBe(2);
     expect(stderr).toContain("--timestamps requires");
+  });
+
+  test("stats status reports disabled before setup", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stats-cli-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "stats.sqlite");
+    const { stdout, exitCode } = await runCli(["stats", "status"], {
+      env: { KESHA_STATS_DB: dbPath },
+    });
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Kesha Stats: disabled");
+    expect(stdout).toContain(dbPath);
+  });
+
+  test("stats enable, week, and errors work through the CLI", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-stats-cli-"));
+    tempDirs.push(dir);
+    const dbPath = join(dir, "stats.sqlite");
+    const env = { KESHA_STATS_DB: dbPath };
+
+    const enabled = await runCli(["stats", "enable"], { env });
+    expect(enabled.exitCode).toBe(0);
+    expect(enabled.stdout).toContain("Kesha Stats enabled");
+
+    const missing = await runCli(["missing-private-name.wav"], { env });
+    expect(missing.exitCode).toBe(1);
+
+    const week = await runCli(["stats", "week"], { env });
+    expect(week.exitCode).toBe(0);
+    expect(week.stdout).toContain("Kesha Stats");
+    expect(week.stdout).toContain("Runs: 1");
+
+    const errors = await runCli(["stats", "errors"], { env });
+    expect(errors.exitCode).toBe(0);
+    expect(errors.stdout).toContain("file_not_found");
+    expect(errors.stdout).not.toContain("missing-private-name.wav");
+
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const rows = db.query("select sanitized_message from errors").all() as Array<{ sanitized_message: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0].sanitized_message).not.toContain("missing-private-name.wav");
+    } finally {
+      db.close();
+    }
   });
 
   test("redirected --json --speakers reports progress on stderr and keeps stdout JSON", async () => {
