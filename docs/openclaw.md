@@ -25,4 +25,22 @@ Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribe
 [lang: ru, confidence: 1.00]
 ```
 
+## Compose with X/Twitter workflows
+
+Kesha handles local voice input and speech output. To let an OpenClaw agent turn a transcribed voice brief into public X/Twitter research, tweet search, or a reviewed tweet draft, install [TweetClaw](https://github.com/Xquik-dev/tweetclaw) separately:
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+openclaw config set plugins.entries.tweetclaw.config.apiKey "$XQUIK_API_KEY"
+openclaw config set tools.alsoAllow '["explore", "tweetclaw"]'
+```
+
+Useful voice-driven prompts:
+
+- "Transcribe this voice note, search tweets about the named launch keywords, and summarize what people are saying."
+- "Turn this voice memo into a tweet draft. Ask me before posting."
+- "Read the latest monitor alert aloud as an OGG voice note."
+
+Keep the Xquik API key out of voice transcripts, prompts, and shared logs. Review every TweetClaw write action before posting, replying, following, sending DMs, or changing account state.
+
 Manage the plugin with `openclaw plugins list`, `openclaw plugins disable kesha-voice-kit`, or `openclaw plugins uninstall kesha-voice-kit`.
