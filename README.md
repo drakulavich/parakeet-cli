@@ -160,7 +160,7 @@ See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + Engl
 | Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
 | Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | ~990MB | [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
 
-All models run through `kesha-engine`. On Apple Silicon, speech-to-text can use [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML); Kokoro/Vosk text-to-speech currently uses ONNX/runtime-specific backends inside the Rust engine. On Linux and Windows, model inference uses [ort](https://github.com/pykeio/ort) (ONNX Runtime).
+All models run through `kesha-engine`. On Apple Silicon, speech-to-text can use [FluidAudio](https://github.com/FluidInference/FluidAudio) (CoreML); Kokoro/Vosk text-to-speech currently uses ONNX/runtime-specific backends inside the Rust engine. On all other platforms (Linux, Windows, Intel Mac), model inference uses [ort](https://github.com/pykeio/ort) (ONNX Runtime).
 
 Audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — WAV, MP3, OGG/Opus, FLAC, AAC, M4A. No ffmpeg.
 
