@@ -87,6 +87,16 @@ impl ResolvedVoice {
 /// Voice id is `<lang>-<name>`; lang picks the engine and espeak language code.
 /// The special `macos-*` prefix routes to AVSpeechSynthesizer on supported builds.
 pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<ResolvedVoice> {
+    if let Some((lang, voice_path)) = voice_id.split_once(':') {
+        if let Some(lang) = crate::tts::chatterbox::SUPPORTED_LANGS
+            .iter()
+            .copied()
+            .find(|candidate| *candidate == lang)
+        {
+            return resolve_chatterbox_reference(cache_dir, lang, Path::new(voice_path));
+        }
+    }
+
     let voice_as_path = Path::new(voice_id);
     if voice_as_path.exists() {
         return resolve_chatterbox_reference(cache_dir, "en", voice_as_path);
@@ -330,6 +340,26 @@ mod tests {
             } => {
                 assert!(model_dir.ends_with("models/chatterbox"));
                 assert!(voice_path.ends_with("models/chatterbox/default_voice.wav"));
+                assert_eq!(lang, "ru");
+            }
+            other => panic!("expected Chatterbox, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_chatterbox_reference_path_with_explicit_language() {
+        let tmp = tempfile::tempdir().unwrap();
+        populate_chatterbox(tmp.path());
+        let reference = tmp.path().join("custom-voice.wav");
+        std::fs::write(&reference, b"dummy").unwrap();
+
+        let voice_id = format!("ru:{}", reference.display());
+        let r = resolve_voice(tmp.path(), &voice_id).unwrap();
+        match r {
+            ResolvedVoice::Chatterbox {
+                voice_path, lang, ..
+            } => {
+                assert_eq!(voice_path, reference);
                 assert_eq!(lang, "ru");
             }
             other => panic!("expected Chatterbox, got {other:?}"),
