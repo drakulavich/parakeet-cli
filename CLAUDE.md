@@ -358,8 +358,9 @@ Operational lessons from the 2026-05-16 setup:
 - The fork reports an older version string (`jj 0.35.0-<sha>`); that is
   expected for the `gusinacio/jj` `lfs` branch.
 - Preserve identity after switching binaries:
-  `jj config set --user user.name "Anton Yakutovich"` and
-  `jj config set --user user.email "drakulavich@gmail.com"`.
+  `jj config set --user user.name "<Your Name>"` and
+  `jj config set --user user.email "<your@email.com>"`.
+  Replace with your own credentials; do not use the repo owner's details.
 - If the repo already has `.jj`, do not reclone. Keep the existing colocated
   checkout, set the config, run `git lfs pull`, then verify with `jj status`.
 - Treat Git as the source of truth if JJ behavior looks suspicious:
