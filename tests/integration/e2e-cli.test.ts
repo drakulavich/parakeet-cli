@@ -131,6 +131,9 @@ describe("e2e-cli", () => {
     const { stdout, exitCode } = await runCli([]);
     expect(exitCode).toBe(1);
     expect(stdout).toContain("Usage:");
+    expect(stdout).toContain("kesha install");
+    expect(stdout).toContain("kesha status");
+    expect(stdout).toContain("kesha say");
   });
 
   test("--help shows description and flags", async () => {
