@@ -30,6 +30,14 @@ fn install_has_tts_flag() {
         stdout.contains("--tts"),
         "install --help missing --tts: {stdout}"
     );
+    assert!(
+        stdout.contains("Chatterbox 23 languages"),
+        "install --help should explain Chatterbox language bundle: {stdout}"
+    );
+    assert!(
+        stdout.contains("one bundled download"),
+        "install --help should say Chatterbox languages install together: {stdout}"
+    );
 }
 
 #[test]
@@ -207,6 +215,10 @@ fn list_voices_empty_on_fresh_cache() {
     assert!(
         stdout.contains("install --tts"),
         "expected install hint, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Chatterbox languages install together"),
+        "expected bundled-language hint, got: {stdout}"
     );
 }
 

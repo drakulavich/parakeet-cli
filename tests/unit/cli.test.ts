@@ -17,6 +17,12 @@ describe("CLI help", () => {
     expect(usage).toContain("--no-cache");
   });
 
+  test("install help explains Chatterbox languages install as one bundle", async () => {
+    const usage = await renderUsage(installCommand);
+    expect(usage).toContain("Chatterbox 23 languages");
+    expect(usage).toContain("one bundled download");
+  });
+
   test("main help contains --json flag", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("--json");
@@ -233,6 +239,12 @@ describe("say --verbose (TTS time, parallel to #139)", () => {
   test("say help explains --verbose prints TTS time", async () => {
     const usage = await renderUsage(sayCommand);
     expect(usage).toMatch(/TTS|synthesis time/i);
+  });
+
+  test("say help explains --lang picks a default voice", async () => {
+    const usage = await renderUsage(sayCommand);
+    expect(usage).toContain("--lang");
+    expect(usage).toMatch(/default voice/i);
   });
 });
 

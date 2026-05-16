@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+pub mod chatterbox;
 pub mod en;
 pub mod encode;
 pub mod g2p;
@@ -60,6 +61,12 @@ pub enum EngineChoice<'a> {
         speaker_id: u32,
         /// Speaking rate (1.0 = model default); passed to vosk's `speech_rate`.
         speed: f32,
+    },
+    /// Chatterbox Multilingual ONNX: raw text + language tag + reference WAV.
+    Chatterbox {
+        model_dir: &'a Path,
+        voice_path: &'a Path,
+        lang: &'a str,
     },
 }
 

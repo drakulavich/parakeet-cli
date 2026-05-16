@@ -1,14 +1,44 @@
 import { defineCommand } from "citty";
+import { existsSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 import { detectTextLanguageEngine, getEngineBinPath } from "../engine";
 import { log } from "../log";
 import { say, SayError, type SayFormat } from "../synth";
-import { pickVoiceForLang } from "../voice-routing";
+import { resolveSayVoice } from "../voice-routing";
+
+function keshaCacheDir(): string {
+  return process.env.KESHA_CACHE_DIR ?? join(homedir(), ".cache", "kesha");
+}
+
+function isChatterboxInstalled(): boolean {
+  const root = join(keshaCacheDir(), "models", "chatterbox");
+  return [
+    "onnx/speech_encoder.onnx",
+    "onnx/speech_encoder.onnx_data",
+    "onnx/embed_tokens.onnx",
+    "onnx/embed_tokens.onnx_data",
+    "onnx/language_model.onnx",
+    "onnx/language_model.onnx_data",
+    "onnx/conditional_decoder.onnx",
+    "onnx/conditional_decoder.onnx_data",
+    "tokenizer.json",
+    "default_voice.wav",
+  ].every((rel) => existsSync(join(root, rel)));
+}
 
 /** Run NLLanguageRecognizer (via engine) on the text and pick a default voice. */
-async function autoRouteVoice(text: string): Promise<string | undefined> {
+async function autoRouteVoice(
+  text: string,
+  chatterboxInstalled: boolean,
+): Promise<string | undefined> {
   if (!text) return undefined;
   const detected = await detectTextLanguageEngine(text);
-  return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
+  return resolveSayVoice({
+    detectedCode: detected?.code,
+    detectedConfidence: detected?.confidence ?? 0,
+    chatterboxInstalled,
+  });
 }
 
 /** Resolve the text to synthesize: inline positional, else read from stdin. */
@@ -36,8 +66,11 @@ export const sayCommand = defineCommand({
   },
   args: {
     text: { type: "positional", required: false, description: "Text to speak (stdin if omitted)" },
-    voice: { type: "string", description: "Voice id, e.g. en-am_michael" },
-    lang: { type: "string", description: "BCP 47 language code (default en-us)" },
+    voice: { type: "string", description: "Exact voice id, e.g. en-am_michael" },
+    lang: {
+      type: "string",
+      description: "Language tag; picks that language's default voice when --voice is omitted",
+    },
     out: { type: "string", description: "Write audio to file instead of stdout" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },
     "list-voices": { type: "boolean", description: "List installed voices and exit" },
@@ -90,7 +123,11 @@ export const sayCommand = defineCommand({
     const inlineText = typeof args.text === "string" ? args.text : undefined;
     const text = await resolveText(inlineText);
     const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
-    const voice = explicitVoice ?? (await autoRouteVoice(text));
+    const explicitLang = typeof args.lang === "string" ? args.lang : undefined;
+    const chatterboxInstalled = isChatterboxInstalled();
+    const voice = explicitVoice || explicitLang
+      ? resolveSayVoice({ explicitVoice, explicitLang, chatterboxInstalled })
+      : await autoRouteVoice(text, chatterboxInstalled);
 
     // Validate --format up front so we surface a clear error before spawning
     // the engine subprocess. The engine repeats the check authoritatively, but
@@ -124,7 +161,7 @@ export const sayCommand = defineCommand({
     const opts = {
       text,
       voice,
-      lang: typeof args.lang === "string" ? args.lang : undefined,
+      lang: explicitLang,
       out: typeof args.out === "string" ? args.out : undefined,
       rate: args.rate ? Number(args.rate) : undefined,
       ssml: Boolean(args.ssml),

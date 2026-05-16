@@ -141,43 +141,62 @@ pub fn kokoro_manifest() -> Vec<ModelFile> {
     ]
 }
 
-/// Vosk-TTS multi-speaker Russian model, mirrored to HF at
-/// `drakulavich/vosk-tts-ru-0.9-multi`. Replaces Piper-ru per
-/// `docs/superpowers/specs/2026-04-27-vosk-ru-replacement-design.md`.
-/// SHA-256 pins computed from the HF mirror — see CLAUDE.md MODEL HASHES
-/// ARE PINNED rule.
+/// Chatterbox Multilingual ONNX. Pinned to HF revision
+/// `452d3f434aa592098f1eedac9099f33642ab2da5` so fresh installs do not
+/// silently pick up a republished 3+ GB model bundle.
 #[cfg(feature = "tts")]
-pub fn vosk_ru_manifest() -> Vec<ModelFile> {
+pub fn chatterbox_manifest() -> Vec<ModelFile> {
     vec![
         ModelFile {
-            rel_path: "models/vosk-ru/model.onnx",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/model.onnx",
-            sha256: "0fa5a36b22a8bf7fe7179a3882c6371d2c01e5317019e717516f892d329c24b9",
+            rel_path: "models/chatterbox/onnx/speech_encoder.onnx",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/speech_encoder.onnx",
+            sha256: "8f1c8a0f89b77bf9cd5dd8f2e034eb2c79dc00fe70d41196b28c257643b00ccb",
         },
         ModelFile {
-            rel_path: "models/vosk-ru/dictionary",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/dictionary",
-            sha256: "2939e72c170bb41ac8e256828cca1c5fac4db1e36717f9f53fde843b00a220ba",
+            rel_path: "models/chatterbox/onnx/speech_encoder.onnx_data",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/speech_encoder.onnx_data",
+            sha256: "92f8f290fc9720e169bc2412c507209e20b03f6564bc3243739e25c56f7dfb8f",
         },
         ModelFile {
-            rel_path: "models/vosk-ru/config.json",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/config.json",
-            sha256: "e155fb266a730e1858a2420442b465acf08a3236dffad7d1a507bf155b213d50",
+            rel_path: "models/chatterbox/onnx/embed_tokens.onnx",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/embed_tokens.onnx",
+            sha256: "f785819ca4f6271262d5bb8971d62796c3a909e3b031982c113dbe83a4c3b854",
         },
         ModelFile {
-            rel_path: "models/vosk-ru/bert/model.onnx",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/model.onnx",
-            sha256: "2e2f1740eaae5e29c2b4844625cbb01ff644b2b5fb0560bd34374c35d8a092c1",
+            rel_path: "models/chatterbox/onnx/embed_tokens.onnx_data",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/embed_tokens.onnx_data",
+            sha256: "2a15f7dd73b2ee47f6edf87740324011594b5a528ed6471ae55e327ed6cad68c",
         },
         ModelFile {
-            rel_path: "models/vosk-ru/bert/vocab.txt",
-            url: "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/bert/vocab.txt",
-            sha256: "bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237",
+            rel_path: "models/chatterbox/onnx/language_model.onnx",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/language_model.onnx",
+            sha256: "861a34585605e8ad671051788afc495dcbeaee833a41523a1b33aded9c3babc7",
         },
-        // removed: README.md (drakulavich/vosk-tts-ru-0.9-multi) — not opened at
-        // runtime; pinning its SHA forced a manifest bump on every upstream
-        // doc copy-edit. CharsiuG2P entries (3 byt5-tiny ONNX) were also
-        // removed in PR #213 — Russian uses vosk-tts internal G2P now.
+        ModelFile {
+            rel_path: "models/chatterbox/onnx/language_model.onnx_data",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/language_model.onnx_data",
+            sha256: "b3556d41085196c122b7197e4d44ec4475b6d7cfe0971a70faa95caa38ad787a",
+        },
+        ModelFile {
+            rel_path: "models/chatterbox/onnx/conditional_decoder.onnx",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/conditional_decoder.onnx",
+            sha256: "1656d0d31332bae1854839959a3139300ebb67c178651dfa3f8c5fbfa5351351",
+        },
+        ModelFile {
+            rel_path: "models/chatterbox/onnx/conditional_decoder.onnx_data",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/onnx/conditional_decoder.onnx_data",
+            sha256: "51d58345a272747665ec9d5bb61e01835258a940e321a288582ac4c18cf01b5a",
+        },
+        ModelFile {
+            rel_path: "models/chatterbox/tokenizer.json",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/tokenizer.json",
+            sha256: "29d48c4a178f6af3ad5130097c34744639e9294847b38a7b912c8c68027cb819",
+        },
+        ModelFile {
+            rel_path: "models/chatterbox/default_voice.wav",
+            url: "https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/default_voice.wav",
+            sha256: "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e",
+        },
     ]
 }
 
@@ -258,6 +277,9 @@ pub enum ModelKind {
     /// Vosk-TTS multi-speaker Russian model (model + dictionary + BERT).
     #[cfg(feature = "tts")]
     VoskRu,
+    /// Chatterbox Multilingual ONNX TTS model bundle.
+    #[cfg(feature = "tts")]
+    Chatterbox,
     /// FluidAudio Sortformer streaming diarizer (`.mlpackage`).
     #[cfg(feature = "system_diarize")]
     Diarize,
@@ -272,6 +294,8 @@ impl ModelKind {
             ModelKind::Vad => "models/silero-vad",
             #[cfg(feature = "tts")]
             ModelKind::VoskRu => "models/vosk-ru",
+            #[cfg(feature = "tts")]
+            ModelKind::Chatterbox => "models/chatterbox",
             #[cfg(feature = "system_diarize")]
             ModelKind::Diarize => "models/diarize/SortformerNvidiaLow_v2.mlpackage",
         }
@@ -307,6 +331,8 @@ pub fn is_cached_in(kind: ModelKind, dir: &Path) -> bool {
         ModelKind::Vad => has_all_files(dir, VAD_FILES),
         #[cfg(feature = "tts")]
         ModelKind::VoskRu => has_vosk_ru_layout(dir),
+        #[cfg(feature = "tts")]
+        ModelKind::Chatterbox => has_chatterbox_layout(dir),
         #[cfg(feature = "system_diarize")]
         ModelKind::Diarize => has_diarize_layout(dir),
     }
@@ -321,6 +347,20 @@ fn has_vosk_ru_layout(dir: &Path) -> bool {
     dir.join("model.onnx").exists()
         && dir.join("dictionary").exists()
         && dir.join("bert/model.onnx").exists()
+}
+
+#[cfg(feature = "tts")]
+fn has_chatterbox_layout(dir: &Path) -> bool {
+    dir.join("onnx/speech_encoder.onnx").exists()
+        && dir.join("onnx/speech_encoder.onnx_data").exists()
+        && dir.join("onnx/embed_tokens.onnx").exists()
+        && dir.join("onnx/embed_tokens.onnx_data").exists()
+        && dir.join("onnx/language_model.onnx").exists()
+        && dir.join("onnx/language_model.onnx_data").exists()
+        && dir.join("onnx/conditional_decoder.onnx").exists()
+        && dir.join("onnx/conditional_decoder.onnx_data").exists()
+        && dir.join("tokenizer.json").exists()
+        && dir.join("default_voice.wav").exists()
 }
 
 /// `.mlpackage` is a directory tree — the runtime-required files live at
@@ -582,24 +622,27 @@ mod tts_tests {
     }
 
     #[test]
-    fn vosk_ru_manifest_has_expected_files() {
-        let m = vosk_ru_manifest();
-        assert_eq!(m.len(), 5);
+    fn chatterbox_manifest_has_expected_files() {
+        let m = chatterbox_manifest();
+        assert_eq!(m.len(), 10);
         let names: std::collections::HashSet<&str> = m.iter().map(|f| f.rel_path).collect();
         for f in [
-            "models/vosk-ru/model.onnx",
-            "models/vosk-ru/dictionary",
-            "models/vosk-ru/config.json",
-            "models/vosk-ru/bert/model.onnx",
-            "models/vosk-ru/bert/vocab.txt",
+            "models/chatterbox/onnx/speech_encoder.onnx",
+            "models/chatterbox/onnx/speech_encoder.onnx_data",
+            "models/chatterbox/onnx/embed_tokens.onnx",
+            "models/chatterbox/onnx/embed_tokens.onnx_data",
+            "models/chatterbox/onnx/language_model.onnx",
+            "models/chatterbox/onnx/language_model.onnx_data",
+            "models/chatterbox/onnx/conditional_decoder.onnx",
+            "models/chatterbox/onnx/conditional_decoder.onnx_data",
+            "models/chatterbox/tokenizer.json",
+            "models/chatterbox/default_voice.wav",
         ] {
             assert!(names.contains(f), "missing {f}");
         }
         for f in &m {
             assert!(f.sha256.len() == 64, "sha256 must be 64 hex chars");
-            assert!(f.url.starts_with(
-                "https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main/"
-            ));
+            assert!(f.url.starts_with("https://huggingface.co/onnx-community/chatterbox-multilingual-ONNX/resolve/452d3f434aa592098f1eedac9099f33642ab2da5/"));
         }
     }
 
@@ -661,14 +704,14 @@ pub fn download_vad(no_cache: bool) -> Result<()> {
     parallel_download(&cache, &refs, no_cache)
 }
 
-/// Download every TTS model file: Kokoro English + Vosk Russian.
+/// Download every TTS model file: Kokoro English + Chatterbox multilingual.
 /// Each file is streamed to disk, then SHA256-verified. 4 concurrent
 /// downloads (#178).
 #[cfg(feature = "tts")]
 pub fn download_tts(no_cache: bool) -> Result<()> {
     let cache = cache_dir();
     let mut manifest = kokoro_manifest();
-    manifest.extend(vosk_ru_manifest());
+    manifest.extend(chatterbox_manifest());
     let refs: Vec<&ModelFile> = manifest.iter().collect();
     parallel_download(&cache, &refs, no_cache)
 }

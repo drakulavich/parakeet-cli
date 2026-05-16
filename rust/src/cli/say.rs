@@ -116,6 +116,17 @@ fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
     ]
 }
 
+fn list_chatterbox_voices(cache: &std::path::Path) -> Vec<String> {
+    let dir = models::model_dir_at(models::ModelKind::Chatterbox, cache);
+    if !models::is_cached_in(models::ModelKind::Chatterbox, &dir) {
+        return Vec::new();
+    }
+    tts::chatterbox::SUPPORTED_LANGS
+        .iter()
+        .map(|lang| format!("{lang}-{}", tts::voices::CHATTERBOX_DEFAULT_VOICE))
+        .collect()
+}
+
 /// Map a TTS error to the documented exit code for `kesha say`.
 /// 2 = bad input, 4 = synthesis failure, 5 = text too long.
 /// (Voice-not-installed exits 1 directly from the resolver path.)
@@ -134,6 +145,7 @@ pub fn run(a: SayArgs) -> i32 {
         let cache = models::cache_dir();
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
             .into_iter()
+            .chain(list_chatterbox_voices(&cache))
             .chain(list_vosk_ru_voices(&cache))
             .collect();
         // macos-* voices live in the OS, not the cache — enumerate them via
@@ -144,6 +156,9 @@ pub fn run(a: SayArgs) -> i32 {
         voice_ids.sort();
         if voice_ids.is_empty() {
             println!("No voices installed. Run: kesha install --tts");
+            println!(
+                "Chatterbox languages install together in one bundle; use <lang>-chatterbox-m01 after install."
+            );
         } else {
             for id in voice_ids {
                 println!("{id}");
@@ -213,6 +228,15 @@ pub fn run(a: SayArgs) -> i32 {
             model_dir,
             speaker_id: *speaker_id,
             speed: a.rate,
+        },
+        tts::voices::ResolvedVoice::Chatterbox {
+            model_dir,
+            voice_path,
+            lang: _,
+        } => tts::EngineChoice::Chatterbox {
+            model_dir,
+            voice_path,
+            lang: &espeak_lang,
         },
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
