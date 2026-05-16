@@ -6,7 +6,7 @@
 // 25 languages, no cloud, ~19x faster than Whisper.
 //
 // The same `kesha` CLI also produces messenger-ready voice notes via
-// `kesha say --text "..." --format ogg-opus --out reply.ogg` (Telegram /
+// `kesha say "..." --format ogg-opus --out reply.ogg` (Telegram /
 // Discord ingest OGG/Opus directly — no transcoding needed). Not wired into
 // OpenClaw's media-understanding capability here; invoke it from a hook or
 // agent tool when you want Kesha to speak.

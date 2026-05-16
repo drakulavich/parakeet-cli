@@ -26,6 +26,39 @@ Local voice toolkit: transcribe voice messages to text, synthesize speech, detec
 - **Need to send a voice note (Telegram, WhatsApp, Signal, Discord)**: synthesize directly into the messenger-native format with `kesha say "<text>" --format ogg-opus --out reply.ogg`. Default is mono 24 kHz @ 32 kbps — what Telegram `sendVoice` expects. No `ffmpeg` round-trip needed.
 - **Need to detect what language a file is in** before choosing a pipeline: `kesha --json audio.ogg` returns both audio-based and text-based language detection with confidence scores.
 
+## OpenClaw plugin setup
+
+Install the plugin, then explicitly route OpenClaw audio understanding through the CLI model entry. The plugin registration makes Kesha discoverable, but real voice-message transcription uses `tools.media.audio.models` with a `type: "cli"` entry.
+
+```bash
+bun add -g @drakulavich/kesha-voice-kit
+kesha install
+openclaw plugins install @drakulavich/kesha-voice-kit
+openclaw config set tools.media.audio.enabled true
+openclaw config set tools.media.audio.models \
+  '[{"type":"cli","command":"kesha","args":["--format","transcript","{{MediaPath}}"],"timeoutSeconds":15}]'
+```
+
+Use `--format transcript` for OpenClaw's normal voice-message path: stdout is compact text plus language metadata, while progress and errors stay off the transcript payload.
+
+For agents that need timestamped segments, switch the model entry to JSON output and allow a longer timeout:
+
+```bash
+openclaw config set tools.media.audio.models \
+  '[{"type":"cli","command":"kesha","args":["--json","--timestamps","{{MediaPath}}"],"timeoutSeconds":30}]'
+```
+
+Verification checklist:
+
+```bash
+which kesha
+kesha status
+openclaw plugins list
+openclaw config get tools.media.audio.models
+```
+
+Do not rely on `openclaw.plugin.json` to patch `tools.media.audio.models`; OpenClaw ignores non-schema fields such as `configPatch`. Keep the CLI route in user config.
+
 ## STT: transcribe audio
 
 ```bash
