@@ -1,4 +1,4 @@
-.PHONY: install test unit integration rust-test lint lint-tsgo versions smoke-test release publish help
+.PHONY: install check test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -7,6 +7,8 @@ install: ## Install dependencies
 	bun install
 
 test: unit integration ## Run all tests
+
+check: lint versions test ## Run local checks that mirror the cheap CI gates
 
 unit: ## Run unit tests
 	bun run test:unit
@@ -39,8 +41,11 @@ smoke-test-tts: ## Run smoke tests with TTS
 benchmark: ## Run benchmark (openai-whisper vs faster-whisper vs Kesha)
 	bun scripts/benchmark.ts
 
-release: lint test smoke-test ## Verify everything before publish
-	@echo "All checks passed. Ready to publish."
+release-preflight: check smoke-test ## Verify locally before cutting a GitHub release
+	@echo "Release preflight passed. Cut/publish via the GitHub release workflow, not npm publish."
 
-publish: release ## Publish to npm
-	npm publish --access public
+release: release-preflight ## Backward-compatible alias for release-preflight
+
+release-notes: ## Print an existing release body: make release-notes TAG=vX.Y.Z
+	@test -n "$(TAG)" || (echo "usage: make release-notes TAG=vX.Y.Z" >&2; exit 2)
+	gh release view "$(TAG)" --json body --jq .body

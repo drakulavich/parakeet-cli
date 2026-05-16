@@ -34,6 +34,7 @@ jobs:
       tts_e2e: ${{ steps.filter.outputs.tts_e2e }}
       raycast: ${{ steps.filter.outputs.raycast }}
       nix: ${{ steps.filter.outputs.nix }}
+      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v6
@@ -93,6 +94,26 @@ jobs:
               - 'rust/**'
               - 'package.json'
               - '.github/workflows/ci.yml'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+              - '.github/scripts/check-workflows.ts'
+              - 'package.json'
+              - 'bun.lock'
+
+  workflow-lint:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🔍 Check workflow YAML
+        run: bun run check:workflows
 
   unit-tests:
     needs: changes
@@ -385,4 +406,3 @@ jobs:
 
       - name: 🚬 Smoke
         run: ./result/bin/kesha-engine --version
-

@@ -370,40 +370,39 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
 
-      # Multi-line heredoc form for $GITHUB_OUTPUT — a single-line
-      # `echo "body=…"` would truncate at the first newline. KESHA_NOTES_EOF
-      # is a magic marker chosen to be highly unlikely in user-authored
-      # release notes; a colliding marker would inject content but the
-      # release body is a doc field, not a shell context, so impact is
-      # cosmetic.
-      - name: Extract release notes from tag annotation
-        id: notes
+      - name: Prepare release notes from tag annotation
         env:
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          body=$(git tag -l --format='%(contents)' "$TAG_NAME" || true)
-          EOF_MARKER=$(openssl rand -hex 16)
-          {
-            echo "body<<$EOF_MARKER"
-            printf '%s\n' "$body"
-            echo "$EOF_MARKER"
-          } >> "$GITHUB_OUTPUT"
+          git tag -l --format='%(contents)' "$TAG_NAME" > release-notes.md
+          cat >> release-notes.md <<EOF
+
+          ### Verify release assets
+
+          Download the published binaries and checksums, then verify them:
+
+          \`\`\`bash
+          gh release download $TAG_NAME -p SHA256SUMS -p 'kesha-*' -p 'say-*'
+          sha256sum -c SHA256SUMS
+          \`\`\`
+          EOF
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           merge-multiple: true
+          path: release-assets
+
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create draft release with binaries
         uses: softprops/action-gh-release@v3
         with:
-          body: ${{ steps.notes.outputs.body }}
-          files: |
-            kesha-engine-darwin-arm64
-            kesha-engine-linux-x64
-            kesha-engine-windows-x64.exe
-            say-avspeech-darwin-arm64
-            kesha-kokoro-darwin-arm64
-            kesha-diarize-darwin-arm64
-            kesha-textlang-darwin-arm64
+          body_path: release-notes.md
+          files: release-assets/*
           draft: true
