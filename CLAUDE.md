@@ -337,6 +337,35 @@ Recommended user config:
 
 **Manifest:** required fields are `id` + `configSchema` (proper JSON Schema shape). `configPatch` is NOT a valid field — the loader silently discards it.
 
+### JJ + GIT LFS WORKAROUND
+
+This repo uses Git LFS for fixtures/assets. Stock `jj` can surface LFS-managed
+files as modified in colocated repos. Use the LFS fork until upstream support
+lands:
+
+```bash
+cargo install --git https://github.com/gusinacio/jj.git \
+  --branch lfs --locked --bin jj jj-cli
+jj config set --user git.ignore-files '["lfs"]'
+git lfs pull
+```
+
+Operational lessons from the 2026-05-16 setup:
+
+- If `jj --version` still shows Homebrew's newer binary, `which -a jj` will
+  usually show `/opt/homebrew/bin/jj` before `~/.cargo/bin/jj`. Run
+  `brew unlink jj` so the Cargo-installed fork is active.
+- The fork reports an older version string (`jj 0.35.0-<sha>`); that is
+  expected for the `gusinacio/jj` `lfs` branch.
+- Preserve identity after switching binaries:
+  `jj config set --user user.name "Anton Yakutovich"` and
+  `jj config set --user user.email "drakulavich@gmail.com"`.
+- If the repo already has `.jj`, do not reclone. Keep the existing colocated
+  checkout, set the config, run `git lfs pull`, then verify with `jj status`.
+- Treat Git as the source of truth if JJ behavior looks suspicious:
+  `git status --short --branch` should be clean before making release or PR
+  decisions.
+
 ### RELEASE CHICKEN-AND-EGG — `integration-tests` SKIPS ON `release/*`
 
 `integration-tests` in `.github/workflows/ci.yml` downloads the RELEASED `kesha-engine` binary at the version pinned in `package.json#keshaEngine.version`. On a version-bump PR (branch `release/X.Y.Z`) that tag doesn't exist yet — HTTP 404, CI red. The job is filtered via `if: needs.changes.outputs.integration == 'true' && !startsWith(github.head_ref, 'release/')`. Don't remove that filter. If you add a new job that downloads release artifacts, use the same branch guard.
