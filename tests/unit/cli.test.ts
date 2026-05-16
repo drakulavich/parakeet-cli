@@ -10,6 +10,14 @@ describe("CLI help", () => {
     expect(usage).toContain("install");
   });
 
+  test("main help shows subcommand inventory (#324)", async () => {
+    const usage = await renderUsage(mainCommand);
+    expect(usage).toContain("Commands:");
+    expect(usage).toContain("install    Download engine and models.");
+    expect(usage).toContain("status     Inspect installed backend.");
+    expect(usage).toContain("say        Synthesize speech from text.");
+  });
+
   test("install help contains backend and cache options", async () => {
     const usage = await renderUsage(installCommand);
     expect(usage).toContain("--coreml");

@@ -109,8 +109,11 @@ export const mainCommand = defineCommand({
     version: pkg.version,
     description:
       "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
-      "  Run 'kesha install [--no-cache]' to download engine and models.\n" +
-      "  Run 'kesha status' to inspect installed backend.",
+      "\n" +
+      "Commands:\n" +
+      "  install    Download engine and models.\n" +
+      "  status     Inspect installed backend.\n" +
+      "  say        Synthesize speech from text.",
   },
   args: {
     json: {
