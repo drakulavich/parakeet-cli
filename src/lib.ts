@@ -65,7 +65,7 @@ export async function transcribeWithTimestamps(
 
 /**
  * @deprecated Renamed to {@link transcribeWithTimestamps} (#248). The old
- * name shipped briefly in v1.9.0; this alias keeps existing imports working
- * for one minor-version cycle. Will be removed in v1.12.0.
+ * name shipped briefly in v1.9.0; this alias keeps existing imports working.
+ * No removal is scheduled before the next major version.
  */
 export const transcribeWithSegments = transcribeWithTimestamps;

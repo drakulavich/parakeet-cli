@@ -17,6 +17,11 @@ describe("lib API", () => {
     expect(typeof downloadTts).toBe("function");
   });
 
+  it("keeps transcribeWithSegments as a compatibility alias", async () => {
+    const { transcribeWithSegments, transcribeWithTimestamps } = await import("../../src/lib");
+    expect(transcribeWithSegments).toBe(transcribeWithTimestamps);
+  });
+
   it("exports SayError class with code + stderr fields", async () => {
     const { SayError } = await import("../../src/lib");
     const e = new SayError("msg", 1, "stderr");
