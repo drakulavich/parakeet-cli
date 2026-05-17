@@ -41,6 +41,9 @@ during package installation.
 
 ## Maintainer Validation
 
+Packaging uses [nFPM](https://nfpm.goreleaser.com/) to emit both formats from
+the same config.
+
 ```bash
 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4
 node .github/scripts/build-linux-packages.mjs
