@@ -134,6 +134,17 @@ describe("output formatting", () => {
     });
   });
 
+  test("JSON output with --include-errors and no errors still uses envelope shape", () => {
+    const output = formatJsonOutput(
+      [{ file: "ok.ogg", text: "Hello", lang: "en" }],
+      [],
+    );
+    expect(JSON.parse(output)).toEqual({
+      results: [{ file: "ok.ogg", text: "Hello", lang: "en" }],
+      errors: [],
+    });
+  });
+
   test("JSON output preserves timestamped segments", () => {
     const output = formatJsonOutput([
       {
