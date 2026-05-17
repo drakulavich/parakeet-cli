@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible Kesha CLI, engine, TTS, VAD, Stats, or integration bug.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do not attach private audio, transcripts, or Stats databases.
+        Run `kesha doctor --json --redact` or attach a `kesha support-bundle --output kesha-support.tar.gz` archive so the issue includes versions, platform, cache state, and safe environment details.
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Paste the exact command, script, or integration config that failed.
+      placeholder: kesha --json --timestamps audio.ogg
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include stderr/stdout snippets and the exit code. Redact paths or content if needed.
+      placeholder: |
+        Exit code:
+        Stdout:
+        Stderr:
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste `kesha doctor --json --redact` output or say that a support bundle is attached.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS arm64
+        - Linux x64
+        - Windows x64
+        - Nix flake
+        - Docker image
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug log
+      description: If relevant, rerun with `KESHA_DEBUG=1` and paste only non-private stderr lines.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I did not attach private audio, transcripts, model files, or the Stats database.
+          required: true
+        - label: I redacted secrets, personal paths, and private content from pasted logs.
+          required: true
