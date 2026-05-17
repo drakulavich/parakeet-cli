@@ -396,7 +396,8 @@ Operational lessons from the 2026-05-16 setup:
   the repo from `.git`.
 - Before calling files "external changes", determine whether they are dirty
   edits or just the checked-out content of a stale feature branch. Check
-  `jj status`, `jj workspace list`, `git status --short --branch`, and
+  `jj status` and `jj workspace list` everywhere; in the colocated checkout
+  that has `.git`, also check `git status --short --branch` and
   `git log --oneline --decorate -5`. After a PR is merged and the remote branch
   is deleted, a local bookmark/branch can remain checked out and make merged
   feature files look unrelated. Fetch, move back to `main`, and only then start
