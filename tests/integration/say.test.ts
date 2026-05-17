@@ -133,6 +133,7 @@ describe("kesha say (CLI)", () => {
   it("rejects invalid numeric flags before spawning the engine", async () => {
     const cases: Array<{ args: string[]; message: string }> = [
       { args: ["--rate", "fast", "Hello"], message: "--rate must be a finite number" },
+      { args: ["--rate", "", "Hello"], message: "--rate must be a finite number" },
       { args: ["--rate", "3", "Hello"], message: "--rate must be between 0.5 and 2.0" },
       { args: ["--format", "ogg-opus", "--bitrate", "wide", "Hello"], message: "--bitrate must be a finite number" },
       { args: ["--format", "ogg-opus", "--bitrate", "-1", "Hello"], message: "--bitrate must be a positive integer" },
