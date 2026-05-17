@@ -218,9 +218,8 @@ jobs:
     # Skip on release/* branches: this job downloads the released engine
     # binary (the version in `package.json#keshaEngine.version`), which
     # doesn't exist yet on a version-bump PR — the tag is pushed AFTER
-    # merge per the CLAUDE.md release flow. All other jobs either build
-    # from source (tts-e2e) or test code directly (unit/rust-test), so
-    # end-to-end-against-published coverage is the one thing we skip.
+    # merge per the CLAUDE.md release flow. `release-branch-engine-smoke`
+    # below covers that high-risk path with a locally built engine instead.
     #
     # Fail-fast: gate on `unit-tests` so a `tsc --noEmit` failure cancels
     # this 5-10 min lane. Safe because `integration` is a strict subset of
@@ -325,6 +324,79 @@ jobs:
           kesha --json fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
           bun -e '
             const output = await Bun.file("/tmp/kesha-linux-smoke.json").json();
+            if (!Array.isArray(output) || output.length !== 1) {
+              throw new Error("expected exactly one transcription result");
+            }
+            if (!output[0].text || output[0].text.length < 5) {
+              throw new Error("expected non-empty transcription text");
+            }
+          '
+
+  release-branch-engine-smoke:
+    # P1.11: release branches cannot download the not-yet-published engine
+    # asset, but they still need an end-to-end CLI/backend gate. Build the
+    # Linux release-shaped engine locally, mark it as the package's engine
+    # version, install models through that binary, then smoke the wrapper.
+    needs: [changes, unit-tests]
+    if: |
+      needs.changes.outputs.integration == 'true' &&
+      (
+        startsWith(github.head_ref, 'release/') ||
+        startsWith(github.event.head_commit.message, 'chore(release):')
+      ) &&
+      needs.unit-tests.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      KESHA_CACHE_DIR: ${{ runner.temp }}/kesha-release-smoke
+      KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/kesha-engine
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: 🎧 Install system audio deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+      - name: 🦀 Build local Linux engine
+        run: cd rust && cargo build --release --features onnx,tts --no-default-features
+
+      - name: 🧾 Mark local engine version
+        run: |
+          bun -e '
+            const pkg = await Bun.file("package.json").json();
+            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
+          '
+
+      - name: 🔊 Install models through local backend
+        uses: ./.github/actions/install-parakeet-backend
+        with:
+          cache-path: |
+            ${{ runner.temp }}/kesha-release-smoke
+          cache-key: ${{ runner.os }}-kesha-release-smoke-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-release-smoke-
+          ffmpeg-provider: apt
+          install-args: --onnx
+
+      - name: 🚬 Smoke release branch local engine
+        shell: bash
+        run: |
+          kesha status
+          kesha --json fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-release-smoke.json
+          bun -e '
+            const output = await Bun.file("/tmp/kesha-release-smoke.json").json();
             if (!Array.isArray(output) || output.length !== 1) {
               throw new Error("expected exactly one transcription result");
             }
