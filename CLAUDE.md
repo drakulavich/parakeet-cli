@@ -125,7 +125,7 @@ CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also 
 7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
 8. Stable `vX.Y.Z` releases also update the public Homebrew tap
-   `drakulavich/homebrew-kesha` via the `🍺 Homebrew Tap` workflow. Required
+   `drakulavich/homebrew-tap` via the `🍺 Homebrew Tap` workflow. Required
    secret: `HOMEBREW_TAP_TOKEN`, a fine-scoped token with write access only to
    the tap repository. CLI-only `vX.Y.Z-cli` marker releases are intentionally
    skipped for now.

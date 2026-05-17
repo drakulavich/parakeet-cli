@@ -8,7 +8,7 @@ with `kesha install`.
 
 ```bash
 brew tap oven-sh/bun
-brew install drakulavich/kesha/kesha-voice-kit
+brew install drakulavich/tap/kesha-voice-kit
 kesha install
 kesha audio.ogg
 ```
@@ -31,26 +31,26 @@ contract used by the Bun and Docker install paths.
 ## Maintainer Validation
 
 The source formula remains in this repository and is mirrored into
-`drakulavich/homebrew-kesha` for users. To validate formula edits before a
+`drakulavich/homebrew-tap` for users. To validate formula edits before a
 release:
 
 ```bash
 brew tap oven-sh/bun
-brew tap-new local/kesha
-cp Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/"
-brew install local/kesha/kesha-voice-kit
-brew test local/kesha/kesha-voice-kit
-brew audit --strict --formula local/kesha/kesha-voice-kit
+brew tap-new local/tap
+cp Formula/kesha-voice-kit.rb "$(brew --repository local/tap)/Formula/"
+brew install local/tap/kesha-voice-kit
+brew test local/tap/kesha-voice-kit
+brew audit --strict --formula local/tap/kesha-voice-kit
 ```
 
 The public tap itself can be validated with:
 
 ```bash
-brew install drakulavich/kesha/kesha-voice-kit
-brew test drakulavich/kesha/kesha-voice-kit
-brew audit --strict --formula drakulavich/kesha/kesha-voice-kit
+brew install drakulavich/tap/kesha-voice-kit
+brew test drakulavich/tap/kesha-voice-kit
+brew audit --strict --formula drakulavich/tap/kesha-voice-kit
 ```
 
 Stable `vX.Y.Z` releases update the public tap through the `Homebrew Tap`
 workflow. The workflow requires the `HOMEBREW_TAP_TOKEN` repository secret with
-write access to `drakulavich/homebrew-kesha`.
+write access to `drakulavich/homebrew-tap`.

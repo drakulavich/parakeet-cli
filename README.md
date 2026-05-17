@@ -58,7 +58,7 @@ explicit:
 
 ```bash
 brew tap oven-sh/bun
-brew install drakulavich/kesha/kesha-voice-kit
+brew install drakulavich/tap/kesha-voice-kit
 kesha install
 kesha audio.ogg
 ```
