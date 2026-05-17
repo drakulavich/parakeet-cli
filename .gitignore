@@ -10,4 +10,5 @@ tmp-lang-id-output/
 .venv/
 benchmark-results.json
 .omc/
+coverage/
 result

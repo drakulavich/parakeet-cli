@@ -2,7 +2,12 @@ name: "🧪 Rust Tests"
 
 on:
   pull_request:
-    paths: ["rust/**"]
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust-test.yml"
+      - ".github/scripts/check-coverage.ts"
+      - "package.json"
+      - "bun.lock"
 
 permissions:
   contents: read
@@ -145,3 +150,75 @@ jobs:
           bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
             --category rust --project Laputa/kesha-voice-kit
           bunx flakiness upload ./flakiness-report
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install system audio deps (Opus)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+      - name: Cache Kokoro spike models
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.KOKORO_CACHE }}
+          key: kokoro-spike-v5-${{ runner.os }}
+
+      - name: Download Kokoro model (if cache miss)
+        shell: bash
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+
+      - name: 📈 Rust coverage
+        shell: bash
+        run: |
+          if [[ -f "$KOKORO_CACHE/model.onnx" && -f "$KOKORO_CACHE/am_michael.bin" ]]; then
+            export KOKORO_MODEL="$KOKORO_CACHE/model.onnx"
+            export KOKORO_VOICE="$KOKORO_CACHE/am_michael.bin"
+            echo "KOKORO_MODEL=$KOKORO_CACHE/model.onnx" >> "$GITHUB_ENV"
+            echo "KOKORO_VOICE=$KOKORO_CACHE/am_michael.bin" >> "$GITHUB_ENV"
+          fi
+          if [[ -f "$KOKORO_CACHE/models/vosk-ru/model.onnx" && -f "$KOKORO_CACHE/models/vosk-ru/bert/model.onnx" ]]; then
+            export KESHA_CACHE_DIR="$KOKORO_CACHE"
+            echo "KESHA_CACHE_DIR=$KOKORO_CACHE" >> "$GITHUB_ENV"
+          fi
+          bun run coverage:rust
+
+      - name: 🧯 Enforce Rust coverage gates
+        run: bun run coverage:check:rust
+
+      - name: 📊 Coverage summary
+        if: always()
+        shell: bash
+        run: cat coverage/rust/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload Rust coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-rust
+          path: coverage/rust
+          retention-days: 30

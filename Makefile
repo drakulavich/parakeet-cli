@@ -1,4 +1,4 @@
-.PHONY: install check cli-fast test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
+.PHONY: install check cli-fast coverage-ts coverage-rust test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -12,6 +12,14 @@ check: lint versions test ## Run local checks that mirror the cheap CI gates
 
 cli-fast: ## Run deterministic CLI checks without engine-backed E2E lanes
 	bun run check
+
+coverage-ts: ## Run Bun coverage and enforce TS coverage gates
+	bun run coverage:ts
+	bun run coverage:check:ts
+
+coverage-rust: ## Run cargo llvm-cov and enforce Rust coverage gates
+	bun run coverage:rust
+	bun run coverage:check:rust
 
 unit: ## Run unit tests
 	bun run test:unit
