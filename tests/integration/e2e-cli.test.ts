@@ -300,6 +300,10 @@ describe("e2e-cli", () => {
     expect(week.exitCode).toBe(0);
     expect(week.stdout).toContain("Kesha Stats");
     expect(week.stdout).toContain("Runs: 1");
+    expect(week.stdout).toContain("Stage breakdown:");
+    expect(week.stdout).toContain("Bottlenecks:");
+    expect(week.stdout).toContain("Input shape:");
+    expect(week.stdout).toContain("Slowest anonymous runs:");
 
     const errors = await runCli(["stats", "errors"], { env });
     expect(errors.exitCode).toBe(0);

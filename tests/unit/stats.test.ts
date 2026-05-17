@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -91,6 +92,76 @@ describe("stats storage", () => {
     expect(renderWeekSummary(getWeekSummary())).toContain("Runs: 0");
     expect(renderErrors(getRecentErrors())).toContain("no recorded errors");
   });
+
+  test("week summary renders stage percentiles, bottlenecks, buckets, and slowest runs", () => {
+    enableStats();
+    seedStatsRun({
+      command: "transcribe",
+      status: "success",
+      startedAt: "2026-05-16T10:00:00.000Z",
+      finishedAt: "2026-05-16T10:00:02.000Z",
+      itemCount: 1,
+      stages: [
+        { stage: "transcribe", durationMs: 100, status: "success" },
+        { stage: "lang_id_audio", durationMs: 30, status: "success" },
+      ],
+      inputArtifact: { format: "wav", sizeBytes: 500_000, durationMs: 45_000 },
+    });
+    seedStatsRun({
+      command: "say",
+      status: "success",
+      startedAt: "2026-05-16T11:00:00.000Z",
+      finishedAt: "2026-05-16T11:00:02.000Z",
+      itemCount: 1,
+      stages: [{ stage: "tts", durationMs: 1_500, status: "success" }],
+    });
+    seedStatsRun({
+      command: "transcribe",
+      status: "failed",
+      startedAt: "2026-05-16T12:00:00.000Z",
+      finishedAt: "2026-05-16T12:00:05.000Z",
+      itemCount: 2,
+      stages: [
+        { stage: "transcribe", durationMs: 3_000, status: "failed" },
+        { stage: "lang_id_text", durationMs: 100, status: "success" },
+      ],
+      inputArtifact: { format: "mp3", sizeBytes: 15 * 1024 * 1024, durationMs: 15 * 60_000 },
+    });
+    seedStatsRun({
+      command: "say",
+      status: "success",
+      startedAt: "2026-04-01T10:00:00.000Z",
+      finishedAt: "2026-04-01T10:00:20.000Z",
+      itemCount: 1,
+      stages: [{ stage: "tts", durationMs: 20_000, status: "success" }],
+    });
+
+    const summary = getWeekSummary(new Date("2026-05-17T00:00:00.000Z"));
+    const rendered = renderWeekSummary(summary);
+
+    expect(summary.runs).toBe(3);
+    expect(summary.stageBreakdown[0]).toMatchObject({
+      stage: "transcribe",
+      count: 2,
+      failed: 1,
+      totalMs: 3_100,
+      p50Ms: 100,
+      p95Ms: 3_000,
+      p99Ms: 3_000,
+    });
+    expect(rendered).toContain("Stage breakdown:");
+    expect(rendered).toContain("transcribe: count 2, failed 1, total 3s, p50 100ms, p95 3s, p99 3s");
+    expect(rendered).toContain("Bottlenecks:");
+    expect(rendered).toContain("Total time: transcribe 3s, tts 2s");
+    expect(rendered).toContain("p95 latency: transcribe 3s, tts 2s");
+    expect(rendered).toContain("Input shape:");
+    expect(rendered).toContain("Format: mp3 1, wav 1");
+    expect(rendered).toContain("Size: <1 MB 1, 10-100 MB 1");
+    expect(rendered).toContain("Duration: <1 min 1, 10-60 min 1");
+    expect(rendered).toContain("Slowest anonymous runs:");
+    expect(rendered).toContain("transcribe failed, 2 item(s), 5s | transcribe 3s failed");
+    expect(rendered).not.toContain("secret");
+  });
 });
 
 describe("sanitizeStatsError", () => {
@@ -107,3 +178,41 @@ describe("sanitizeStatsError", () => {
     expect(sanitized.message.length).toBeLessThanOrEqual(300);
   });
 });
+
+function seedStatsRun(input: {
+  command: "transcribe" | "say";
+  status: "success" | "failed";
+  startedAt: string;
+  finishedAt: string;
+  itemCount: number;
+  stages: Array<{ stage: string; durationMs: number; status: "success" | "failed" }>;
+  inputArtifact?: { format: string; sizeBytes: number; durationMs: number };
+}): void {
+  const db = new Database(resolveStatsDbPath());
+  try {
+    const run = db.query(
+      `insert into runs
+        (command, started_at, finished_at, status, app_version, item_count)
+       values (?, ?, ?, ?, 'test', ?)
+       returning id`,
+    ).get(input.command, input.startedAt, input.finishedAt, input.status, input.itemCount) as { id: number };
+
+    if (input.inputArtifact) {
+      db.query(
+        `insert into artifacts
+          (run_id, kind, format, size_bytes, duration_ms, sample_rate, channels)
+         values (?, 'input_audio', ?, ?, ?, null, null)`,
+      ).run(run.id, input.inputArtifact.format, input.inputArtifact.sizeBytes, input.inputArtifact.durationMs);
+    }
+
+    for (const stage of input.stages) {
+      db.query(
+        `insert into stage_timings
+          (run_id, stage, started_at, duration_ms, status)
+         values (?, ?, ?, ?, ?)`,
+      ).run(run.id, stage.stage, input.startedAt, stage.durationMs, stage.status);
+    }
+  } finally {
+    db.close();
+  }
+}

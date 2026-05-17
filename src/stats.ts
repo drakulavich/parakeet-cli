@@ -219,6 +219,63 @@ export interface StatsWeekSummary {
   inputDurationMs: number;
   sttTimeMs: number;
   ttsTimeMs: number;
+  stageBreakdown: StatsStageSummary[];
+  inputFormats: StatsCountBucket[];
+  inputSizeBuckets: StatsCountBucket[];
+  inputDurationBuckets: StatsCountBucket[];
+  hasInputDurationData: boolean;
+  slowestRuns: StatsSlowRun[];
+}
+
+export interface StatsStageSummary {
+  stage: string;
+  count: number;
+  failed: number;
+  totalMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+}
+
+export interface StatsCountBucket {
+  label: string;
+  count: number;
+}
+
+export interface StatsSlowRunStage {
+  stage: string;
+  durationMs: number;
+  status: StatsStageStatus;
+}
+
+export interface StatsSlowRun {
+  command: string;
+  status: StatsRunStatus;
+  durationMs: number | null;
+  itemCount: number;
+  stages: StatsSlowRunStage[];
+}
+
+interface StatsStageTimingRow {
+  runId: number;
+  stage: string;
+  durationMs: number;
+  status: StatsStageStatus;
+}
+
+interface StatsInputArtifactRow {
+  format: string | null;
+  sizeBytes: number | null;
+  durationMs: number | null;
+}
+
+interface StatsRunTimingRow {
+  id: number;
+  command: string;
+  status: StatsRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  itemCount: number;
 }
 
 export function getWeekSummary(now = new Date()): StatsWeekSummary {
@@ -227,42 +284,53 @@ export function getWeekSummary(now = new Date()): StatsWeekSummary {
   const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const db = openStatsDatabase(dbPath);
   try {
-    const runs = db.query(
+    const stageRows = db.query(
       `select
-        count(*) as runs,
-        sum(case when status = 'success' then 1 else 0 end) as successes,
-        sum(case when status = 'failed' then 1 else 0 end) as failures
-       from runs
-       where started_at >= ?`,
-    ).get(since) as { runs: number; successes: number | null; failures: number | null };
+        run_id as runId,
+        stage,
+        duration_ms as durationMs,
+        status
+       from stage_timings
+       where run_id in (select id from runs where started_at >= ?)`,
+    ).all(since) as StatsStageTimingRow[];
 
-    const artifacts = db.query(
+    const inputArtifacts = db.query(
       `select
-        count(*) as inputFiles,
-        coalesce(sum(size_bytes), 0) as inputBytes,
-        coalesce(sum(duration_ms), 0) as inputDurationMs
+        format,
+        size_bytes as sizeBytes,
+        duration_ms as durationMs
        from artifacts
        where kind = 'input_audio'
          and run_id in (select id from runs where started_at >= ?)`,
-    ).get(since) as { inputFiles: number; inputBytes: number; inputDurationMs: number };
+    ).all(since) as StatsInputArtifactRow[];
 
-    const stages = db.query(
+    const runRows = db.query(
       `select
-        coalesce(sum(case when stage = 'transcribe' then duration_ms else 0 end), 0) as sttTimeMs,
-        coalesce(sum(case when stage = 'tts' then duration_ms else 0 end), 0) as ttsTimeMs
-       from stage_timings
-       where run_id in (select id from runs where started_at >= ?)`,
-    ).get(since) as { sttTimeMs: number; ttsTimeMs: number };
+        id,
+        command,
+        status,
+        started_at as startedAt,
+        finished_at as finishedAt,
+        item_count as itemCount
+       from runs
+       where started_at >= ?`,
+    ).all(since) as StatsRunTimingRow[];
 
     return {
-      runs: Number(runs.runs ?? 0),
-      successes: Number(runs.successes ?? 0),
-      failures: Number(runs.failures ?? 0),
-      inputFiles: Number(artifacts.inputFiles ?? 0),
-      inputBytes: Number(artifacts.inputBytes ?? 0),
-      inputDurationMs: Number(artifacts.inputDurationMs ?? 0),
-      sttTimeMs: Number(stages.sttTimeMs ?? 0),
-      ttsTimeMs: Number(stages.ttsTimeMs ?? 0),
+      runs: runRows.length,
+      successes: countRuns(runRows, "success"),
+      failures: countRuns(runRows, "failed"),
+      inputFiles: inputArtifacts.length,
+      inputBytes: sumInputBytes(inputArtifacts),
+      inputDurationMs: sumInputDuration(inputArtifacts),
+      sttTimeMs: sumStageDuration(stageRows, "transcribe"),
+      ttsTimeMs: sumStageDuration(stageRows, "tts"),
+      stageBreakdown: summarizeStages(stageRows),
+      inputFormats: summarizeFormats(inputArtifacts),
+      inputSizeBuckets: summarizeSizeBuckets(inputArtifacts),
+      inputDurationBuckets: summarizeDurationBuckets(inputArtifacts),
+      hasInputDurationData: inputArtifacts.some((row) => typeof row.durationMs === "number"),
+      slowestRuns: summarizeSlowestRuns(runRows, stageRows),
     };
   } finally {
     db.close();
@@ -306,7 +374,7 @@ export function renderWeekSummary(summary: StatsWeekSummary): string {
   const realtime = summary.inputDurationMs > 0 && summary.sttTimeMs > 0
     ? `${(summary.inputDurationMs / summary.sttTimeMs).toFixed(1)}x`
     : "n/a";
-  return [
+  const lines = [
     "Kesha Stats - last 7 days",
     `Runs: ${summary.runs} (${summary.successes} success, ${summary.failures} failed)`,
     `Input files: ${summary.inputFiles}`,
@@ -314,7 +382,49 @@ export function renderWeekSummary(summary: StatsWeekSummary): string {
     `Input size: ${humanBytes(summary.inputBytes)}`,
     `STT time: ${humanDuration(summary.sttTimeMs)} (${realtime} realtime)`,
     `TTS time: ${humanDuration(summary.ttsTimeMs)}`,
-  ].join("\n");
+    "",
+    "Stage breakdown:",
+  ];
+
+  if (summary.stageBreakdown.length === 0) {
+    lines.push("  no stage timings recorded");
+  } else {
+    for (const stage of summary.stageBreakdown) {
+      lines.push(
+        `  ${stage.stage}: count ${stage.count}, failed ${stage.failed}, total ${humanDuration(stage.totalMs)}, ` +
+          `p50 ${humanDuration(stage.p50Ms)}, p95 ${humanDuration(stage.p95Ms)}, p99 ${humanDuration(stage.p99Ms)}`,
+      );
+    }
+  }
+
+  lines.push("", "Bottlenecks:");
+  if (summary.stageBreakdown.length === 0) {
+    lines.push("  no bottlenecks recorded");
+  } else {
+    lines.push(`  Total time: ${renderTopStages(summary.stageBreakdown, "totalMs")}`);
+    lines.push(`  p95 latency: ${renderTopStages(summary.stageBreakdown, "p95Ms")}`);
+  }
+
+  lines.push("", "Input shape:");
+  lines.push(`  Format: ${renderBuckets(summary.inputFormats)}`);
+  lines.push(`  Size: ${renderBuckets(summary.inputSizeBuckets)}`);
+  lines.push(`  Duration: ${summary.hasInputDurationData ? renderBuckets(summary.inputDurationBuckets) : "n/a"}`);
+
+  lines.push("", "Slowest anonymous runs:");
+  if (summary.slowestRuns.length === 0) {
+    lines.push("  no completed runs recorded");
+  } else {
+    for (const run of summary.slowestRuns) {
+      const stages = run.stages.length > 0
+        ? run.stages.map((stage) => `${stage.stage} ${humanDuration(stage.durationMs)} ${stage.status}`).join(", ")
+        : "no stages recorded";
+      lines.push(
+        `  ${run.command} ${run.status}, ${run.itemCount} item(s), ${humanDuration(run.durationMs ?? 0)} | ${stages}`,
+      );
+    }
+  }
+
+  return lines.join("\n");
 }
 
 export function renderErrors(rows: StatsErrorRow[]): string {
@@ -538,7 +648,173 @@ function emptyWeekSummary(): StatsWeekSummary {
     inputDurationMs: 0,
     sttTimeMs: 0,
     ttsTimeMs: 0,
+    stageBreakdown: [],
+    inputFormats: [],
+    inputSizeBuckets: [],
+    inputDurationBuckets: [],
+    hasInputDurationData: false,
+    slowestRuns: [],
   };
+}
+
+function summarizeStages(rows: StatsStageTimingRow[]): StatsStageSummary[] {
+  const byStage = new Map<string, StatsStageTimingRow[]>();
+  for (const row of rows) {
+    const stage = row.stage || "unknown";
+    const existing = byStage.get(stage) ?? [];
+    existing.push(row);
+    byStage.set(stage, existing);
+  }
+
+  return [...byStage.entries()]
+    .map(([stage, stageRows]) => {
+      const durations = stageRows.map((row) => Math.max(0, Number(row.durationMs ?? 0))).sort((a, b) => a - b);
+      return {
+        stage,
+        count: stageRows.length,
+        failed: stageRows.filter((row) => row.status === "failed").length,
+        totalMs: durations.reduce((sum, ms) => sum + ms, 0),
+        p50Ms: percentile(durations, 50),
+        p95Ms: percentile(durations, 95),
+        p99Ms: percentile(durations, 99),
+      };
+    })
+    .sort((a, b) => b.totalMs - a.totalMs || a.stage.localeCompare(b.stage));
+}
+
+function sumStageDuration(rows: StatsStageTimingRow[], stage: string): number {
+  return rows
+    .filter((row) => row.stage === stage)
+    .reduce((sum, row) => sum + Math.max(0, Number(row.durationMs ?? 0)), 0);
+}
+
+function countRuns(rows: StatsRunTimingRow[], status: StatsRunStatus): number {
+  return rows.filter((row) => row.status === status).length;
+}
+
+function sumInputBytes(rows: StatsInputArtifactRow[]): number {
+  return rows.reduce((sum, row) => sum + Math.max(0, Number(row.sizeBytes ?? 0)), 0);
+}
+
+function sumInputDuration(rows: StatsInputArtifactRow[]): number {
+  return rows.reduce((sum, row) => sum + Math.max(0, Number(row.durationMs ?? 0)), 0);
+}
+
+function summarizeFormats(rows: StatsInputArtifactRow[]): StatsCountBucket[] {
+  const buckets = new Map<string, number>();
+  for (const row of rows) {
+    const label = row.format || "unknown";
+    buckets.set(label, (buckets.get(label) ?? 0) + 1);
+  }
+  return sortedBuckets(buckets);
+}
+
+function summarizeSizeBuckets(rows: StatsInputArtifactRow[]): StatsCountBucket[] {
+  const buckets = new Map<string, number>();
+  for (const row of rows) {
+    const label = sizeBucket(row.sizeBytes);
+    buckets.set(label, (buckets.get(label) ?? 0) + 1);
+  }
+  return orderBuckets(buckets, ["unknown", "<1 MB", "1-10 MB", "10-100 MB", "100 MB+"]);
+}
+
+function summarizeDurationBuckets(rows: StatsInputArtifactRow[]): StatsCountBucket[] {
+  const buckets = new Map<string, number>();
+  for (const row of rows) {
+    if (typeof row.durationMs !== "number") continue;
+    const label = durationBucket(row.durationMs);
+    buckets.set(label, (buckets.get(label) ?? 0) + 1);
+  }
+  return orderBuckets(buckets, ["<1 min", "1-10 min", "10-60 min", "60 min+"]);
+}
+
+function summarizeSlowestRuns(
+  runs: StatsRunTimingRow[],
+  stageRows: StatsStageTimingRow[],
+): StatsSlowRun[] {
+  const stagesByRun = new Map<number, StatsSlowRunStage[]>();
+  for (const row of stageRows) {
+    const existing = stagesByRun.get(row.runId) ?? [];
+    existing.push({
+      stage: row.stage || "unknown",
+      durationMs: Math.max(0, Number(row.durationMs ?? 0)),
+      status: row.status,
+    });
+    stagesByRun.set(row.runId, existing);
+  }
+
+  return runs
+    .filter((run) => run.finishedAt !== null)
+    .map((run) => ({
+      run,
+      durationMs: elapsedMs(run.startedAt, run.finishedAt),
+    }))
+    .sort((a, b) => (b.durationMs ?? -1) - (a.durationMs ?? -1))
+    .slice(0, 5)
+    .map(({ run, durationMs }) => ({
+      command: run.command,
+      status: run.status,
+      durationMs,
+      itemCount: Number(run.itemCount ?? 0),
+      stages: (stagesByRun.get(run.id) ?? []).sort((a, b) => b.durationMs - a.durationMs || a.stage.localeCompare(b.stage)),
+    }));
+}
+
+function elapsedMs(startedAt: string, finishedAt: string | null): number | null {
+  if (!finishedAt) return null;
+  const started = Date.parse(startedAt);
+  const finished = Date.parse(finishedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(finished)) return null;
+  return Math.max(0, finished - started);
+}
+
+function percentile(sortedDurations: number[], p: number): number {
+  if (sortedDurations.length === 0) return 0;
+  const index = Math.min(sortedDurations.length - 1, Math.max(0, Math.ceil((p / 100) * sortedDurations.length) - 1));
+  return sortedDurations[index];
+}
+
+function sizeBucket(sizeBytes: number | null): string {
+  if (typeof sizeBytes !== "number") return "unknown";
+  if (sizeBytes < 1024 * 1024) return "<1 MB";
+  if (sizeBytes < 10 * 1024 * 1024) return "1-10 MB";
+  if (sizeBytes < 100 * 1024 * 1024) return "10-100 MB";
+  return "100 MB+";
+}
+
+function durationBucket(durationMs: number): string {
+  if (durationMs < 60_000) return "<1 min";
+  if (durationMs < 10 * 60_000) return "1-10 min";
+  if (durationMs < 60 * 60_000) return "10-60 min";
+  return "60 min+";
+}
+
+function renderTopStages(
+  stages: StatsStageSummary[],
+  metric: "totalMs" | "p95Ms",
+): string {
+  return [...stages]
+    .sort((a, b) => b[metric] - a[metric] || a.stage.localeCompare(b.stage))
+    .slice(0, 3)
+    .map((stage) => `${stage.stage} ${humanDuration(stage[metric])}`)
+    .join(", ");
+}
+
+function renderBuckets(buckets: StatsCountBucket[]): string {
+  if (buckets.length === 0) return "n/a";
+  return buckets.map((bucket) => `${bucket.label} ${bucket.count}`).join(", ");
+}
+
+function sortedBuckets(buckets: Map<string, number>): StatsCountBucket[] {
+  return [...buckets.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function orderBuckets(buckets: Map<string, number>, order: string[]): StatsCountBucket[] {
+  return order
+    .filter((label) => buckets.has(label))
+    .map((label) => ({ label, count: buckets.get(label) ?? 0 }));
 }
 
 function humanBytes(bytes: number): string {
