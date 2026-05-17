@@ -38,10 +38,9 @@ export function formatStatusLine(
   installed: boolean,
   missingLabel = "not installed",
 ): string {
-  const status = installed ? pc.green("✓") : pc.red(`✗ ${missingLabel}`);
-  const pathStr = path ?? "";
-  const padding = " ".repeat(Math.max(1, 50 - label.length - pathStr.length));
-  return `  ${label}:${pathStr ? `   ${pathStr}` : ""}${padding}${status}`;
+  const status = installed ? pc.green("✓") : pc.red("✗");
+  const value = installed ? path : missingLabel;
+  return `  ${status} ${label}: ${value ?? ""}`;
 }
 
 export interface ShowStatusOptions {

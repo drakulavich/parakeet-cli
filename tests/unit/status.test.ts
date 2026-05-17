@@ -25,6 +25,14 @@ describe("formatStatusLine", () => {
     const line = formatStatusLine("ffmpeg", null, false, "not found");
     expect(line).toContain("not found");
   });
+
+  test("keeps status before long values instead of padding to a fragile column", () => {
+    const longPath = `/very/long/${"nested/".repeat(20)}kesha-engine`;
+    const line = formatStatusLine("Binary", longPath, true);
+    expect(line.indexOf("✓")).toBeLessThan(line.indexOf("Binary"));
+    expect(line).toContain(`Binary: ${longPath}`);
+    expect(line).not.toMatch(/ {8,}✓/);
+  });
 });
 
 describe("activeModelMirror (#121)", () => {
