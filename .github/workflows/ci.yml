@@ -214,6 +214,40 @@ jobs:
             --category bun --project Laputa/kesha-voice-kit
           bunx flakiness upload ./flakiness-report
 
+  ts-coverage:
+    needs: [changes, unit-tests]
+    if: needs.changes.outputs.code == 'true' && needs.unit-tests.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 📈 Bun coverage
+        run: bun run coverage:ts
+
+      - name: 🧯 Enforce TS coverage gates
+        run: bun run coverage:check:ts
+
+      - name: 📊 Coverage summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f coverage/ts/summary.md ]]; then
+            cat coverage/ts/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 📤 Upload TS coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-ts
+          path: coverage/ts
+          retention-days: 30
+
   integration-tests:
     # Skip on release/* branches: this job downloads the released engine
     # binary (the version in `package.json#keshaEngine.version`), which
