@@ -97,7 +97,7 @@ jobs:
             workflows:
               - '.github/workflows/**'
               - '.github/actions/**'
-              - '.github/scripts/check-workflows.ts'
+              - '.github/scripts/**'
               - 'package.json'
               - 'bun.lock'
 
@@ -114,6 +114,9 @@ jobs:
 
       - name: 🔍 Check workflow YAML
         run: bun run check:workflows
+
+      - name: 🧾 Check release manifest metadata
+        run: bun run check:release-manifest
 
   unit-tests:
     needs: changes
