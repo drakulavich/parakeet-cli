@@ -118,7 +118,14 @@ function buildManifest(tag) {
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
-  const packageVersion = tag.slice(1);
+  const tagVersion = tag.slice(1);
+  if (tagVersion !== pkg.version) {
+    throw new Error(
+      `release tag ${tag} must match package.json#version (${pkg.version}) for Linux package filenames`,
+    );
+  }
+
+  const packageVersion = pkg.version;
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
