@@ -2,15 +2,13 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { LINUX_PACKAGE_RELEASE, validateLinuxPackageVersion } from "./linux-package-names.mjs";
 
 const OUT_DIR = "dist/linux-packages";
-const PACKAGE_RELEASE = "1";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const version = pkg.version;
 
-if (typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+/.test(version)) {
-  throw new Error(`package.json#version must be a package-compatible semver, got: ${version}`);
-}
+validateLinuxPackageVersion(version);
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -37,7 +35,7 @@ run("bun", [
 
 const nfpmEnv = {
   KESHA_VERSION: version,
-  KESHA_PACKAGE_RELEASE: PACKAGE_RELEASE,
+  KESHA_PACKAGE_RELEASE: LINUX_PACKAGE_RELEASE,
 };
 for (const packager of ["deb", "rpm"]) {
   run("nfpm", [

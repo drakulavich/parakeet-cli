@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { linuxPackageNames } from "./linux-package-names.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
@@ -52,23 +53,24 @@ const DARWIN_SIDECARS = [
 ];
 
 function linuxPackageAssets(version) {
+  const packages = linuxPackageNames(version);
   return [
     {
-      name: `kesha-voice-kit_${version}-1_amd64.deb`,
+      name: packages.deb,
       kind: "package",
       platforms: ["linux-x64"],
       install: {
         packageManager: "apt",
-        command: `sudo apt install ./kesha-voice-kit_${version}-1_amd64.deb`,
+        command: `sudo apt install ./${packages.deb}`,
       },
     },
     {
-      name: `kesha-voice-kit-${version}-1.x86_64.rpm`,
+      name: packages.rpm,
       kind: "package",
       platforms: ["linux-x64"],
       install: {
         packageManager: "dnf",
-        command: `sudo dnf install ./kesha-voice-kit-${version}-1.x86_64.rpm`,
+        command: `sudo dnf install ./${packages.rpm}`,
       },
     },
   ];
@@ -185,9 +187,12 @@ function validateSourceConsistency(manifest) {
   assertIncludes(workflow, "dist/linux-packages/*.{deb,rpm}", ".github/workflows/build-engine.yml");
 
   const packageScript = readFileSync(".github/scripts/build-linux-packages.mjs", "utf8");
+  const packageNames = readFileSync(".github/scripts/linux-package-names.mjs", "utf8");
   const nfpmConfig = readFileSync("packaging/nfpm.yaml", "utf8");
   assertIncludes(packageScript, "--target=bun-linux-x64", ".github/scripts/build-linux-packages.mjs");
   assertIncludes(packageScript, "packaging/nfpm.yaml", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(packageScript, "LINUX_PACKAGE_RELEASE", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(packageNames, "LINUX_PACKAGE_RELEASE", ".github/scripts/linux-package-names.mjs");
   assertIncludes(nfpmConfig, "dst: /usr/bin/kesha", "packaging/nfpm.yaml");
   assertIncludes(nfpmConfig, "dst: /usr/bin/parakeet", "packaging/nfpm.yaml");
 

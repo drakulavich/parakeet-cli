@@ -6,6 +6,7 @@ on:
     paths:
       - packaging/**
       - .github/scripts/build-linux-packages.mjs
+      - .github/scripts/linux-package-names.mjs
       - .github/workflows/linux-packages.yml
       - .github/workflows/build-engine.yml
       - .github/actions/setup-bun/action.yml
@@ -23,6 +24,7 @@ on:
     paths:
       - packaging/**
       - .github/scripts/build-linux-packages.mjs
+      - .github/scripts/linux-package-names.mjs
       - .github/workflows/linux-packages.yml
       - .github/workflows/build-engine.yml
       - .github/actions/setup-bun/action.yml
