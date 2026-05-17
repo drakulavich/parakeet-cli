@@ -5,7 +5,7 @@ import { mainCommand, doctorCommand, installCommand, statusCommand, statsCommand
 
 function normalizeUsage(usage: string): string {
   return usage
-    .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/, "(kesha v<version>)")
+    .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/g, "(kesha v<version>)")
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
@@ -103,6 +103,12 @@ describe("CLI help", () => {
 });
 
 describe("CLI help golden contracts (#324 P1)", () => {
+  test("normalizer replaces every rendered version token", () => {
+    expect(normalizeUsage("first (kesha v1.18.0)\nsecond (kesha v1.18.1-cli)")).toBe(
+      "first (kesha v<version>)\nsecond (kesha v<version>)",
+    );
+  });
+
   test("main help matches the normalized golden output", async () => {
     expect(normalizeUsage(await renderUsage(mainCommand))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
 
