@@ -42,3 +42,13 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Docker base image updates.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker

@@ -1,0 +1,98 @@
+name: "🐳 Docker"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - compose.yml
+      - package.json
+      - bun.lock
+      - bin/**
+      - src/**
+      - fixtures/benchmark/**
+      - fixtures/benchmark-en/**
+      - .github/workflows/docker.yml
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/drakulavich/kesha-voice-kit
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: 🔍 Detect Docker-relevant changes
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            docker:
+              - Dockerfile
+              - .dockerignore
+              - compose.yml
+              - package.json
+              - bun.lock
+              - bin/**
+              - src/**
+              - fixtures/benchmark/**
+              - fixtures/benchmark-en/**
+              - .github/workflows/docker.yml
+
+      - name: 🔨 Build image for PR smoke
+        if: github.event_name == 'pull_request'
+        run: docker build --platform linux/amd64 -t kesha-voice-kit:ci .
+
+      - name: 🚬 Smoke PR image
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run --rm kesha-voice-kit:ci --version
+          docker run --rm kesha-voice-kit:ci status
+
+      - name: 🔐 Login to GHCR
+        if: github.event_name != 'pull_request' && (github.ref_type == 'tag' || steps.filter.outputs.docker == 'true')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Docker metadata
+        if: github.event_name != 'pull_request' && (github.ref_type == 'tag' || steps.filter.outputs.docker == 'true')
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 📦 Build and publish image
+        if: github.event_name != 'pull_request' && (github.ref_type == 'tag' || steps.filter.outputs.docker == 'true')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

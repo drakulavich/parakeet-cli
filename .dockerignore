@@ -1,0 +1,16 @@
+.git
+.jj
+.github
+.cache
+.kokoro-spike
+node_modules
+raycast/node_modules
+rust/target
+swift/**/.build
+dist
+coverage
+test-results
+flakiness-report
+*.log
+*.tmp
+.DS_Store

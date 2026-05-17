@@ -1,0 +1,13 @@
+services:
+  kesha:
+    image: ghcr.io/drakulavich/kesha-voice-kit:latest
+    build: .
+    working_dir: /work
+    environment:
+      KESHA_CACHE_DIR: /cache/kesha
+    volumes:
+      - kesha-cache:/cache/kesha
+      - .:/work
+
+volumes:
+  kesha-cache:
