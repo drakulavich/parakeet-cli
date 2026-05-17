@@ -29,6 +29,13 @@ async function resolveText(inline: string | undefined): Promise<string> {
   return new TextDecoder().decode(merged).trim();
 }
 
+export function shouldRejectMissingSayText(
+  inlineText: string | undefined,
+  stdinIsTty: boolean | undefined,
+): boolean {
+  return (inlineText === undefined || inlineText.length === 0) && stdinIsTty === true;
+}
+
 function parseFiniteNumberFlag(name: string, value: unknown): number | undefined {
   if (value === undefined || value === null || value === false) return undefined;
   const raw = String(value).trim();
@@ -164,6 +171,11 @@ export const sayCommand = defineCommand({
     }
 
     const inlineText = typeof args.text === "string" ? args.text : undefined;
+    const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
+    if (shouldRejectMissingSayText(inlineText, stdinIsTty)) {
+      log.error("kesha say requires text or piped stdin. Usage: kesha say <text>");
+      process.exit(2);
+    }
     const text = await resolveText(inlineText);
     const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
     const voice = explicitVoice ?? (await autoRouteVoice(text));
