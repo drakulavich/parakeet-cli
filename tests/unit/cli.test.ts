@@ -3,6 +3,15 @@ import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
 import { mainCommand, doctorCommand, installCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
+function normalizeUsage(usage: string): string {
+  return usage
+    .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/, "(kesha v<version>)")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+}
+
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
     const usage = await renderUsage(mainCommand);
@@ -90,6 +99,83 @@ describe("CLI help", () => {
     const usage = await renderUsage(statsCommand);
     expect(usage).toContain("stats");
     expect(usage).toContain("enable");
+  });
+});
+
+describe("CLI help golden contracts (#324 P1)", () => {
+  test("main help matches the normalized golden output", async () => {
+    expect(normalizeUsage(await renderUsage(mainCommand))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
+
+Commands:
+  doctor     Collect support diagnostics.
+  install    Download engine and models.
+  status     Inspect installed backend.
+  say        Synthesize speech from text.
+  stats      Manage local anonymous performance stats.
+  support-bundle  Create a redacted diagnostics archive. (kesha v<version>)
+
+USAGE kesha [OPTIONS]
+
+OPTIONS
+
+             --json    Output results as JSON (Default: false)
+             --toon    Output results as TOON (compact, LLM-friendly encoding of the same data as --json) (Default: false)
+       --timestamps    Include timestamped transcript segments in JSON/TOON output (Default: false)
+         --speakers    Include speaker labels in transcript segments. Requires --json / --toon / --format json. Implies --timestamps. Currently darwin-arm64 only (#199). (Default: false)
+   --include-errors    With --json, output { results, errors } so scripts can read per-file failures without parsing stderr (Default: false)
+          --verbose    Show language detection details (Default: false)
+  --format=<format>    Output format: transcript | json | toon (long-form alias for --json / --toon)
+      --lang=<lang>    Expected language code (ISO 639-1), warn if mismatch
+            --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)
+              --vad    Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s. (Default: false)
+           --no-vad    Disable VAD preprocessing regardless of duration or install state (Default: false)`);
+  });
+
+  test("install help matches the normalized golden output", async () => {
+    expect(normalizeUsage(await renderUsage(installCommand))).toBe(`Download inference engine and models (install)
+
+USAGE install [OPTIONS]
+
+OPTIONS
+
+    --coreml    Force CoreML backend (macOS arm64) (Default: false)
+      --onnx    Force ONNX backend (Default: false)
+  --no-cache    Re-download even if cached (Default: false)
+      --plan    Show download, disk, and warm-up plan without changing local state (Default: false)
+       --tts    Also install TTS models (Kokoro EN + Vosk-TTS RU, ~990MB) (Default: false)
+       --vad    Also install Silero VAD (~2.3MB) for long-audio preprocessing (Default: false)
+   --diarize    Also install the Sortformer streaming-diarization model (~245MB, darwin-arm64 only — #199) (Default: false)`);
+  });
+
+  test("status help matches the normalized golden output", async () => {
+    expect(normalizeUsage(await renderUsage(statusCommand))).toBe(`Show backend installation status (status)
+
+USAGE status`);
+  });
+
+  test("say help matches the normalized golden output", async () => {
+    expect(normalizeUsage(await renderUsage(sayCommand))).toBe(`Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes. (say)
+
+USAGE say [OPTIONS] [TEXT]
+
+ARGUMENTS
+
+  TEXT    Text to speak (stdin if omitted)
+
+OPTIONS
+
+              --voice=<voice>    Voice id, e.g. en-am_michael
+                --lang=<lang>    BCP 47 language code (default en-us)
+                  --out=<out>    Write audio to file instead of stdout
+                --rate=<rate>    Speaking rate 0.5–2.0 (Default: 1.0)
+                --list-voices    List installed voices and exit
+                       --ssml    Parse input as SSML (supports <speak>, <break>; strips unknown tags)
+            --format=<format>    Output format: wav (default) or ogg-opus (Telegram-ready voice note). Inferred from --out extension when omitted.
+          --bitrate=<bitrate>    Opus bitrate in bits/sec (e.g. 32000). Only with --format ogg-opus.
+  --sample-rate=<sample_rate>    Opus encoder sample rate (8000/12000/16000/24000/48000). Only with --format ogg-opus.
+           --no-expand-abbrev    Disable Russian acronym auto-expansion (ВОЗ → 'вэ о зэ') for ru-vosk-* voices. <say-as interpret-as='characters'> still works. Applies to Russian (ru-vosk-*) and English (en-*) voices.
+                    --verbose    Log TTS synthesis time to stderr (Default: false)
+                      --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)`);
   });
 });
 
