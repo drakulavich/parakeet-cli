@@ -233,7 +233,8 @@ Never comment out the verification to "get it working" — that's the exact regr
 
 PRs receive automated review from Greptile (as a PR comment on each push). Treat P1/P2 findings as merge blockers — address them before marking the PR ready-for-review.
 
-- Pattern: push → Greptile reviews → fix → push → merge.
+- Pattern: push → wait for CI + Greptile → fix comments → push → request fresh Greptile review if auto-re-review missed the fix → wait for CI + Greptile again → merge.
+- After opening a PR, do not stop at the PR URL. Wait for CI to finish, inspect Greptile's top-level summary and inline review comments, and report whether the latest head SHA is green/reviewed or still waiting.
 - Past incidents caught this way: `--backend=` forwarded to an engine that didn't accept it (#125 P1); `--rate` silently discarded for Piper voices (#126 P1); hard-coded 22050 Hz assertion that would break on other Piper voices (#126 P2); silent zero-speakers on `transcribe_with_options({with_speakers: true, with_segments: false})` (#290 P1).
 - Exception: findings that are clearly false positives can be dismissed with a PR comment explaining why — but that's rare in practice.
 
