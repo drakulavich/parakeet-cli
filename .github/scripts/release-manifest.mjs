@@ -214,7 +214,7 @@ function validateSourceConsistency(manifest) {
 }
 
 const pkg = readPackage();
-const defaultTag = `v${pkg.keshaEngine?.version ?? pkg.version}`;
+const defaultTag = `v${pkg.version}`;
 const tag = getArg("--tag") ?? defaultTag;
 if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
   throw new Error(`release manifest tag must look like vX.Y.Z, got: ${tag}`);
