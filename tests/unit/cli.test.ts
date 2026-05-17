@@ -156,7 +156,11 @@ OPTIONS
   test("status help matches the normalized golden output", async () => {
     expect(normalizeUsage(await renderUsage(statusCommand))).toBe(`Show backend installation status (status)
 
-USAGE status`);
+USAGE status [OPTIONS]
+
+OPTIONS
+
+  --disk    Include recursive cache disk usage (Default: false)`);
   });
 
   test("say help matches the normalized golden output", async () => {
