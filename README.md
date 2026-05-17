@@ -11,12 +11,14 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
 </p>
 
-<p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), works on any platform (ONNX fallback).<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
+<p align="center"><b>Open-source voice toolkit.</b> Optimized for Apple Silicon (CoreML), with ONNX fallback on supported Linux/Windows builds.<br>A collection of small, fast, open-source audio models — packaged as CLI tools and an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill for LLM agents.</p>
 
 - **Speech-to-text** — 25 languages, ~15x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Text-to-speech** — Kokoro (EN) + Vosk-TTS (RU) + macOS system voices, SSML preview
 - **Rust engine** — single 20MB binary, no ffmpeg, no Python, no native Node addons
 - **OpenClaw-ready** — plug into your LLM agent as a voice processing skill
+
+See [Product positioning](docs/product-positioning.md) for supported workflows, non-goals, maturity labels, and the platform matrix.
 
 <p align="center">
   <img src="./demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">

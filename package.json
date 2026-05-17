@@ -18,6 +18,7 @@
     "tsconfig.json",
     "openclaw.plugin.json",
     "openclaw-plugin.cjs",
+    "docs/product-positioning.md",
     "SKILL.md",
     "scripts/postinstall.cjs",
     "LICENSE",
