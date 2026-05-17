@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support diagnostics guide
+    url: https://github.com/drakulavich/kesha-voice-kit#support-diagnostics
+    about: Run doctor or support-bundle before filing install, runtime, or performance reports.
