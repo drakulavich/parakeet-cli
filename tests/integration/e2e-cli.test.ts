@@ -3,55 +3,15 @@ import { Database } from "bun:sqlite";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { runCliScenario, type CliScenarioResult } from "./cli-scenario";
 
-const CWD = import.meta.dir + "/../..";
-const CLI_TIMEOUT_MS = 4_000;
 const tempDirs: string[] = [];
 
 async function runCli(
   args: string[],
   opts: { env?: Record<string, string> } = {},
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const startedAt = performance.now();
-  const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-    cwd: CWD,
-    env: opts.env ? { ...process.env, ...opts.env } : process.env,
-  });
-
-  const stdoutPromise = new Response(proc.stdout).text();
-  const stderrPromise = new Response(proc.stderr).text();
-  let timeout: Timer | undefined;
-  const timeoutPromise = new Promise<"timeout">((resolve) => {
-    timeout = setTimeout(() => resolve("timeout"), CLI_TIMEOUT_MS);
-  });
-  const exitOrTimeout = await Promise.race([proc.exited, timeoutPromise]);
-  if (timeout) clearTimeout(timeout);
-
-  if (exitOrTimeout === "timeout") {
-    proc.kill();
-  }
-
-  const [stdout, stderr, exitCode] = await Promise.all([
-    stdoutPromise,
-    stderrPromise,
-    proc.exited,
-  ]);
-
-  if (exitOrTimeout === "timeout") {
-    throw new Error(
-      [
-        `CLI timed out after ${CLI_TIMEOUT_MS}ms: kesha ${args.join(" ")}`,
-        `elapsedMs=${Math.round(performance.now() - startedAt)}`,
-        `exitCode=${exitCode}`,
-        `stdout=${stdout.trim()}`,
-        `stderr=${stderr.trim()}`,
-      ].join("\n"),
-    );
-  }
-
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+): Promise<CliScenarioResult> {
+  return runCliScenario(args, opts);
 }
 
 function emptyKeshaEnv(): Record<string, string> {

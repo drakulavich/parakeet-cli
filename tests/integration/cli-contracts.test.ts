@@ -2,77 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { runCliScenario, type CliScenarioOptions, type CliScenarioResult } from "./cli-scenario";
 
-const CWD = import.meta.dir + "/../..";
-const CLI_TIMEOUT_MS = 4_000;
 const tempDirs: string[] = [];
-
-interface CliRun {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
 
 async function runCli(
   args: string[],
-  opts: { env?: Record<string, string> } = {},
-): Promise<CliRun> {
-  const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-    cwd: CWD,
-    env: {
-      ...process.env,
-      NO_COLOR: "1",
-      FORCE_COLOR: "0",
-      ...(opts.env ?? {}),
-    },
-  });
-
-  const stdoutPromise = new Response(proc.stdout).text();
-  const stderrPromise = new Response(proc.stderr).text();
-  let timeout: Timer | undefined;
-  let forceKill: Timer | undefined;
-  const timeoutPromise = new Promise<"timeout">((resolve) => {
-    timeout = setTimeout(() => resolve("timeout"), CLI_TIMEOUT_MS);
-  });
-  const exitOrTimeout = await Promise.race([proc.exited, timeoutPromise]);
-  if (timeout) clearTimeout(timeout);
-  if (exitOrTimeout === "timeout") {
-    proc.kill("SIGTERM");
-    forceKill = setTimeout(() => proc.kill("SIGKILL"), 1_000);
-  }
-
-  const [stdout, stderr, exitCode] = await Promise.all([
-    stdoutPromise,
-    stderrPromise,
-    proc.exited,
-  ]);
-  if (forceKill) clearTimeout(forceKill);
-
-  if (exitOrTimeout === "timeout") {
-    throw new Error(
-      [
-        `CLI timed out after ${CLI_TIMEOUT_MS}ms: kesha ${args.join(" ")}`,
-        `exitCode=${exitCode}`,
-        `stdout=${stdout.trim()}`,
-        `stderr=${stderr.trim()}`,
-      ].join("\n"),
-    );
-  }
-
-  return {
-    stdout: stripAnsi(stdout.trim()),
-    stderr: stripAnsi(stderr.trim()),
-    exitCode,
-  };
-}
-
-function stripAnsi(value: string): string {
-  return value.replace(
-    /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,
-    "",
-  );
+  opts: CliScenarioOptions = {},
+): Promise<CliScenarioResult> {
+  return runCliScenario(args, opts);
 }
 
 function makeTempDir(prefix: string): string {
@@ -150,7 +88,7 @@ process.exit(99);
 }
 
 function expectContract(
-  actual: CliRun,
+  actual: CliScenarioResult,
   expected: {
     exitCode: number;
     stdoutContains?: string[];
@@ -380,13 +318,21 @@ describe("CLI contracts", () => {
     expect(report.env.KESHA_STATS_DB).toBe("~/stats.sqlite");
 
     const bundlePath = join(dir, "bundle.tar.gz");
-    const bundle = await runCli(["support-bundle", "--output", bundlePath], { env });
+    const bundle = await runCli(["support-bundle", "--output", bundlePath], {
+      env,
+      artifacts: [bundlePath],
+    });
     expectContract(bundle, {
       exitCode: 0,
       stdoutContains: [`Created support bundle: ${bundlePath}`, "Entries: 4", "Size:"],
       stderrEmpty: true,
     });
     expect(existsSync(bundlePath)).toBe(true);
+    expect(bundle.artifacts[0]).toMatchObject({
+      path: bundlePath,
+      exists: true,
+    });
+    expect(bundle.artifacts[0]?.sizeBytes).toBeGreaterThan(0);
   });
 
   test("read-only planning and stats commands keep user data on stdout", async () => {
@@ -398,6 +344,7 @@ describe("CLI contracts", () => {
     };
 
     const plan = await runCli(["install", "--plan", "--tts"], { env });
+    expect(plan.envDiff.overrides.KESHA_ENGINE_BIN).toBe(enginePath);
     expectContract(plan, {
       exitCode: 0,
       stdoutContains: ["Kesha install plan", "Expected network for this run:", "Run: kesha install --tts"],
