@@ -387,6 +387,21 @@ Operational lessons from the 2026-05-16 setup:
   agent isolation, and create additional JJ workspaces only when two physical
   checkouts are genuinely needed (long test in one tree, parallel comparison,
   etc.).
+- If two physical checkouts are needed, use JJ workspaces rather than Git
+  worktrees:
+  `jj workspace add ../kesha-voice-kit-<topic> --name <topic> --revision main`.
+  In a JJ workspace there may be no `.git` directory, so use `jj status`,
+  `jj diff`, and `jj log` for local inspection; use `gh -R
+  drakulavich/kesha-voice-kit ...` for GitHub operations that normally infer
+  the repo from `.git`.
+- Before calling files "external changes", determine whether they are dirty
+  edits or just the checked-out content of a stale feature branch. Check
+  `jj status` and `jj workspace list` everywhere; in the colocated checkout
+  that has `.git`, also check `git status --short --branch` and
+  `git log --oneline --decorate -5`. After a PR is merged and the remote branch
+  is deleted, a local bookmark/branch can remain checked out and make merged
+  feature files look unrelated. Fetch, move back to `main`, and only then start
+  the next task.
 - Treat Git as the source of truth if JJ behavior looks suspicious:
   `git status --short --branch` should be clean before making release or PR
   decisions.
