@@ -76,7 +76,7 @@ jobs:
       - name: 🏷️ Docker metadata
         if: github.event_name != 'pull_request' && (github.ref_type == 'tag' || steps.filter.outputs.docker == 'true')
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
