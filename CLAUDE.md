@@ -124,6 +124,12 @@ CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also 
 6. `make smoke-test` locally is still useful but only sees the OLD globally-installed engine — treat it as a sanity check, not a release gate. The gate is step 5.
 7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
+8. Stable `vX.Y.Z` releases also update the public Homebrew tap
+   `drakulavich/homebrew-kesha` via the `🍺 Homebrew Tap` workflow. Required
+   secret: `HOMEBREW_TAP_TOKEN`, a fine-scoped token with write access only to
+   the tap repository. CLI-only `vX.Y.Z-cli` marker releases are intentionally
+   skipped for now.
+
 ### NPM PUBLISH IS AUTOMATED WITH PROVENANCE ATTESTATION
 
 Post-#291: un-drafting a GitHub release fires `.github/workflows/npm-publish.yml`, which runs `npm publish --provenance --access public` from GHA. No more `npm publish` from the maintainer's laptop in the happy path.

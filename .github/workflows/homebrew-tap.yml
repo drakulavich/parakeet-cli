@@ -1,0 +1,103 @@
+name: "🍺 Homebrew Tap"
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Stable release tag to publish to Homebrew (vX.Y.Z)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      TAP_REPO: drakulavich/homebrew-kesha
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$RELEASE_TAG"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping Homebrew tap update for non-stable tag: $tag"
+            exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout source tag
+        if: steps.tag.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Setup Node.js
+        if: steps.tag.outputs.skip != 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Require tap token
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          test -n "$HOMEBREW_TAP_TOKEN" || {
+            echo "::error::HOMEBREW_TAP_TOKEN is required to update $TAP_REPO"
+            exit 1
+          }
+
+      - name: Clone tap
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://github.com/$TAP_REPO.git" tap
+          git -C tap remote set-url origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/$TAP_REPO.git"
+
+      - name: Update formula
+        if: steps.tag.outputs.skip != 'true'
+        run: node .github/scripts/update-homebrew-tap.mjs --tag "${{ steps.tag.outputs.tag }}" --tap-dir tap
+
+      - name: Validate updated formula
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          brew tap oven-sh/bun
+          brew tap-new local/kesha
+          cp tap/Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
+          brew install --build-from-source local/kesha/kesha-voice-kit
+          brew audit --strict --formula local/kesha/kesha-voice-kit
+          brew test local/kesha/kesha-voice-kit
+
+      - name: Commit and push tap update
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          cd tap
+          tap_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's#^origin/##')"
+          test -n "$tap_branch" || {
+            echo "::error::Could not resolve default branch for $TAP_REPO"
+            exit 1
+          }
+          if git diff --quiet -- Formula/kesha-voice-kit.rb; then
+            echo "Homebrew formula already matches ${{ steps.tag.outputs.tag }}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/kesha-voice-kit.rb
+          git commit -m "Update Kesha Voice Kit to ${{ steps.tag.outputs.tag }}"
+          git push origin "HEAD:$tap_branch"
