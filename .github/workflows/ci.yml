@@ -235,7 +235,10 @@ jobs:
       - name: 📊 Coverage summary
         if: always()
         shell: bash
-        run: cat coverage/ts/summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [[ -f coverage/ts/summary.md ]]; then
+            cat coverage/ts/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: 📤 Upload TS coverage
         if: always()

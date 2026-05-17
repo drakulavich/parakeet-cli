@@ -213,7 +213,10 @@ jobs:
       - name: 📊 Coverage summary
         if: always()
         shell: bash
-        run: cat coverage/rust/summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          if [[ -f coverage/rust/summary.md ]]; then
+            cat coverage/rust/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: 📤 Upload Rust coverage
         if: always()
