@@ -24,6 +24,8 @@ interface MainCommandArgs {
   debug: boolean;
   vad: boolean;
   "no-vad": boolean;
+  noVad?: boolean;
+  no_vad?: boolean;
   timestamps: boolean;
   speakers: boolean;
   format?: string;
@@ -168,7 +170,7 @@ export const mainCommand = defineCommand({
       default: false,
     },
   },
-  async run({ args }: { args: MainCommandArgs }) {
+  async run({ args, rawArgs }: { args: MainCommandArgs; rawArgs: string[] }) {
     if (args.debug) log.debugEnabled = true;
     const files = args._;
 
@@ -188,7 +190,12 @@ export const mainCommand = defineCommand({
     }
     const { wantsJson, wantsToon, wantsTranscript } = fmt;
 
-    if (args.vad && args["no-vad"]) {
+    // citty treats --no-vad as the negated form of --vad, so read rawArgs
+    // to distinguish "off" from the default auto mode and to catch both flags.
+    const vad = rawArgs.includes("--vad") || Boolean(args.vad);
+    const noVad = rawArgs.includes("--no-vad") || Boolean(args["no-vad"] ?? args.noVad ?? args.no_vad);
+
+    if (vad && noVad) {
       log.error("--vad and --no-vad are mutually exclusive.");
       process.exit(2);
     }
@@ -200,7 +207,7 @@ export const mainCommand = defineCommand({
       log.error("--speakers requires --json, --toon, or --format {json,toon}.");
       process.exit(2);
     }
-    const vadMode = args.vad ? "on" : args["no-vad"] ? "off" : "auto";
+    const vadMode = vad ? "on" : noVad ? "off" : "auto";
 
     if (files.length === 0) {
       log.info(
