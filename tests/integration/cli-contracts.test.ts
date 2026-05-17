@@ -235,6 +235,35 @@ describe("CLI contracts", () => {
     expect(JSON.parse(run.stdout)).toEqual([]);
   });
 
+  test("machine-readable partial failures keep parseable JSON on stdout and diagnostics on stderr", async () => {
+    const dir = makeTempDir("kesha-cli-contract-partial-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+
+    const run = await runCli(["--json", "--include-errors", mediaPath, "missing.wav"], { env });
+    expectContract(run, {
+      exitCode: 1,
+      stderrContains: [
+        `Transcribing ${mediaPath}...`,
+        `Transcribed ${mediaPath}`,
+        "missing.wav: File not found",
+      ],
+      stdoutNotContains: ["Transcribing", "Transcribed", "missing.wav: File not found"],
+    });
+
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].file).toBe(mediaPath);
+    expect(parsed.errors).toEqual([
+      { file: "missing.wav", code: "file_not_found", message: "File not found" },
+    ]);
+  });
+
   test("successful machine-readable output keeps progress off stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-success-");
     const enginePath = createFakeEngine(dir);
