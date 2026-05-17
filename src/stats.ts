@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, statSync } from "fs";
+import { existsSync, mkdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { dirname, extname, join } from "path";
 import { log } from "./log";
+import { packageVersion } from "./package-info";
 
 const SCHEMA_VERSION = 1;
 const MAX_ERROR_MESSAGE_CHARS = 300;
@@ -845,12 +846,5 @@ function escapeRegExp(input: string): string {
 }
 
 function readPackageVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
-      version?: unknown;
-    };
-    return typeof pkg.version === "string" ? pkg.version : "unknown";
-  } catch {
-    return "unknown";
-  }
+  return packageVersion;
 }

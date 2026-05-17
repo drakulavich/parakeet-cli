@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { linuxPackageNames } from "./linux-package-names.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
@@ -51,6 +52,30 @@ const DARWIN_SIDECARS = [
   },
 ];
 
+function linuxPackageAssets(version) {
+  const packages = linuxPackageNames(version);
+  return [
+    {
+      name: packages.deb,
+      kind: "package",
+      platforms: ["linux-x64"],
+      install: {
+        packageManager: "apt",
+        command: `sudo apt install ./${packages.deb}`,
+      },
+    },
+    {
+      name: packages.rpm,
+      kind: "package",
+      platforms: ["linux-x64"],
+      install: {
+        packageManager: "dnf",
+        command: `sudo dnf install ./${packages.rpm}`,
+      },
+    },
+  ];
+}
+
 function usage() {
   console.error(
     "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z] [--out path] [--check]",
@@ -93,9 +118,20 @@ function buildManifest(tag) {
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
+  const tagVersion = tag.slice(1);
+  if (tagVersion !== pkg.version) {
+    throw new Error(
+      `release tag ${tag} must match package.json#version (${pkg.version}) for Linux package filenames`,
+    );
+  }
+
+  const packageVersion = pkg.version;
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
+    ...linuxPackageAssets(packageVersion).map((p) =>
+      asset(p.name, p.kind, p.platforms, p.install),
+    ),
     asset(sbomName, "sbom", []),
     asset(MANIFEST_NAME, "manifest", []),
     asset("SHA256SUMS", "checksum", [], undefined, false),
@@ -111,7 +147,7 @@ function buildManifest(tag) {
       runtime: "bun",
       userInstall: "bun add -g @drakulavich/kesha-voice-kit",
       manifestPurpose:
-        "Release metadata for future package-manager channels; it does not replace the Bun-first user install path.",
+        "Release metadata for package-manager channels; it does not replace the Bun-first user install path.",
     },
     verification: {
       checksumAsset: "SHA256SUMS",
@@ -154,6 +190,18 @@ function validateSourceConsistency(manifest) {
 
   assertIncludes(workflow, "SHA256SUMS", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, ".sigstore.json", ".github/workflows/build-engine.yml");
+  assertIncludes(workflow, "build-linux-packages.mjs", ".github/workflows/build-engine.yml");
+  assertIncludes(workflow, "dist/linux-packages/*.{deb,rpm}", ".github/workflows/build-engine.yml");
+
+  const packageScript = readFileSync(".github/scripts/build-linux-packages.mjs", "utf8");
+  const packageNames = readFileSync(".github/scripts/linux-package-names.mjs", "utf8");
+  const nfpmConfig = readFileSync("packaging/nfpm.yaml", "utf8");
+  assertIncludes(packageScript, "--target=bun-linux-x64", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(packageScript, "packaging/nfpm.yaml", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(packageScript, "LINUX_PACKAGE_RELEASE", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(packageNames, "LINUX_PACKAGE_RELEASE", ".github/scripts/linux-package-names.mjs");
+  assertIncludes(nfpmConfig, "dst: /usr/bin/kesha", "packaging/nfpm.yaml");
+  assertIncludes(nfpmConfig, "dst: /usr/bin/parakeet", "packaging/nfpm.yaml");
 
   const names = new Set();
   for (const a of manifest.assets) {

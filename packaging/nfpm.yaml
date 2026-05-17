@@ -1,0 +1,42 @@
+name: kesha-voice-kit
+arch: amd64
+platform: linux
+version: ${KESHA_VERSION}
+version_schema: semver
+release: ${KESHA_PACKAGE_RELEASE}
+section: utils
+priority: optional
+maintainer: Anton Yakutovich <129260+drakulavich@users.noreply.github.com>
+description: Local speech-to-text, text-to-speech, and language detection toolkit.
+vendor: drakulavich
+homepage: https://github.com/drakulavich/kesha-voice-kit
+license: MIT
+
+contents:
+  - src: dist/linux-packages/kesha
+    dst: /usr/bin/kesha
+    file_info:
+      mode: 0755
+  - src: /usr/bin/kesha
+    dst: /usr/bin/parakeet
+    type: symlink
+  - src: LICENSE
+    dst: /usr/share/doc/kesha-voice-kit/LICENSE
+    file_info:
+      mode: 0644
+  - src: NOTICES.md
+    dst: /usr/share/doc/kesha-voice-kit/NOTICES.md
+    file_info:
+      mode: 0644
+  - src: README.md
+    dst: /usr/share/doc/kesha-voice-kit/README.md
+    file_info:
+      mode: 0644
+
+overrides:
+  deb:
+    depends:
+      - ca-certificates
+  rpm:
+    depends:
+      - ca-certificates

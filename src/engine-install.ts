@@ -7,6 +7,7 @@ import {
   TRANSCRIBE_DIARIZE_FEATURE,
 } from "./engine";
 import { log } from "./log";
+import { engineVersion } from "./package-info";
 import { streamResponseToFile } from "./progress";
 import {
   readInstalledEngineVersion,
@@ -315,17 +316,6 @@ export async function downloadEngine(
   options: InstallOptions = {},
 ): Promise<string> {
   const binPath = getEngineBinPath();
-  const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
-  // The engine version is tracked separately from the CLI version so
-  // CLI-only patch releases don't require cutting a new GitHub release
-  // + Rust rebuild. Fall back to the CLI version for backwards compat.
-  const engineVersion =
-    typeof pkg.keshaEngine?.version === "string"
-      ? pkg.keshaEngine.version
-      : typeof pkg.version === "string"
-        ? pkg.version
-        : "unknown";
-
   const installedVersion = readInstalledEngineVersion(binPath);
   const engineDir = dirname(binPath);
 

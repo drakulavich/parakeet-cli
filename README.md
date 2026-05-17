@@ -113,6 +113,19 @@ docker compose run --rm kesha install
 docker compose run --rm kesha audio.ogg
 ```
 
+## Linux Packages
+
+Stable engine releases also publish `.deb` and `.rpm` packages for Linux x64.
+They install the standalone CLI wrapper; engine and model downloads remain explicit:
+
+```bash
+kesha install
+kesha audio.ogg
+```
+
+See [Linux packages](docs/linux-packages.md) for install commands and package
+scope.
+
 ## Speech-to-text
 
 ```bash

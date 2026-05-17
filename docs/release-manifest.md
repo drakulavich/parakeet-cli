@@ -1,8 +1,8 @@
 # Release Manifest
 
 `kesha-release-manifest.json` is packaging metadata published with every engine
-release. It is a small, stable JSON contract for future package-manager channels
-such as Homebrew, deb, or rpm.
+release. It is a small, stable JSON contract for package-manager channels such
+as Homebrew, deb, or rpm.
 
 The manifest does not replace the user-facing Bun install path:
 
@@ -17,6 +17,7 @@ The manifest records:
 
 - the repository, release tag, CLI version, and engine version
 - released engine binaries and macOS sidecars
+- released Linux `.deb` and `.rpm` packages
 - the install layout used by `kesha install`
 - supported platform status for package managers
 - checksum and Sigstore bundle naming conventions
