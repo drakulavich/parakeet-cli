@@ -3,6 +3,7 @@ import { dirname, join } from "path";
 import { getEngineBinPath } from "./engine";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
+import { engineVersion, packageVersion } from "./package-info";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -153,16 +154,7 @@ function bundleComponent(
   };
 }
 
-async function packageInfo(): Promise<{ version: string; engineVersion: string }> {
-  const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
-  const version = typeof pkg.version === "string" ? pkg.version : "unknown";
-  const engineVersion =
-    typeof pkg.keshaEngine?.version === "string" ? pkg.keshaEngine.version : version;
-  return { version, engineVersion };
-}
-
 export async function renderInstallPlan(options: InstallPlanOptions = {}): Promise<string> {
-  const { version, engineVersion } = await packageInfo();
   const cacheRoot = keshaCacheDir();
   const binPath = getEngineBinPath();
   const engineDir = dirname(binPath);
@@ -313,7 +305,7 @@ export async function renderInstallPlan(options: InstallPlanOptions = {}): Promi
   const lines = [
     "Kesha install plan",
     "",
-    `Package: @drakulavich/kesha-voice-kit ${version}`,
+    `Package: @drakulavich/kesha-voice-kit ${packageVersion}`,
     `Engine release: v${engineVersion}`,
     `Platform: ${process.platform} ${process.arch}`,
     `Cache: ${cacheRoot}`,

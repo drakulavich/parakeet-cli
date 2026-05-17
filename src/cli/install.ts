@@ -4,6 +4,7 @@ import { getEngineBinPath } from "../engine";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
+import { packageVersion } from "../package-info";
 
 interface InstallCommandArgs {
   coreml: boolean;
@@ -14,8 +15,6 @@ interface InstallCommandArgs {
   diarize: boolean;
   plan: boolean;
 }
-
-const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
 
 function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
   if (coreml && onnx) {
@@ -48,8 +47,7 @@ async function performInstall(
   }
   try {
     await downloadEngine(noCache, backend, { tts, vad, diarize });
-    const currentVersion = typeof pkg.version === "string" ? pkg.version : null;
-    await maybeAskForStar(getEngineBinPath(), currentVersion, log);
+    await maybeAskForStar(getEngineBinPath(), packageVersion, log);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(message);

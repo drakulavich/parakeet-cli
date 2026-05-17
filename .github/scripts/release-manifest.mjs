@@ -51,6 +51,29 @@ const DARWIN_SIDECARS = [
   },
 ];
 
+function linuxPackageAssets(version) {
+  return [
+    {
+      name: `kesha-voice-kit_${version}-1_amd64.deb`,
+      kind: "package",
+      platforms: ["linux-x64"],
+      install: {
+        packageManager: "apt",
+        command: `sudo apt install ./kesha-voice-kit_${version}-1_amd64.deb`,
+      },
+    },
+    {
+      name: `kesha-voice-kit-${version}-1.x86_64.rpm`,
+      kind: "package",
+      platforms: ["linux-x64"],
+      install: {
+        packageManager: "dnf",
+        command: `sudo dnf install ./kesha-voice-kit-${version}-1.x86_64.rpm`,
+      },
+    },
+  ];
+}
+
 function usage() {
   console.error(
     "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z] [--out path] [--check]",
@@ -93,9 +116,13 @@ function buildManifest(tag) {
   }
 
   const sbomName = `kesha-voice-kit-${tag}.spdx.json`;
+  const packageVersion = tag.slice(1);
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
+    ...linuxPackageAssets(packageVersion).map((p) =>
+      asset(p.name, p.kind, p.platforms, p.install),
+    ),
     asset(sbomName, "sbom", []),
     asset(MANIFEST_NAME, "manifest", []),
     asset("SHA256SUMS", "checksum", [], undefined, false),
@@ -111,7 +138,7 @@ function buildManifest(tag) {
       runtime: "bun",
       userInstall: "bun add -g @drakulavich/kesha-voice-kit",
       manifestPurpose:
-        "Release metadata for future package-manager channels; it does not replace the Bun-first user install path.",
+        "Release metadata for package-manager channels; it does not replace the Bun-first user install path.",
     },
     verification: {
       checksumAsset: "SHA256SUMS",
@@ -154,6 +181,15 @@ function validateSourceConsistency(manifest) {
 
   assertIncludes(workflow, "SHA256SUMS", ".github/workflows/build-engine.yml");
   assertIncludes(workflow, ".sigstore.json", ".github/workflows/build-engine.yml");
+  assertIncludes(workflow, "build-linux-packages.mjs", ".github/workflows/build-engine.yml");
+  assertIncludes(workflow, "dist/linux-packages/*.{deb,rpm}", ".github/workflows/build-engine.yml");
+
+  const packageScript = readFileSync(".github/scripts/build-linux-packages.mjs", "utf8");
+  const nfpmConfig = readFileSync("packaging/nfpm.yaml", "utf8");
+  assertIncludes(packageScript, "--target=bun-linux-x64", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(packageScript, "packaging/nfpm.yaml", ".github/scripts/build-linux-packages.mjs");
+  assertIncludes(nfpmConfig, "dst: /usr/bin/kesha", "packaging/nfpm.yaml");
+  assertIncludes(nfpmConfig, "dst: /usr/bin/parakeet", "packaging/nfpm.yaml");
 
   const names = new Set();
   for (const a of manifest.assets) {

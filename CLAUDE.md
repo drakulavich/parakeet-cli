@@ -129,6 +129,12 @@ CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also 
    secret: `HOMEBREW_TAP_TOKEN`, a fine-scoped token with write access only to
    the tap repository. CLI-only `vX.Y.Z-cli` marker releases are intentionally
    skipped for now.
+9. Stable engine releases (not `vX.Y.Z-cli` marker releases) also attach Linux
+   x64 `.deb` and `.rpm` packages.
+   They are built in `build-engine.yml` before `SHA256SUMS` and Sigstore
+   signing, so the packages are covered by the normal release verification
+   flow. The packages install the standalone CLI wrapper only; `kesha install`
+   remains the explicit engine/model download step.
 
 ### NPM PUBLISH IS AUTOMATED WITH PROVENANCE ATTESTATION
 

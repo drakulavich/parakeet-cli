@@ -12,10 +12,9 @@ import {
   formatTranscriptOutput,
   formatVerboseOutput,
 } from "../format";
+import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, createStatsRecorder } from "../stats";
-
-const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
 
 interface MainCommandArgs {
   _: string[];
@@ -107,7 +106,7 @@ export function checkLanguageMismatch(expected: string | undefined, detected: st
 export const mainCommand = defineCommand({
   meta: {
     name: "kesha",
-    version: pkg.version,
+    version: packageVersion,
     description:
       "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
       "\n" +

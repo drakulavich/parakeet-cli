@@ -9,6 +9,7 @@ import {
 } from "./engine";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
+import { packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
 
 const KNOWN_ENV_KEYS = [
@@ -182,11 +183,10 @@ function redactComponent<T extends PathSummary>(component: T, redact: boolean): 
   return { ...component, path: redactPath(component.path, true) };
 }
 
-async function readPackageInfo(): Promise<{ name: string; version: string }> {
-  const pkg = await Bun.file(new URL("../package.json", import.meta.url)).json();
+function readPackageInfo(): { name: string; version: string } {
   return {
-    name: typeof pkg.name === "string" ? pkg.name : "unknown",
-    version: typeof pkg.version === "string" ? pkg.version : "unknown",
+    name: packageName,
+    version: packageVersion,
   };
 }
 
@@ -308,7 +308,7 @@ export async function collectDoctorReport(
   return {
     generatedAt: new Date().toISOString(),
     redacted: redact,
-    package: await readPackageInfo(),
+    package: readPackageInfo(),
     runtime: {
       bunVersion: Bun.version,
       platform: process.platform,
