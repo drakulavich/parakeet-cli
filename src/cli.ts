@@ -3,6 +3,7 @@
 // Thin re-export shim. The CLI subcommands live in ./cli/*.ts since #180;
 // tests and lib.ts keep importing from "./cli" via these re-exports so the
 // public surface is unchanged.
+export { doctorCommand } from "./cli/doctor";
 export { installCommand } from "./cli/install";
 export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
@@ -25,6 +26,13 @@ export {
   formatVerboseOutput,
 } from "./format";
 export { formatToonOutput } from "./toon";
+export {
+  collectDoctorReport,
+  formatDoctorReport,
+  redactDiagnosticValue,
+} from "./doctor";
+export type { DoctorReport } from "./doctor";
+export { keshaCacheDir } from "./paths";
 
 import { runCli } from "./cli/dispatch";
 

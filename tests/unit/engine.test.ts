@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { join } from "path";
 import { parseLangResult, getEngineBinPath, spawnStdioWithDebugFd } from "../../src/engine";
 
 describe("engine", () => {
@@ -6,6 +7,21 @@ describe("engine", () => {
     const path = getEngineBinPath();
     expect(path).toMatch(/\.cache[/\\]kesha/);
     expect(path).toContain("kesha-engine");
+  });
+
+  test("getEngineBinPath follows KESHA_CACHE_DIR", () => {
+    const savedCacheDir = process.env.KESHA_CACHE_DIR;
+    const savedEngineBin = process.env.KESHA_ENGINE_BIN;
+    try {
+      delete process.env.KESHA_ENGINE_BIN;
+      process.env.KESHA_CACHE_DIR = "/tmp/kesha-cache";
+      expect(getEngineBinPath()).toBe(join("/tmp/kesha-cache", "engine", "bin", "kesha-engine"));
+    } finally {
+      if (savedCacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
+      else process.env.KESHA_CACHE_DIR = savedCacheDir;
+      if (savedEngineBin === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = savedEngineBin;
+    }
   });
 
   test("parseLangResult parses valid JSON", () => {

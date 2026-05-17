@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
+import { mainCommand, doctorCommand, installCommand, statusCommand, statsCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
 describe("CLI help", () => {
   test("main help contains usage and install info", async () => {
@@ -13,6 +13,7 @@ describe("CLI help", () => {
   test("main help shows subcommand inventory (#324)", async () => {
     const usage = await renderUsage(mainCommand);
     expect(usage).toContain("Commands:");
+    expect(usage).toContain("doctor     Collect support diagnostics.");
     expect(usage).toContain("install    Download engine and models.");
     expect(usage).toContain("status     Inspect installed backend.");
     expect(usage).toContain("say        Synthesize speech from text.");
@@ -24,6 +25,13 @@ describe("CLI help", () => {
     expect(usage).toContain("--coreml");
     expect(usage).toContain("--onnx");
     expect(usage).toContain("--no-cache");
+  });
+
+  test("doctor help contains JSON and redaction options (#345 P0)", async () => {
+    const usage = await renderUsage(doctorCommand);
+    expect(usage).toContain("--json");
+    expect(usage).toContain("--redact");
+    expect(usage).toContain("support diagnostics");
   });
 
   test("main help contains --json flag", async () => {

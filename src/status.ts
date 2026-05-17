@@ -1,8 +1,8 @@
 import { readdirSync, statSync } from "fs";
-import { homedir } from "os";
 import { join } from "path";
 import { isEngineInstalled, getEngineBinPath, getEngineCapabilities } from "./engine";
 import { log } from "./log";
+import { keshaCacheDir } from "./paths";
 import pc from "picocolors";
 
 function humanBytes(bytes: number): string {
@@ -96,7 +96,7 @@ export async function showStatus(): Promise<void> {
 }
 
 function showDiskUsage(binPath: string): void {
-  const cache = kesheCacheDir();
+  const cache = keshaCacheDir();
   // Engine binary lives under `<cache>/engine/bin/` (managed by the TS CLI's
   // engine-install) while all models live under `<cache>/models/` (managed by
   // the Rust engine). Point at `engine/` (two levels up from the binary) so
@@ -150,10 +150,6 @@ function showDiskUsage(binPath: string): void {
   log.info("");
 }
 
-function kesheCacheDir(): string {
-  return process.env.KESHA_CACHE_DIR ?? join(homedir(), ".cache", "kesha");
-}
-
 /**
  * Read the effective `KESHA_MODEL_MIRROR` base URL (#121). Returns null when
  * unset, empty, or whitespace. Matches the Rust side's `model_mirror()` in
@@ -167,7 +163,7 @@ export function activeModelMirror(): string | null {
 }
 
 function listInstalledVoices(): string[] {
-  const cache = kesheCacheDir();
+  const cache = keshaCacheDir();
   const voices: string[] = [];
   try {
     const kokoro = readdirSync(join(cache, "models", "kokoro-82m", "voices"));

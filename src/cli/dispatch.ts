@@ -2,13 +2,14 @@ import { runMain } from "citty";
 import { existsSync } from "fs";
 import { log } from "../log";
 import { suggestCommand } from "../suggest-command";
+import { doctorCommand } from "./doctor";
 import { installCommand } from "./install";
 import { sayCommand } from "./say";
 import { statsCommand } from "./stats";
 import { statusCommand } from "./status";
 import { mainCommand } from "./main";
 
-const SUBCOMMANDS = ["install", "status", "say", "stats"];
+const SUBCOMMANDS = ["doctor", "install", "status", "say", "stats"];
 
 function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
@@ -16,6 +17,11 @@ function isPathLike(arg: string): boolean {
 
 export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
   const [firstArg, ...restArgs] = rawArgs;
+
+  if (firstArg === "doctor") {
+    await runMain(doctorCommand, { rawArgs: restArgs });
+    return;
+  }
 
   if (firstArg === "install") {
     await runMain(installCommand, { rawArgs: restArgs });
