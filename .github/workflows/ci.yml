@@ -287,6 +287,52 @@ jobs:
             --category bun --project Laputa/kesha-voice-kit
           bunx flakiness upload ./flakiness-report
 
+  published-engine-smoke:
+    # P1.10: keep at least one non-Darwin lane exercising the published
+    # engine install path. Windows is intentionally omitted while
+    # `src/engine-install.ts` still reports win32 x64 as unsupported; this
+    # Linux x64 lane covers the currently supported non-Darwin release asset.
+    needs: [changes, unit-tests]
+    if: |
+      needs.changes.outputs.integration == 'true' &&
+      !startsWith(github.head_ref, 'release/') &&
+      !startsWith(github.event.head_commit.message, 'chore(release):') &&
+      needs.unit-tests.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🔊 Install published Linux backend
+        uses: ./.github/actions/install-parakeet-backend
+        with:
+          cache-path: |
+            ~/.cache/kesha
+          cache-key: ${{ runner.os }}-kesha-engine-v1
+          cache-restore-keys: ${{ runner.os }}-kesha-engine-
+          ffmpeg-provider: apt
+
+      - name: 🚬 Smoke published Linux engine
+        shell: bash
+        run: |
+          kesha status
+          kesha --json fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
+          bun -e '
+            const output = await Bun.file("/tmp/kesha-linux-smoke.json").json();
+            if (!Array.isArray(output) || output.length !== 1) {
+              throw new Error("expected exactly one transcription result");
+            }
+            if (!output[0].text || output[0].text.length < 5) {
+              throw new Error("expected non-empty transcription text");
+            }
+          '
+
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
     # or the say-e2e test itself changes. No `unit-tests` gate: a rust-only
