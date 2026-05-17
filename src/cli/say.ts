@@ -29,6 +29,48 @@ async function resolveText(inline: string | undefined): Promise<string> {
   return new TextDecoder().decode(merged).trim();
 }
 
+function parseFiniteNumberFlag(name: string, value: unknown): number | undefined {
+  if (value === undefined || value === null || value === false) return undefined;
+  const raw = String(value).trim();
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    log.error(`${name} must be a finite number.`);
+    process.exit(2);
+  }
+  return parsed;
+}
+
+function parseRateFlag(value: unknown): number | undefined {
+  const rate = parseFiniteNumberFlag("--rate", value);
+  if (rate === undefined) return undefined;
+  if (rate < 0.5 || rate > 2.0) {
+    log.error("--rate must be between 0.5 and 2.0.");
+    process.exit(2);
+  }
+  return rate;
+}
+
+function parseBitrateFlag(value: unknown): number | undefined {
+  const bitrate = parseFiniteNumberFlag("--bitrate", value);
+  if (bitrate === undefined) return undefined;
+  if (!Number.isInteger(bitrate) || bitrate <= 0) {
+    log.error("--bitrate must be a positive integer.");
+    process.exit(2);
+  }
+  return bitrate;
+}
+
+function parseSampleRateFlag(value: unknown): number | undefined {
+  const sampleRate = parseFiniteNumberFlag("--sample-rate", value);
+  if (sampleRate === undefined) return undefined;
+  const supported = [8000, 12000, 16000, 24000, 48000];
+  if (!Number.isInteger(sampleRate) || !supported.includes(sampleRate)) {
+    log.error("--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.");
+    process.exit(2);
+  }
+  return sampleRate;
+}
+
 export const sayCommand = defineCommand({
   meta: {
     name: "say",
@@ -88,11 +130,6 @@ export const sayCommand = defineCommand({
       process.exit(await proc.exited);
     }
 
-    const inlineText = typeof args.text === "string" ? args.text : undefined;
-    const text = await resolveText(inlineText);
-    const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
-    const voice = explicitVoice ?? (await autoRouteVoice(text));
-
     // Validate --format up front so we surface a clear error before spawning
     // the engine subprocess. The engine repeats the check authoritatively, but
     // catching it here gives the user a faster failure mode in scripts.
@@ -109,8 +146,12 @@ export const sayCommand = defineCommand({
       }
     }
 
+    const rate = parseRateFlag(args.rate);
+    const bitrate = parseBitrateFlag(args.bitrate);
+    const sampleRate = parseSampleRateFlag(args["sample-rate"]);
+
     // Reject --bitrate / --sample-rate with WAV up front to surface the error fast.
-    const hasOpusOnlyFlag = Boolean(args.bitrate) || Boolean(args["sample-rate"]);
+    const hasOpusOnlyFlag = bitrate !== undefined || sampleRate !== undefined;
     if (hasOpusOnlyFlag) {
       const outExt = typeof args.out === "string"
         ? args.out.split(".").pop()?.toLowerCase()
@@ -122,16 +163,21 @@ export const sayCommand = defineCommand({
       }
     }
 
+    const inlineText = typeof args.text === "string" ? args.text : undefined;
+    const text = await resolveText(inlineText);
+    const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
+    const voice = explicitVoice ?? (await autoRouteVoice(text));
+
     const opts = {
       text,
       voice,
       lang: typeof args.lang === "string" ? args.lang : undefined,
       out: typeof args.out === "string" ? args.out : undefined,
-      rate: args.rate ? Number(args.rate) : undefined,
+      rate,
       ssml: Boolean(args.ssml),
       format,
-      bitrate: args.bitrate ? Number(args.bitrate) : undefined,
-      sampleRate: args["sample-rate"] ? Number(args["sample-rate"]) : undefined,
+      bitrate,
+      sampleRate,
       noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
     };
     const stats = createStatsRecorder("say");

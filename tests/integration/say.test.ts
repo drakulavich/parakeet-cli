@@ -25,6 +25,17 @@ if (outIndex >= 0) {
   return enginePath;
 }
 
+async function createFailingEngine(dir: string): Promise<string> {
+  mkdirSync(dir, { recursive: true });
+  const enginePath = `${dir}/kesha-engine-fail-on-use`;
+  await Bun.write(enginePath, `#!/usr/bin/env bun
+console.error("fake engine should not have been invoked: " + JSON.stringify(Bun.argv.slice(2)));
+process.exit(99);
+`);
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
 describe("kesha say (CLI)", () => {
   it("--help exits 0 and mentions --voice", async () => {
     const proc = spawn(["bun", CLI_PATH, "say", "--help"], {
@@ -117,5 +128,37 @@ describe("kesha say (CLI)", () => {
 
     expect(stderr).toMatch(/Saved .*reply\.wav \(\d+ms\)/);
     expect(stderr).not.toContain("TTS time:");
+  });
+
+  it("rejects invalid numeric flags before spawning the engine", async () => {
+    const cases: Array<{ args: string[]; message: string }> = [
+      { args: ["--rate", "fast", "Hello"], message: "--rate must be a finite number" },
+      { args: ["--rate", "3", "Hello"], message: "--rate must be between 0.5 and 2.0" },
+      { args: ["--format", "ogg-opus", "--bitrate", "wide", "Hello"], message: "--bitrate must be a finite number" },
+      { args: ["--format", "ogg-opus", "--bitrate", "-1", "Hello"], message: "--bitrate must be a positive integer" },
+      { args: ["--format", "ogg-opus", "--sample-rate", "44100", "Hello"], message: "--sample-rate must be one of" },
+    ];
+
+    for (const tc of cases) {
+      const dir = `/tmp/kesha-fail-engine-${Date.now()}-${Math.random()}`;
+      const enginePath = await createFailingEngine(dir);
+      const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", ...tc.args], {
+        env: {
+          ...process.env,
+          KESHA_CACHE_DIR: dir,
+          KESHA_ENGINE_BIN: enginePath,
+          HOME: dir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      expect(await proc.exited).toBe(2);
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
+      expect(stdout).toBe("");
+      expect(stderr).toContain(tc.message);
+      expect(stderr).not.toContain("fake engine should not have been invoked");
+    }
   });
 });
