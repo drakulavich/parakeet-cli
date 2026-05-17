@@ -36,6 +36,39 @@ process.exit(99);
   return enginePath;
 }
 
+const INVALID_NUMERIC_FLAG_CASES: Array<{ name: string; args: string[]; message: string }> = [
+  {
+    name: "non-numeric rate",
+    args: ["--rate", "fast", "Hello"],
+    message: "--rate must be a finite number",
+  },
+  {
+    name: "empty rate",
+    args: ["--rate", "", "Hello"],
+    message: "--rate must be a finite number",
+  },
+  {
+    name: "out-of-range rate",
+    args: ["--rate", "3", "Hello"],
+    message: "--rate must be between 0.5 and 2.0",
+  },
+  {
+    name: "non-numeric bitrate",
+    args: ["--format", "ogg-opus", "--bitrate", "wide", "Hello"],
+    message: "--bitrate must be a finite number",
+  },
+  {
+    name: "negative bitrate",
+    args: ["--format", "ogg-opus", "--bitrate", "-1", "Hello"],
+    message: "--bitrate must be a positive integer",
+  },
+  {
+    name: "unsupported sample rate",
+    args: ["--format", "ogg-opus", "--sample-rate", "44100", "Hello"],
+    message: "--sample-rate must be one of",
+  },
+];
+
 describe("kesha say (CLI)", () => {
   it("--help exits 0 and mentions --voice", async () => {
     const proc = spawn(["bun", CLI_PATH, "say", "--help"], {
@@ -130,17 +163,8 @@ describe("kesha say (CLI)", () => {
     expect(stderr).not.toContain("TTS time:");
   });
 
-  it("rejects invalid numeric flags before spawning the engine", async () => {
-    const cases: Array<{ args: string[]; message: string }> = [
-      { args: ["--rate", "fast", "Hello"], message: "--rate must be a finite number" },
-      { args: ["--rate", "", "Hello"], message: "--rate must be a finite number" },
-      { args: ["--rate", "3", "Hello"], message: "--rate must be between 0.5 and 2.0" },
-      { args: ["--format", "ogg-opus", "--bitrate", "wide", "Hello"], message: "--bitrate must be a finite number" },
-      { args: ["--format", "ogg-opus", "--bitrate", "-1", "Hello"], message: "--bitrate must be a positive integer" },
-      { args: ["--format", "ogg-opus", "--sample-rate", "44100", "Hello"], message: "--sample-rate must be one of" },
-    ];
-
-    for (const tc of cases) {
+  for (const tc of INVALID_NUMERIC_FLAG_CASES) {
+    it(`rejects ${tc.name} before spawning the engine`, async () => {
       const dir = `/tmp/kesha-fail-engine-${Date.now()}-${Math.random()}`;
       const enginePath = await createFailingEngine(dir);
       const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", ...tc.args], {
@@ -160,6 +184,6 @@ describe("kesha say (CLI)", () => {
       expect(stdout).toBe("");
       expect(stderr).toContain(tc.message);
       expect(stderr).not.toContain("fake engine should not have been invoked");
-    }
-  });
+    });
+  }
 });
