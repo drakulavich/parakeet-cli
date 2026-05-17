@@ -23,11 +23,17 @@ full split.
 ## Development
 
 ```bash
+make cli-fast       # typecheck + version drift + deterministic CLI tests
 make test           # bun unit + integration tests
 make lint           # bunx tsc --noEmit
 make smoke-test     # bun link → kesha install → run against fixtures
 make release        # lint + test + smoke-test
 ```
+
+Use `bun run check` or `make cli-fast` for a quick local confidence pass before
+opening small CLI-only PRs. It avoids the engine-backed E2E lanes while still
+covering command routing, stdout/stderr contracts, help goldens, and wrapper
+validation.
 
 Rust engine work happens in `rust/`:
 

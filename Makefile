@@ -1,4 +1,4 @@
-.PHONY: install check test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
+.PHONY: install check cli-fast test unit integration rust-test lint lint-tsgo versions smoke-test smoke-test-tts benchmark release release-preflight release-notes help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -9,6 +9,9 @@ install: ## Install dependencies
 test: unit integration ## Run all tests
 
 check: lint versions test ## Run local checks that mirror the cheap CI gates
+
+cli-fast: ## Run deterministic CLI checks without engine-backed E2E lanes
+	bun run check
 
 unit: ## Run unit tests
 	bun run test:unit
