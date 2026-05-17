@@ -40,6 +40,7 @@
     "lint": "bunx tsc --noEmit",
     "lint:tsgo": "bunx tsgo --noEmit",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
+    "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
     "check:versions": "bun .github/scripts/check-versions.ts",
     "postinstall": "node scripts/postinstall.cjs"
   },

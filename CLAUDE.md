@@ -110,9 +110,9 @@ CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also 
    gh api -X PATCH "repos/OWNER/REPO/releases/$RELEASE_ID" --input body.json
    ```
    v1.1.3 shipped with empty notes and was recovered this way.
-5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC"). Release drafts must include `SHA256SUMS`, one `*.sigstore.json` bundle per non-signature asset, and `kesha-voice-kit-vX.Y.Z.spdx.json`. Verify at least the primary engine binary before publishing:
+5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC"). Release drafts must include `SHA256SUMS`, `kesha-release-manifest.json`, one `*.sigstore.json` bundle per non-signature asset, and `kesha-voice-kit-vX.Y.Z.spdx.json`. Verify at least the primary engine binary before publishing:
    ```bash
-   gh release download vX.Y.Z -p SHA256SUMS -p '*.sigstore.json' -p 'kesha-*' -p 'say-*' -D <smoke-dir>
+   gh release download vX.Y.Z -p SHA256SUMS -p kesha-release-manifest.json -p '*.sigstore.json' -p 'kesha-*' -p 'say-*' -D <smoke-dir>
    cd <smoke-dir>
    sha256sum -c SHA256SUMS
    cosign verify-blob \
@@ -374,6 +374,19 @@ Operational lessons from the 2026-05-16 setup:
   Replace with your own credentials; do not use the repo owner's details.
 - If the repo already has `.jj`, do not reclone. Keep the existing colocated
   checkout, set the config, run `git lfs pull`, then verify with `jj status`.
+- If the repo already has `.jj`, do not create a separate Git worktree just to
+  isolate agent work. Start with `jj status` / `jj log`, create a new JJ change
+  or bookmark for the task, and use Git worktrees only when the user explicitly
+  asks for one or JJ is unavailable/broken.
+- Disk model: JJ changes/bookmarks are cheap because history and operations are
+  shared in the repo; extra workspaces are more expensive because each one has
+  its own checked-out working tree. Expect disk use to scale roughly as shared
+  repo objects plus one source checkout per workspace, plus duplicated
+  generated artifacts (`node_modules`, `rust/target`, temp caches, materialized
+  LFS files) inside each workspace. Prefer a new JJ change/bookmark for normal
+  agent isolation, and create additional JJ workspaces only when two physical
+  checkouts are genuinely needed (long test in one tree, parallel comparison,
+  etc.).
 - Treat Git as the source of truth if JJ behavior looks suspicious:
   `git status --short --branch` should be clean before making release or PR
   decisions.
