@@ -44,7 +44,11 @@ export function formatStatusLine(
   return `  ${label}:${pathStr ? `   ${pathStr}` : ""}${padding}${status}`;
 }
 
-export async function showStatus(): Promise<void> {
+export interface ShowStatusOptions {
+  disk?: boolean;
+}
+
+export async function showStatus(options: ShowStatusOptions = {}): Promise<void> {
   const binPath = getEngineBinPath();
   const installed = isEngineInstalled();
 
@@ -86,7 +90,9 @@ export async function showStatus(): Promise<void> {
       log.info("");
     }
 
-    showDiskUsage(binPath);
+    if (options.disk) {
+      showDiskUsage(binPath);
+    }
   }
 
   if (!installed) {

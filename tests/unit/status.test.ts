@@ -104,4 +104,38 @@ describe("showStatus", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("does not scan or print disk usage unless requested", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-test-"));
+    const binDir = join(dir, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(binPath, "not a real executable");
+    mkdirSync(join(dir, "models", "parakeet-tdt-v3"), { recursive: true });
+    writeFileSync(join(dir, "models", "parakeet-tdt-v3", "model.onnx"), "model");
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = dir;
+    process.env.HOME = dir;
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    const lines: string[] = [];
+    console.log = (msg: string) => {
+      lines.push(msg);
+    };
+    console.error = () => {};
+    try {
+      await showStatus();
+      expect(lines.join("\n")).not.toContain("Disk usage");
+
+      lines.length = 0;
+      await showStatus({ disk: true });
+      expect(lines.join("\n")).toContain("Disk usage");
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
