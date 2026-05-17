@@ -1,20 +1,14 @@
-# Homebrew Formula
+# Homebrew Install
 
 Kesha's Homebrew formula installs the Bun-based CLI wrapper. It does not
 download the Rust engine or models during `brew install`; keep that explicit
 with `kesha install`.
 
-## Local Tap Validation
-
-The first Homebrew slice keeps the formula in this repository while the public
-tap automation is still future work. Homebrew requires formulae to be installed
-from a tap, so validate the formula through a local test tap:
+## Install
 
 ```bash
 brew tap oven-sh/bun
-brew tap-new local/kesha
-cp Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/"
-brew install local/kesha/kesha-voice-kit
+brew install drakulavich/kesha/kesha-voice-kit
 kesha install
 kesha audio.ogg
 ```
@@ -34,12 +28,29 @@ Homebrew installs:
 the package install lightweight and preserves the no-surprise-downloads release
 contract used by the Bun and Docker install paths.
 
-## Future Public Tap
+## Maintainer Validation
 
-The intended user-facing path is a dedicated tap, for example:
+The source formula remains in this repository and is mirrored into
+`drakulavich/homebrew-kesha` for users. To validate formula edits before a
+release:
+
+```bash
+brew tap oven-sh/bun
+brew tap-new local/kesha
+cp Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/"
+brew install local/kesha/kesha-voice-kit
+brew test local/kesha/kesha-voice-kit
+brew audit --strict --formula local/kesha/kesha-voice-kit
+```
+
+The public tap itself can be validated with:
 
 ```bash
 brew install drakulavich/kesha/kesha-voice-kit
+brew test drakulavich/kesha/kesha-voice-kit
+brew audit --strict --formula drakulavich/kesha/kesha-voice-kit
 ```
 
-Until that tap exists, use the local tap validation path above.
+Stable `vX.Y.Z` releases update the public tap through the `Homebrew Tap`
+workflow. The workflow requires the `HOMEBREW_TAP_TOKEN` repository secret with
+write access to `drakulavich/homebrew-kesha`.

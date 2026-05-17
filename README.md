@@ -51,21 +51,20 @@ kesha audio.ogg     # transcript to stdout
 
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
-## Homebrew Formula
+## Homebrew Install
 
-Kesha has an in-repo Homebrew formula foundation for tap validation. It installs
-the Bun-based CLI wrapper; engine and model downloads remain explicit:
+Homebrew installs the Bun-based CLI wrapper. Engine and model downloads remain
+explicit:
 
 ```bash
 brew tap oven-sh/bun
-brew tap-new local/kesha
-cp Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/"
-brew install local/kesha/kesha-voice-kit
+brew install drakulavich/kesha/kesha-voice-kit
 kesha install
 kesha audio.ogg
 ```
 
-See [Homebrew formula](docs/homebrew.md) for package scope and tap status.
+See [Homebrew install](docs/homebrew.md) for package scope and maintainer
+validation.
 
 ## Support diagnostics
 
