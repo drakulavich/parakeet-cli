@@ -12,6 +12,8 @@ interface TestResult {
   status: "passed" | "failed" | "skipped";
   timeMs: number;
   message: string;
+  file: string;
+  line: string;
 }
 
 function escapeMd(text: string): string {
@@ -37,6 +39,8 @@ export async function parseJunit(path: string): Promise<TestResult[]> {
             const name = tc["@_name"] ?? "unknown";
             const suiteName = tc["@_classname"] ?? item["@_name"] ?? "";
             const timeS = parseFloat(tc["@_time"] ?? "0") || 0;
+            const file = tc["@_file"] ?? item["@_file"] ?? "";
+            const line = tc["@_line"] ?? "";
 
             let status: TestResult["status"] = "passed";
             let message = "";
@@ -48,7 +52,7 @@ export async function parseJunit(path: string): Promise<TestResult[]> {
               status = "skipped";
             }
 
-            results.push({ suite: suiteName, name, status, timeMs: timeS * 1000, message });
+            results.push({ suite: suiteName, name, status, timeMs: timeS * 1000, message, file, line });
           }
         }
         // Recurse into nested testsuites
@@ -95,15 +99,27 @@ export function toMarkdown(title: string, results: TestResult[], summaryOnly: bo
   }
 
   const failures = results.filter(r => r.status === "failed");
-  const show = (failed > 0 && total > 20 ? failures : results)
+  const skippedResults = results.filter(r => r.status === "skipped");
+  const baseShow = failed > 0 && total > 20 ? failures : results;
+  const show = (skippedResults.length > 0 ? baseShow.filter(r => r.status !== "skipped") : baseShow)
     .toSorted((a, b) => b.timeMs - a.timeMs);
 
-  lines.push("| Suite | Test | Status | Time |", "|-------|------|--------|------|");
-  for (const r of show) {
-    const time = `${Math.round(r.timeMs)}ms`;
-    let name = escapeMd(r.name);
-    if (r.message) name = `${name} — ${escapeMd(r.message)}`;
-    lines.push(`| ${escapeMd(r.suite)} | ${name} | ${statusIcons[r.status]} | ${time} |`);
+  if (show.length > 0) {
+    lines.push("| Suite | Test | Status | Time |", "|-------|------|--------|------|");
+    for (const r of show) {
+      const time = `${Math.round(r.timeMs)}ms`;
+      let name = escapeMd(r.name);
+      if (r.message) name = `${name} — ${escapeMd(r.message)}`;
+      lines.push(`| ${escapeMd(r.suite)} | ${name} | ${statusIcons[r.status]} | ${time} |`);
+    }
+  }
+
+  if (skippedResults.length > 0) {
+    lines.push("", "#### Skipped Tests", "", "| Suite | Test | Location |", "|-------|------|----------|");
+    for (const r of skippedResults) {
+      const location = r.file ? `${r.file}${r.line ? `:${r.line}` : ""}` : "";
+      lines.push(`| ${escapeMd(r.suite)} | ${escapeMd(r.name)} | ${escapeMd(location)} |`);
+    }
   }
   return lines.join("\n");
 }
