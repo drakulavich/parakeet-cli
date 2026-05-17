@@ -35,6 +35,7 @@ export {
 export type { DoctorReport } from "./doctor";
 export { createSupportBundle } from "./support-bundle";
 export type { SupportBundleResult } from "./support-bundle";
+export { renderInstallPlan } from "./install-plan";
 export { keshaCacheDir } from "./paths";
 
 import { runCli } from "./cli/dispatch";

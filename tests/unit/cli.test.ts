@@ -26,6 +26,7 @@ describe("CLI help", () => {
     expect(usage).toContain("--coreml");
     expect(usage).toContain("--onnx");
     expect(usage).toContain("--no-cache");
+    expect(usage).toContain("--plan");
   });
 
   test("doctor help contains JSON and redaction options (#345 P0)", async () => {

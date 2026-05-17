@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 import { downloadEngine } from "../engine-install";
 import { getEngineBinPath } from "../engine";
+import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { log } from "../log";
 
@@ -11,6 +12,7 @@ interface InstallCommandArgs {
   tts: boolean;
   vad: boolean;
   diarize: boolean;
+  plan: boolean;
 }
 
 const pkg = await Bun.file(new URL("../../package.json", import.meta.url)).json();
@@ -31,7 +33,12 @@ async function performInstall(
   tts = false,
   vad = false,
   diarize = false,
+  plan = false,
 ) {
+  if (plan) {
+    log.info(await renderInstallPlan({ noCache, backend, tts, vad, diarize }));
+    return;
+  }
   if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
     log.error(
       "--diarize is currently darwin-arm64 only " +
@@ -71,6 +78,11 @@ export const installCommand = defineCommand({
       description: "Re-download even if cached",
       default: false,
     },
+    plan: {
+      type: "boolean",
+      description: "Show download, disk, and warm-up plan without changing local state",
+      default: false,
+    },
     tts: {
       type: "boolean",
       description: "Also install TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)",
@@ -89,6 +101,6 @@ export const installCommand = defineCommand({
   },
   async run({ args }: { args: InstallCommandArgs }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    await performInstall(args["no-cache"], backend, args.tts, args.vad, args.diarize);
+    await performInstall(args["no-cache"], backend, args.tts, args.vad, args.diarize, args.plan);
   },
 });

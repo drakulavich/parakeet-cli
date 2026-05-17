@@ -151,6 +151,27 @@ describe("e2e-cli", () => {
     const { stdout, exitCode } = await runCli(["install", "--help"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("--no-cache");
+    expect(stdout).toContain("--plan");
+  });
+
+  test("install --plan reports costs without invoking the engine", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stdout, stderr, exitCode } = await runCli(["install", "--plan", "--tts"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Kesha install plan");
+    expect(stdout).toContain("Expected network for this run:");
+    expect(stdout).toContain("Run: kesha install --tts");
+    expect(stderr).not.toContain("fake engine should not have been invoked");
   });
 
   test("status prints engine info and exits 0", async () => {
