@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { runCliScenario, type CliScenarioOptions, type CliScenarioResult } from "./cli-scenario";
+import {
+  installFakeDiarizeModel,
+  runCliScenario,
+  type CliScenarioOptions,
+  type CliScenarioResult,
+} from "./cli-scenario";
 
 const tempDirs: string[] = [];
 
@@ -25,16 +30,6 @@ function isolatedEnv(dir = makeTempDir("kesha-cli-contract-")): Record<string, s
     KESHA_CACHE_DIR: join(dir, "cache"),
     KESHA_STATS_DB: join(dir, "stats.sqlite"),
   };
-}
-
-function installFakeDiarizeModel(cacheDir: string): void {
-  const model = join(cacheDir, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
-  const weights = join(model, "Data", "com.apple.CoreML", "weights");
-  mkdirSync(weights, { recursive: true });
-  writeFileSync(join(model, "Manifest.json"), "{}");
-  writeFileSync(join(model, "Data", "com.apple.CoreML", "model.mlmodel"), "model");
-  writeFileSync(join(weights, "0-weight.bin"), "0");
-  writeFileSync(join(weights, "1-weight.bin"), "1");
 }
 
 function createFakeEngine(dir: string): string {

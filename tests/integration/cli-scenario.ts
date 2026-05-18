@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "fs";
-import { delimiter, dirname } from "path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { delimiter, dirname, join } from "path";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
 const DEFAULT_TIMEOUT_MS = 4_000;
@@ -45,6 +45,16 @@ export interface CliScenarioOptions {
   trimOutput?: boolean;
   artifacts?: Array<string | CliScenarioArtifactRequest>;
   maxArtifactBytes?: number;
+}
+
+export function installFakeDiarizeModel(cacheDir: string): void {
+  const model = join(cacheDir, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
+  const weights = join(model, "Data", "com.apple.CoreML", "weights");
+  mkdirSync(weights, { recursive: true });
+  writeFileSync(join(model, "Manifest.json"), "{}");
+  writeFileSync(join(model, "Data", "com.apple.CoreML", "model.mlmodel"), "model");
+  writeFileSync(join(weights, "0-weight.bin"), "0");
+  writeFileSync(join(weights, "1-weight.bin"), "1");
 }
 
 export async function runCliScenario(
