@@ -81,7 +81,8 @@ _kesha() {
       ;;
     stats)
       _arguments '--help[Show help]' \
-        '-h[Show help]'
+        '-h[Show help]' \
+        '--format=[Export format: json | csv]:format:'
       ;;
     status)
       _arguments '--help[Show help]' \

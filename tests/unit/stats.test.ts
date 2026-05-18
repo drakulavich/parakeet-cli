@@ -7,13 +7,17 @@ import {
   createStatsRecorder,
   disableStats,
   enableStats,
+  exportStats,
   getRecentErrors,
   getStatsStatus,
   getWeekSummary,
   renderErrors,
   renderWeekSummary,
+  resetStats,
   resolveStatsDbPath,
   sanitizeStatsError,
+  setStatsRetentionDays,
+  vacuumStats,
 } from "../../src/stats";
 
 describe("stats storage", () => {
@@ -40,6 +44,7 @@ describe("stats storage", () => {
     expect(status.enabled).toBe(false);
     expect(status.exists).toBe(false);
     expect(status.runCount).toBe(0);
+    expect(status.retentionDays).toBe(90);
   });
 
   test("enable and disable are idempotent and preserve the database", () => {
@@ -162,6 +167,128 @@ describe("stats storage", () => {
     expect(rendered).toContain("transcribe failed, 2 item(s), 5s | transcribe 3s failed");
     expect(rendered).not.toContain("secret");
   });
+
+  test("exports content-free JSON and CSV", () => {
+    enableStats();
+    const secretPath = `${dir}/private-recording.wav`;
+    seedStatsRun({
+      command: "transcribe",
+      status: "failed",
+      startedAt: "2026-05-16T10:00:00.000Z",
+      finishedAt: "2026-05-16T10:00:01.000Z",
+      itemCount: 1,
+      stages: [{ stage: "transcribe", durationMs: 100, status: "failed" }],
+      inputArtifact: { format: "wav", sizeBytes: 1234, durationMs: 2000 },
+      error: new Error(`${secretPath} failed with {"text":"private words"}`),
+    });
+
+    const json = exportStats("json");
+    const parsed = JSON.parse(json);
+    expect(parsed.privacy.contentFree).toBe(true);
+    expect(parsed.privacy.neverStored).toContain("transcripts");
+    expect(parsed.runs).toHaveLength(1);
+    expect(parsed.artifacts[0]).toMatchObject({ kind: "input_audio", format: "wav", sizeBytes: 1234 });
+    expect(json).not.toContain(secretPath);
+    expect(json).not.toContain("private-recording.wav");
+    expect(json).not.toContain("private words");
+
+    const csv = exportStats("csv");
+    expect(csv).toContain("table,id,run_id");
+    expect(csv).toContain("runs,");
+    expect(csv).toContain("artifacts,");
+    expect(csv).toContain("stage_timings,");
+    expect(csv).toContain("errors,");
+    expect(csv).not.toContain(secretPath);
+    expect(csv).not.toContain("private-recording.wav");
+    expect(csv).not.toContain("private words");
+  });
+
+  test("reset deletes stats records but preserves settings", () => {
+    enableStats();
+    setStatsRetentionDays(30);
+    seedStatsRun({
+      command: "say",
+      status: "success",
+      startedAt: "2026-05-16T10:00:00.000Z",
+      finishedAt: "2026-05-16T10:00:01.000Z",
+      itemCount: 1,
+      stages: [{ stage: "tts", durationMs: 100, status: "success" }],
+    });
+
+    const result = resetStats();
+    const status = getStatsStatus();
+
+    expect(result.runs).toBe(1);
+    expect(result.stageTimings).toBe(1);
+    expect(status.enabled).toBe(true);
+    expect(status.retentionDays).toBe(30);
+    expect(status.runCount).toBe(0);
+  });
+
+  test("reset is a no-op before the database exists", () => {
+    const result = resetStats();
+
+    expect(result).toEqual({ runs: 0, artifacts: 0, stageTimings: 0, errors: 0 });
+    expect(existsSync(resolveStatsDbPath())).toBe(false);
+  });
+
+  test("retention prunes old runs before recording new stats", () => {
+    enableStats();
+    setStatsRetentionDays(7);
+    seedStatsRun({
+      command: "transcribe",
+      status: "success",
+      startedAt: "2020-01-01T00:00:00.000Z",
+      finishedAt: "2020-01-01T00:00:01.000Z",
+      itemCount: 1,
+      stages: [{ stage: "transcribe", durationMs: 100, status: "success" }],
+      inputArtifact: { format: "wav", sizeBytes: 100, durationMs: 1000 },
+    });
+    seedStatsRun({
+      command: "say",
+      status: "success",
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      itemCount: 1,
+      stages: [{ stage: "tts", durationMs: 100, status: "success" }],
+    });
+
+    const recorder = createStatsRecorder("say");
+    recorder.finish("success", 1);
+
+    const exported = JSON.parse(exportStats("json"));
+    expect(exported.runs.map((run: { command: string }) => run.command)).not.toContain("transcribe");
+    expect(exported.artifacts).toHaveLength(0);
+    expect(getStatsStatus().retentionDays).toBe(7);
+  });
+
+  test("vacuum returns database size information", () => {
+    enableStats();
+    seedStatsRun({
+      command: "say",
+      status: "success",
+      startedAt: "2026-05-16T10:00:00.000Z",
+      finishedAt: "2026-05-16T10:00:01.000Z",
+      itemCount: 1,
+      stages: [{ stage: "tts", durationMs: 100, status: "success" }],
+    });
+
+    const result = vacuumStats();
+
+    expect(result.dbPath).toBe(resolveStatsDbPath());
+    expect(result.beforeBytes).toBeGreaterThan(0);
+    expect(result.afterBytes).toBeGreaterThan(0);
+    expect(getStatsStatus().runCount).toBe(1);
+  });
+
+  test("vacuum is a no-op before the database exists", () => {
+    const result = vacuumStats();
+
+    expect(result.dbPath).toBe(resolveStatsDbPath());
+    expect(result.beforeBytes).toBe(0);
+    expect(result.afterBytes).toBe(0);
+    expect(existsSync(resolveStatsDbPath())).toBe(false);
+  });
 });
 
 describe("sanitizeStatsError", () => {
@@ -187,6 +314,7 @@ function seedStatsRun(input: {
   itemCount: number;
   stages: Array<{ stage: string; durationMs: number; status: "success" | "failed" }>;
   inputArtifact?: { format: string; sizeBytes: number; durationMs: number };
+  error?: Error;
 }): void {
   const db = new Database(resolveStatsDbPath());
   try {
@@ -211,6 +339,15 @@ function seedStatsRun(input: {
           (run_id, stage, started_at, duration_ms, status)
          values (?, ?, ?, ?, ?)`,
       ).run(run.id, stage.stage, input.startedAt, stage.durationMs, stage.status);
+    }
+
+    if (input.error) {
+      const { errorClass, message } = sanitizeStatsError(input.error);
+      db.query(
+        `insert into errors
+          (run_id, stage, error_class, error_code, sanitized_message, occurred_at)
+         values (?, 'transcribe', ?, 'failed', ?, ?)`,
+      ).run(run.id, errorClass, message, input.startedAt);
     }
   } finally {
     db.close();
