@@ -35,6 +35,7 @@ describe("shell artifacts (#344 P2)", () => {
   test("manpage documents generated completion files", () => {
     const manpage = readFileSync("man/kesha.1", "utf8");
     expect(manpage).toContain(".TH KESHA 1");
+    expect(manpage).not.toContain(".BR kesha (1)");
     expect(manpage).toContain("completions/kesha.bash");
     expect(manpage).toContain("completions/kesha.zsh");
     expect(manpage).toContain("completions/kesha.fish");

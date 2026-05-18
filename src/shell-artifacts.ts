@@ -253,6 +253,12 @@ function roff(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/-/g, "\\-");
 }
 
+function manpageDate(): string {
+  const now = new Date();
+  const month = now.toLocaleString("en-US", { month: "long" });
+  return `${month} ${now.getFullYear()}`;
+}
+
 function renderManpage(model: ArtifactModel): string {
   const commandSections = model.commands
     .map((command) => `.TP\n.B ${command.name}\n${roff(command.description)}`)
@@ -270,7 +276,7 @@ function renderManpage(model: ArtifactModel): string {
     })
     .join("\n");
 
-  return `.TH KESHA 1 "May 2026" "kesha ${packageVersion}" "User Commands"
+  return `.TH KESHA 1 "${manpageDate()}" "kesha ${packageVersion}" "User Commands"
 .SH NAME
 kesha \\- open-source local voice toolkit
 .SH SYNOPSIS
@@ -298,7 +304,6 @@ Zsh completion script included in the npm package.
 .B completions/kesha.fish
 Fish completion script included in the npm package.
 .SH SEE ALSO
-.BR kesha (1),
 .BR bun (1)
 `;
 }
