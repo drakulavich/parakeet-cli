@@ -8,6 +8,7 @@ The product promise is not "one model for every audio problem." The promise is a
 
 - Developers and agent builders who need local speech-to-text for voice messages, meetings, support clips, or batch audio files.
 - OpenClaw users who want private, low-latency voice-message transcription through a CLI model route.
+- Hermes Agent users who want command-provider STT/TTS without cloud audio uploads.
 - macOS users who want the fastest path on Apple Silicon through CoreML, with a CPU/ONNX fallback on Linux and Windows.
 - Automation-heavy users who prefer stdout/stderr contracts, JSON/TOON output, and shell-friendly commands over a hosted dashboard.
 - Projects that can accept explicit model downloads and local cache management in exchange for no API keys and no cloud audio upload.
@@ -24,6 +25,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Use macOS system voices without model downloads | Stable on macOS | `kesha say --voice macos-*` |
 | Label speakers in meeting transcripts | Preview, darwin-arm64 only | `kesha --json --vad --speakers meeting.m4a` |
 | Integrate with OpenClaw as a local voice model | Stable integration surface, user-configured route | `docs/openclaw.md` |
+| Integrate with Hermes Agent as local STT/TTS commands | Stable CLI surface, user-configured route | `docs/hermes.md` |
 | Use Raycast actions for selected-file transcription or clipboard speech | Beta, macOS only | `raycast/` extension |
 | Install through Nix instead of Bun/npm | Beta, selected systems | `docs/nix-install.md` |
 
@@ -51,6 +53,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Speaker diarization | Preview | darwin-arm64 only; cluster IDs are stable within one file only. |
 | Raycast extension | Beta | Convenience UI over the CLI; macOS-only. |
 | OpenClaw plugin | Stable integration surface | Discovery is packaged; actual audio route remains explicit user config. |
+| Hermes Agent command provider | Stable CLI surface | Hermes owns the command-provider lifecycle; Kesha supplies the local STT/TTS commands. |
 | Nix flake | Beta | Reproducible alternate install path for selected systems; Bun/npm remains canonical. |
 
 ## Platform matrix
@@ -66,6 +69,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Speaker diarization | Preview, darwin-arm64 only | Not supported | Not supported | Not supported | Not wired into the Nix build yet |
 | Raycast extension | Supported | Not shipped | Not applicable | Not applicable | Not applicable |
 | OpenClaw integration | Supported through CLI route | Not shipped | Supported through CLI route | Supported through CLI route | Use the installed `kesha` command from the chosen path |
+| Hermes Agent integration | Supported through command providers | Not shipped | Supported through command providers | Supported through command providers | Use the installed `kesha` command from the chosen path |
 
 `macOS x64` means Intel Macs. Kesha does not currently publish a `darwin-x64` engine binary, so Intel Macs are intentionally marked as not shipped rather than implied to use the ONNX fallback.
 

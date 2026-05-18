@@ -297,6 +297,7 @@ Audio decoding via [symphonia](https://github.com/pdeljanov/Symphonia) — WAV, 
 ## Integrations
 
 - **OpenClaw** — give your LLM agent ears. Install & config: [docs/openclaw.md](docs/openclaw.md).
+- **Hermes Agent** — local STT/TTS through Hermes command providers. Setup: [docs/hermes.md](docs/hermes.md).
 - **Raycast** (macOS) — transcribe selected audio & speak clipboard from the launcher. Source + install: [`raycast/`](raycast/).
 
 ## Programmatic API
