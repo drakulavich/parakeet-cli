@@ -225,6 +225,13 @@ describe("stats storage", () => {
     expect(status.runCount).toBe(0);
   });
 
+  test("reset is a no-op before the database exists", () => {
+    const result = resetStats();
+
+    expect(result).toEqual({ runs: 0, artifacts: 0, stageTimings: 0, errors: 0 });
+    expect(existsSync(resolveStatsDbPath())).toBe(false);
+  });
+
   test("retention prunes old runs before recording new stats", () => {
     enableStats();
     setStatsRetentionDays(7);
@@ -272,6 +279,15 @@ describe("stats storage", () => {
     expect(result.beforeBytes).toBeGreaterThan(0);
     expect(result.afterBytes).toBeGreaterThan(0);
     expect(getStatsStatus().runCount).toBe(1);
+  });
+
+  test("vacuum is a no-op before the database exists", () => {
+    const result = vacuumStats();
+
+    expect(result.dbPath).toBe(resolveStatsDbPath());
+    expect(result.beforeBytes).toBe(0);
+    expect(result.afterBytes).toBe(0);
+    expect(existsSync(resolveStatsDbPath())).toBe(false);
   });
 });
 

@@ -230,12 +230,27 @@ export interface StatsResetResult {
 }
 
 export function resetStats(): StatsResetResult {
-  const db = openStatsDatabase(resolveStatsDbPath());
+  const dbPath = resolveStatsDbPath();
+  if (!existsSync(dbPath)) {
+    return { runs: 0, artifacts: 0, stageTimings: 0, errors: 0 };
+  }
+  const db = openStatsDatabase(dbPath);
   try {
-    const artifacts = runChanges(db, "delete from artifacts");
-    const stageTimings = runChanges(db, "delete from stage_timings");
-    const errors = runChanges(db, "delete from errors");
-    const runs = runChanges(db, "delete from runs");
+    let artifacts = 0;
+    let stageTimings = 0;
+    let errors = 0;
+    let runs = 0;
+    db.exec("begin");
+    try {
+      artifacts = runChanges(db, "delete from artifacts");
+      stageTimings = runChanges(db, "delete from stage_timings");
+      errors = runChanges(db, "delete from errors");
+      runs = runChanges(db, "delete from runs");
+      db.exec("commit");
+    } catch (err) {
+      db.exec("rollback");
+      throw err;
+    }
     return { runs, artifacts, stageTimings, errors };
   } finally {
     db.close();
@@ -251,6 +266,13 @@ export interface StatsVacuumResult {
 export function vacuumStats(): StatsVacuumResult {
   const dbPath = resolveStatsDbPath();
   const beforeBytes = fileSize(dbPath);
+  if (!existsSync(dbPath)) {
+    return {
+      dbPath,
+      beforeBytes,
+      afterBytes: 0,
+    };
+  }
   const db = openStatsDatabase(dbPath);
   try {
     db.exec("pragma wal_checkpoint(TRUNCATE)");
