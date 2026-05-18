@@ -41,7 +41,7 @@
     "test:integration": "bun test tests/integration/",
     "coverage:ts": "bun run test:cli-fast --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage/ts",
     "coverage:check:ts": "bun .github/scripts/check-coverage.ts --preset=ts --lcov=coverage/ts/lcov.info --summary=coverage/ts/summary.md",
-    "coverage:rust": "mkdir -p coverage/rust && cd rust && cargo llvm-cov nextest --features tts --lcov --output-path ../coverage/rust/lcov.info",
+    "coverage:rust": "mkdir -p coverage/rust && cd rust && NEXTEST_PROFILE=ci cargo llvm-cov nextest --features tts --lcov --output-path ../coverage/rust/lcov.info",
     "coverage:check:rust": "bun .github/scripts/check-coverage.ts --preset=rust --lcov=coverage/rust/lcov.info --summary=coverage/rust/summary.md",
     "generate:shell-artifacts": "bun scripts/generate-shell-artifacts.ts",
     "lint": "bunx tsc --noEmit",

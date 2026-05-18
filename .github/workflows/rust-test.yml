@@ -13,6 +13,26 @@ permissions:
   contents: read
 
 jobs:
+  lint-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Install system audio deps (Opus)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+      - name: Check formatting
+        run: cd rust && cargo fmt -- --check
+
+      - name: Clippy
+        run: bash rust/ci/run-clippy.sh Linux
+
   test:
     permissions:
       contents: read
@@ -24,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        os: [macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
@@ -89,19 +109,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
-
-      # Fail-fast ladder: cheap-to-fail checks first so a typo in fmt
-      # doesn't burn 30 minutes of cargo test before surfacing. fmt
-      # (~5s) → clippy (~30s on warm cache) → coreml check (~5min) →
-      # Kokoro model download + cargo test (~10-30min).
-
-      - name: Check formatting
-        if: matrix.os == 'ubuntu-latest'
-        run: cd rust && cargo fmt -- --check
-
-      - name: Clippy
-        if: matrix.os == 'ubuntu-latest'
-        run: bash rust/ci/run-clippy.sh "${{ runner.os }}"
 
       # Guard against coreml-backend rot: v1.0.0 shipped with broken
       # coreml code because no PR CI job ever tried to build it.
