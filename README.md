@@ -267,7 +267,7 @@ macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tt
 
 ## Performance
 
-> **Up to ~19x faster than Whisper** on Apple Silicon (M3 Pro), **~2.5x faster** on CPU
+> **Up to ~19x faster than Whisper** on Apple Silicon (M2), **~2.5x faster** on CPU
 
 Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
