@@ -8,6 +8,7 @@ mod cli;
 mod debug;
 mod lang_id;
 mod models;
+mod record;
 #[cfg(feature = "tts")]
 mod say_loop;
 mod text_lang;
@@ -60,6 +61,15 @@ enum Commands {
     DetectTextLang {
         /// Text to analyze
         text: String,
+    },
+    /// Record microphone audio to a WAV file
+    Record {
+        /// Output WAV file
+        #[arg(long)]
+        out: std::path::PathBuf,
+        /// Maximum recording duration in seconds
+        #[arg(long = "max-seconds", default_value_t = 120)]
+        max_seconds: u64,
     },
     /// Download models
     Install {
@@ -167,6 +177,7 @@ fn main() -> Result<()> {
         }) => cli::transcribe::run(audio_path, json, vad, no_vad, speakers)?,
         Some(Commands::DetectLang { audio_path }) => cli::detect_lang::run(audio_path)?,
         Some(Commands::DetectTextLang { text }) => cli::detect_text_lang::run(text)?,
+        Some(Commands::Record { out, max_seconds }) => cli::record::run(out, max_seconds)?,
         Some(Commands::Install {
             no_cache,
             #[cfg(feature = "tts")]

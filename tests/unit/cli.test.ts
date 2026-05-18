@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveRecordArgs } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -70,6 +70,7 @@ describe("CLI help", () => {
     expect(usage).toContain("doctor     Collect support diagnostics.");
     expect(usage).toContain("install    Download engine and models.");
     expect(usage).toContain("manpage");
+    expect(usage).toContain("record     Record microphone audio to a WAV file.");
     expect(usage).toContain("status     Inspect installed backend.");
     expect(usage).toContain("say        Synthesize speech from text.");
     expect(usage).toContain("stats      Manage local anonymous performance stats.");
@@ -153,6 +154,13 @@ describe("CLI help", () => {
     expect(usage).toContain("Show backend installation status");
   });
 
+  test("record help contains output and duration options", async () => {
+    const usage = await renderUsage(recordCommand);
+    expect(usage).toContain("record");
+    expect(usage).toContain("--out");
+    expect(usage).toContain("--max-seconds");
+  });
+
   test("stats help has command description", async () => {
     const usage = await renderUsage(statsCommand);
     expect(usage).toContain("stats");
@@ -178,6 +186,38 @@ describe("main command validation side effects", () => {
   });
 });
 
+describe("record command validation", () => {
+  test("requires --out", () => {
+    expect(resolveRecordArgs({})).toEqual({
+      ok: false,
+      error: "kesha record requires --out <path>.",
+    });
+  });
+
+  test("normalizes default max seconds", () => {
+    expect(resolveRecordArgs({ out: "mic.wav" })).toEqual({
+      ok: true,
+      out: "mic.wav",
+      maxSeconds: 120,
+    });
+  });
+
+  test("rejects invalid max seconds", () => {
+    expect(resolveRecordArgs({ out: "mic.wav", "max-seconds": "0" })).toEqual({
+      ok: false,
+      error: "--max-seconds must be an integer between 1 and 3600.",
+    });
+    expect(resolveRecordArgs({ out: "mic.wav", "max-seconds": "1.5" })).toEqual({
+      ok: false,
+      error: "--max-seconds must be an integer between 1 and 3600.",
+    });
+    expect(resolveRecordArgs({ out: "mic.wav", "max-seconds": "nope" })).toEqual({
+      ok: false,
+      error: "--max-seconds must be a finite number.",
+    });
+  });
+});
+
 describe("CLI help golden contracts (#324 P1)", () => {
   test("normalizer replaces every rendered version token", () => {
     expect(normalizeUsage("first (kesha v1.18.0)\nsecond (kesha v1.18.1-cli)")).toBe(
@@ -193,6 +233,7 @@ Commands:
   doctor     Collect support diagnostics.
   install    Download engine and models.
   manpage    Print the kesha(1) manpage.
+  record     Record microphone audio to a WAV file.
   status     Inspect installed backend.
   say        Synthesize speech from text.
   stats      Manage local anonymous performance stats.

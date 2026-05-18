@@ -7,6 +7,8 @@ export { doctorCommand } from "./cli/doctor";
 export { completionsCommand } from "./cli/completions";
 export { installCommand } from "./cli/install";
 export { manpageCommand } from "./cli/manpage";
+export { recordCommand, resolveRecordArgs } from "./cli/record";
+export type { ResolvedRecordArgs } from "./cli/record";
 export { sayCommand } from "./cli/say";
 export { pickVoiceForLang } from "./voice-routing";
 export { statusCommand } from "./cli/status";

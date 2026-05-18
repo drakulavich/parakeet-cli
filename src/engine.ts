@@ -251,6 +251,21 @@ export async function transcribeEngineWithSegments(
   }
 }
 
+export async function recordEngine(outPath: string, maxSeconds: number): Promise<void> {
+  const binPath = getEngineBinPath();
+  const args = ["record", "--out", outPath, "--max-seconds", String(maxSeconds)];
+  const startedAt = performance.now();
+  log.debug(`spawn ${binPath} ${args.join(" ")}`);
+  const proc = Bun.spawn([binPath, ...args], {
+    stdio: spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
+  });
+  const exitCode = await proc.exited;
+  log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
+  if (exitCode !== 0) {
+    throw new Error(`kesha-engine record exited with code ${exitCode}`);
+  }
+}
+
 export function parseLangResult(stdout: string): LangDetectResult | null {
   try {
     const parsed = JSON.parse(stdout);
