@@ -1,6 +1,7 @@
 import { log } from "./log";
 
 const BAR_WIDTH = 20;
+const ACTIVITY_PULSE_WIDTH = 5;
 
 export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
@@ -12,6 +13,80 @@ export function formatProgressBar(label: string, downloaded: number, total: numb
   const empty = BAR_WIDTH - filled;
   const bar = "█".repeat(filled) + "░".repeat(empty);
   return `${label}  [${bar}] ${pct}%  ${formatBytes(downloaded)}/${formatBytes(total)}`;
+}
+
+export function formatActivityProgress(label: string, elapsedMs: number, frame: number): string {
+  const range = BAR_WIDTH + ACTIVITY_PULSE_WIDTH;
+  const pulseEnd = frame % range;
+  const pulseStart = pulseEnd - ACTIVITY_PULSE_WIDTH;
+  const bar = Array.from({ length: BAR_WIDTH }, (_, i) =>
+    i >= pulseStart && i < pulseEnd ? "█" : "░",
+  ).join("");
+  return `${label}  [${bar}] ${formatElapsed(elapsedMs)}`;
+}
+
+function formatElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m${seconds.toString().padStart(2, "0")}s` : `${seconds}s`;
+}
+
+export function createActivityProgress(
+  label: string,
+  options: { intervalMs?: number } = {},
+): {
+  finish(finalMessage: string): void;
+  stop(): void;
+} {
+  const isTTY = process.stderr.isTTY;
+
+  if (!isTTY) {
+    process.stderr.write(`${label}...\n`);
+    return {
+      finish(finalMessage: string) {
+        process.stderr.write(`${finalMessage}\n`);
+      },
+      stop() {},
+    };
+  }
+
+  const intervalMs = options.intervalMs ?? 250;
+  const startedAt = performance.now();
+  let frame = 1;
+  let lastLineLength = 0;
+  let timer: Timer | undefined;
+
+  const render = () => {
+    const line = formatActivityProgress(label, performance.now() - startedAt, frame);
+    frame += 1;
+    lastLineLength = line.length;
+    process.stderr.write(`\r${line}`);
+  };
+
+  const clearLine = () => {
+    if (timer) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+    if (lastLineLength > 0) {
+      process.stderr.write(`\r${" ".repeat(lastLineLength)}\r`);
+      lastLineLength = 0;
+    }
+  };
+
+  render();
+  timer = setInterval(render, intervalMs);
+
+  return {
+    finish(finalMessage: string) {
+      clearLine();
+      process.stderr.write(`${finalMessage}\n`);
+    },
+    stop() {
+      clearLine();
+    },
+  };
 }
 
 export async function streamResponseToFile(

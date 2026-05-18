@@ -15,6 +15,7 @@ import {
 import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, createStatsRecorder } from "../stats";
+import { createActivityProgress } from "../progress";
 
 interface MainCommandArgs {
   _: string[];
@@ -242,7 +243,7 @@ export const mainCommand = defineCommand({
     const stats = createStatsRecorder("transcribe");
 
     const wantsLangId = !!(args.lang || args.verbose || wantsJson || wantsToon || wantsTranscript);
-    const reportProgress = process.stdout.isTTY !== true;
+    const reportProgress = process.stderr.isTTY === true || process.stdout.isTTY !== true;
 
     for (const file of files) {
       if (!existsSync(file)) {
@@ -256,10 +257,9 @@ export const mainCommand = defineCommand({
       if (inputArtifact) stats.recordArtifact(inputArtifact);
 
       const startedAt = performance.now();
+      let progress: ReturnType<typeof createActivityProgress> | null = null;
       try {
-        if (reportProgress) {
-          console.error(`Transcribing ${file}...`);
-        }
+        progress = reportProgress ? createActivityProgress(`Transcribing ${file}`) : null;
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([
           wantsLangId
@@ -309,10 +309,9 @@ export const mainCommand = defineCommand({
           result.segments = segments;
         }
         results.push(result);
-        if (reportProgress) {
-          console.error(`Transcribed ${file} (${sttTimeMs}ms)`);
-        }
+        progress?.finish(`Transcribed ${file} (${sttTimeMs}ms)`);
       } catch (err: unknown) {
+        progress?.stop();
         hasError = true;
         stats.recordError("transcribe", err);
         const message = err instanceof Error ? err.message : String(err);

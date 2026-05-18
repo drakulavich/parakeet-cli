@@ -1,5 +1,11 @@
 import { describe, test, expect } from "bun:test";
-import { formatProgressBar, formatBytes } from "../../src/progress";
+import {
+  createActivityProgress,
+  createProgressBar,
+  formatActivityProgress,
+  formatProgressBar,
+  formatBytes,
+} from "../../src/progress";
 
 describe("formatBytes", () => {
   test("formats bytes to MB", () => {
@@ -47,7 +53,66 @@ describe("formatProgressBar", () => {
   });
 });
 
-import { createProgressBar } from "../../src/progress";
+describe("formatActivityProgress", () => {
+  test("renders an indeterminate activity bar with elapsed time", () => {
+    const bar = formatActivityProgress("Transcribing workshop.mp4", 65_000, 7);
+    expect(bar).toContain("Transcribing workshop.mp4");
+    expect(bar).toContain("[");
+    expect(bar).toContain("1m05s");
+    expect(bar).toContain("█");
+    expect(bar).toContain("░");
+  });
+});
+
+describe("createActivityProgress", () => {
+  test("non-TTY mode writes stable log lines", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    const writes: string[] = [];
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const progress = createActivityProgress("Transcribing file.wav");
+      progress.finish("Transcribed file.wav (123ms)");
+
+      expect(writes.join("")).toContain("Transcribing file.wav...\n");
+      expect(writes.join("")).toContain("Transcribed file.wav (123ms)\n");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
+
+  test("TTY mode clears the live bar and writes the final line", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    const writes: string[] = [];
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const progress = createActivityProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      progress.finish("Transcribed file.wav (123ms)");
+
+      const combined = writes.join("");
+      expect(combined).toContain("Transcribing file.wav");
+      expect(combined).toContain("Transcribed file.wav (123ms)\n");
+      expect(combined).toContain("\r");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
+});
 
 describe("createProgressBar", () => {
   test("non-TTY mode calls log functions", () => {
