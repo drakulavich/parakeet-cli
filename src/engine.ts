@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "fs";
+import { join } from "path";
 import { log } from "./log";
-import { defaultEngineBinPath } from "./paths";
+import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 
 /**
  * Capability-flag string surfaced via `kesha-engine --capabilities-json`. Single
@@ -141,6 +142,54 @@ export interface TranscribeEngineOptions {
   speakers?: boolean;
 }
 
+function defaultDiarizeModelPath(): string {
+  return join(keshaCacheDir(), "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
+}
+
+function hasDiarizeModelLayout(modelPath: string): boolean {
+  return (
+    existsSync(join(modelPath, "Manifest.json")) &&
+    existsSync(join(modelPath, "Data", "com.apple.CoreML", "model.mlmodel")) &&
+    existsSync(join(modelPath, "Data", "com.apple.CoreML", "weights", "0-weight.bin")) &&
+    existsSync(join(modelPath, "Data", "com.apple.CoreML", "weights", "1-weight.bin"))
+  );
+}
+
+export async function preflightTranscribeEngineWithSegments(
+  opts: TranscribeEngineOptions = {},
+): Promise<void> {
+  const caps = await getEngineCapabilities();
+  if (!caps?.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
+    throw new Error(
+      "Timestamped segments require a newer kesha-engine. Run `kesha install` after upgrading Kesha Voice Kit.",
+    );
+  }
+
+  if (!opts.speakers) return;
+
+  if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
+    throw new Error(
+      "speaker diarization is currently darwin-arm64 only " +
+        "(see https://github.com/drakulavich/kesha-voice-kit/issues/199)",
+    );
+  }
+
+  const envPath = process.env.KESHA_DIARIZE_MODEL_PATH;
+  if (envPath !== undefined) {
+    if (existsSync(envPath)) return;
+    throw new Error(
+      `speaker diarization requires a model path\n\nCaused by:\n    KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
+    );
+  }
+
+  const modelPath = defaultDiarizeModelPath();
+  if (hasDiarizeModelLayout(modelPath)) return;
+  throw new Error(
+    `speaker diarization requires a model path\n\nCaused by:\n    diarization model not found at ${modelPath}. ` +
+      "Run `kesha install --diarize` (or set KESHA_DIARIZE_MODEL_PATH).",
+  );
+}
+
 export async function transcribeEngine(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
@@ -182,23 +231,12 @@ export async function transcribeEngineWithSegments(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
 ): Promise<TranscriptionOutput> {
-  const caps = await getEngineCapabilities();
-  if (!caps?.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
-    throw new Error(
-      "Timestamped segments require a newer kesha-engine. Run `kesha install` after upgrading Kesha Voice Kit.",
-    );
-  }
+  await preflightTranscribeEngineWithSegments(opts);
 
   const args = ["transcribe", audioPath, "--json"];
   if (opts.vad === "on") args.push("--vad");
   else if (opts.vad === "off") args.push("--no-vad");
   if (opts.speakers) {
-    if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
-      throw new Error(
-        "speaker diarization is currently darwin-arm64 only " +
-          "(see https://github.com/drakulavich/kesha-voice-kit/issues/199)",
-      );
-    }
     args.push("--speakers");
   }
   const { stdout, stderr, exitCode } = await runEngine(args);
@@ -233,6 +271,7 @@ export async function detectAudioLanguageEngine(audioPath: string): Promise<Lang
 }
 
 export async function detectTextLanguageEngine(text: string): Promise<LangDetectResult | null> {
+  if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
   const { stdout, exitCode } = await runEngine(["detect-text-lang", text]);
   if (exitCode !== 0) return null;

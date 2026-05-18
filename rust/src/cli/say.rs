@@ -167,6 +167,19 @@ pub fn run(a: SayArgs) -> i32 {
         return say_loop::run();
     }
 
+    let format = match resolve_output_format(
+        a.format.as_deref(),
+        a.bitrate,
+        a.sample_rate,
+        a.out.as_deref(),
+    ) {
+        Ok(f) => f,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            return 2;
+        }
+    };
+
     let text_joined = match a.text {
         Some(s) => s,
         None => {
@@ -178,6 +191,21 @@ pub fn run(a: SayArgs) -> i32 {
             buf.trim().to_string()
         }
     };
+
+    if text_joined.is_empty() {
+        let err = tts::TtsError::EmptyText;
+        eprintln!("error: {err}");
+        return exit_code_for_tts_err(&err);
+    }
+    let len = text_joined.chars().count();
+    if len > tts::MAX_TEXT_CHARS {
+        let err = tts::TtsError::TextTooLong {
+            max: tts::MAX_TEXT_CHARS,
+            actual: len,
+        };
+        eprintln!("error: {err}");
+        return exit_code_for_tts_err(&err);
+    }
 
     // `--model` + `--voice-file` are Kokoro-specific testing overrides.
     // Pinned model/voice paths bypass the cache lookup.
@@ -239,19 +267,6 @@ pub fn run(a: SayArgs) -> i32 {
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
             tts::EngineChoice::AVSpeech { voice_id }
-        }
-    };
-
-    let format = match resolve_output_format(
-        a.format.as_deref(),
-        a.bitrate,
-        a.sample_rate,
-        a.out.as_deref(),
-    ) {
-        Ok(f) => f,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            return 2;
         }
     };
 

@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use super::TranscriptionSegment;
 
@@ -21,6 +22,15 @@ pub(crate) struct DiarizeSpan {
 #[derive(Debug, Deserialize)]
 struct SidecarOutput {
     spans: Vec<DiarizeSpan>,
+}
+
+fn diarize_timeout() -> Duration {
+    let secs = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .unwrap_or(90);
+    Duration::from_secs(secs)
 }
 
 /// Resolve the sidecar path. Sibling-of-engine first (release layout
@@ -53,13 +63,42 @@ fn sidecar_path() -> Result<PathBuf> {
 /// using the diarization model at `model_path`. Returns the parsed span list.
 pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpan>> {
     let sidecar = sidecar_path()?;
-    let output = Command::new(&sidecar)
+    let mut child = Command::new(&sidecar)
         .arg(audio_path)
         .arg(model_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .with_context(|| format!("failed to spawn {}", sidecar.display()))?;
+
+    let timeout = diarize_timeout();
+    let started = Instant::now();
+    loop {
+        if child
+            .try_wait()
+            .with_context(|| format!("failed to poll {}", sidecar.display()))?
+            .is_some()
+        {
+            break;
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let output = child
+                .wait_with_output()
+                .with_context(|| format!("failed to collect timed-out {}", sidecar.display()))?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "kesha-diarize timed out after {}s: {}",
+                timeout.as_secs(),
+                stderr.trim()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("failed to collect {}", sidecar.display()))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

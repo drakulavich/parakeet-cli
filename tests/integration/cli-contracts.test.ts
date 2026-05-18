@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { runCliScenario, type CliScenarioOptions, type CliScenarioResult } from "./cli-scenario";
@@ -25,6 +25,16 @@ function isolatedEnv(dir = makeTempDir("kesha-cli-contract-")): Record<string, s
     KESHA_CACHE_DIR: join(dir, "cache"),
     KESHA_STATS_DB: join(dir, "stats.sqlite"),
   };
+}
+
+function installFakeDiarizeModel(cacheDir: string): void {
+  const model = join(cacheDir, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
+  const weights = join(model, "Data", "com.apple.CoreML", "weights");
+  mkdirSync(weights, { recursive: true });
+  writeFileSync(join(model, "Manifest.json"), "{}");
+  writeFileSync(join(model, "Data", "com.apple.CoreML", "model.mlmodel"), "model");
+  writeFileSync(join(weights, "0-weight.bin"), "0");
+  writeFileSync(join(weights, "1-weight.bin"), "1");
 }
 
 function createFakeEngine(dir: string): string {
@@ -273,6 +283,7 @@ describe("CLI contracts", () => {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
     };
+    installFakeDiarizeModel(env.KESHA_CACHE_DIR);
 
     const json = await runCli([mediaPath, "--json", "--speakers"], { env });
     expectContract(json, {
@@ -294,6 +305,18 @@ describe("CLI contracts", () => {
       end: 1.2,
       text: "Привет с воркшопа",
       speaker: 0,
+    });
+
+    const missingDiarizeEnv: Record<string, string> = {
+      ...isolatedEnv(makeTempDir("kesha-cli-contract-missing-diarize-")),
+      KESHA_ENGINE_BIN: enginePath,
+    };
+    const missingDiarize = await runCli([mediaPath, "--json", "--speakers"], { env: missingDiarizeEnv });
+    expectContract(missingDiarize, {
+      exitCode: 1,
+      stderrContains: ["diarization model not found"],
+      stderrNotContains: ["Transcribing", "Transcribed"],
+      stdoutNotContains: ["Привет с воркшопа"],
     });
 
     const transcript = await runCli([mediaPath, "--format", "transcript"], { env });

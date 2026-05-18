@@ -148,10 +148,11 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
 /// path always builds segments cheaply (per-span boundaries already in
 /// hand from VAD output).
 ///
-/// `opts.with_speakers` triggers the diarization post-step after ASR completes.
-/// On darwin-arm64 with the `system_diarize` feature it invokes
-/// `diarize::run` + `diarize::merge_into`; on all other platforms it returns
-/// a clear error pointing at #199.
+/// `opts.with_speakers` preflights diarization prerequisites before ASR starts,
+/// then runs the diarization post-step after ASR completes. On darwin-arm64
+/// with the `system_diarize` feature it invokes `diarize::run` +
+/// `diarize::merge_into`; on all other platforms it returns a clear error
+/// pointing at #199.
 pub fn transcribe_with_options(
     audio_path: &str,
     opts: &TranscribeOptions,
@@ -183,6 +184,22 @@ pub fn transcribe_with_options(
     // `~/Downloads/assets_demo.webm` + three Zoom m4a samples). Cheap:
     // container-header read only, no frame scan.
     audio::ensure_audio_track(audio_path)?;
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    let diarize_model_path = if speakers_required {
+        Some(resolve_diarize_model_path().context("speaker diarization requires a model path")?)
+    } else {
+        None
+    };
+
+    #[cfg(not(all(feature = "system_diarize", target_os = "macos")))]
+    if speakers_required {
+        anyhow::bail!(
+            "speaker diarization is currently darwin-arm64 only.\n\
+             Tracked at https://github.com/drakulavich/kesha-voice-kit/issues/199.",
+        );
+    }
+
     let model_dir = ensure_asr_installed()?;
     let vad_dir = models::model_dir(models::ModelKind::Vad)
         .to_string_lossy()
@@ -227,21 +244,10 @@ pub fn transcribe_with_options(
     // --- Speaker diarization post-step ---
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     {
-        if speakers_required {
-            let model_path = resolve_diarize_model_path()
-                .context("speaker diarization requires a model path")?;
+        if let Some(model_path) = diarize_model_path {
             let spans = diarize::run(std::path::Path::new(audio_path), &model_path)
                 .context("speaker diarization failed")?;
             output.segments = diarize::merge_into(output.segments, &spans);
-        }
-    }
-    #[cfg(not(all(feature = "system_diarize", target_os = "macos")))]
-    {
-        if speakers_required {
-            anyhow::bail!(
-                "speaker diarization is currently darwin-arm64 only.\n\
-                 Tracked at https://github.com/drakulavich/kesha-voice-kit/issues/199.",
-            );
         }
     }
 
@@ -815,5 +821,76 @@ mod tests {
             msg.contains("with_speakers requires with_segments"),
             "error message must explain the constraint, got: {msg}"
         );
+    }
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    #[test]
+    fn transcribe_with_speakers_checks_diarize_model_before_asr_install() {
+        let _env_lock = env_lock().lock().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let missing_diarize_model = cache.path().join("missing-diarize.mlpackage");
+        let _cache_guard = EnvGuard::set("KESHA_CACHE_DIR", cache.path().to_str().unwrap());
+        let _diarize_guard = EnvGuard::set(
+            "KESHA_DIARIZE_MODEL_PATH",
+            missing_diarize_model.to_str().unwrap(),
+        );
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/hello-english.wav")
+            .to_string_lossy()
+            .into_owned();
+        let opts = TranscribeOptionsBuilder::new()
+            .vad(VadMode::Off)
+            .with_segments()
+            .with_speakers()
+            .build();
+
+        let err = transcribe_with_options(&fixture, &opts)
+            .expect_err("missing diarization model must fail before ASR lookup");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("KESHA_DIARIZE_MODEL_PATH set but path does not exist"),
+            "expected diarization model preflight error, got: {msg}"
+        );
+        assert!(
+            !msg.contains("No transcription models installed"),
+            "diarization preflight must happen before ASR install lookup, got: {msg}"
+        );
+    }
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    struct EnvGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    impl EnvGuard {
+        fn set(key: &'static str, val: &str) -> Self {
+            let original = std::env::var(key).ok();
+            unsafe {
+                std::env::set_var(key, val);
+            }
+            Self { key, original }
+        }
+    }
+
+    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(v) => unsafe {
+                    std::env::set_var(self.key, v);
+                },
+                None => unsafe {
+                    std::env::remove_var(self.key);
+                },
+            }
+        }
     }
 }

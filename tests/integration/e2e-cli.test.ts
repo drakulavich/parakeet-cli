@@ -1,6 +1,6 @@
 import { afterEach, describe, test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { runCliScenario, type CliScenarioResult } from "./cli-scenario";
@@ -18,6 +18,16 @@ function emptyKeshaEnv(): Record<string, string> {
   const dir = mkdtempSync(join(tmpdir(), "kesha-empty-cli-"));
   tempDirs.push(dir);
   return { HOME: dir, KESHA_CACHE_DIR: dir };
+}
+
+function installFakeDiarizeModel(cacheDir: string): void {
+  const model = join(cacheDir, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
+  const weights = join(model, "Data", "com.apple.CoreML", "weights");
+  mkdirSync(weights, { recursive: true });
+  writeFileSync(join(model, "Manifest.json"), "{}");
+  writeFileSync(join(model, "Data", "com.apple.CoreML", "model.mlmodel"), "model");
+  writeFileSync(join(weights, "0-weight.bin"), "0");
+  writeFileSync(join(weights, "1-weight.bin"), "1");
 }
 
 function createFakeEngine(dir: string): string {
@@ -342,6 +352,7 @@ describe("e2e-cli", () => {
     const enginePath = createFakeEngine(dir);
     const mediaPath = join(dir, "workshop.mp4");
     writeFileSync(mediaPath, "fake media");
+    installFakeDiarizeModel(dir);
 
     const { stdout, stderr, exitCode } = await runCli(
       [mediaPath, "--json", "--speakers"],

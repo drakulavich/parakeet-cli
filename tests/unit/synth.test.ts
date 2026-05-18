@@ -1,5 +1,5 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { buildSayArgs } from "../../src/synth";
+import { buildSayArgs, say, SayError } from "../../src/synth";
 import { log } from "../../src/log";
 
 describe("buildSayArgs", () => {
@@ -116,3 +116,15 @@ describe("--no-expand-abbrev (#232)", () => {
   });
 });
 
+describe("say input preflight", () => {
+  it("rejects empty text before checking the engine", async () => {
+    try {
+      await say({ text: "" });
+      throw new Error("expected say() to reject");
+    } catch (err) {
+      expect(err).toBeInstanceOf(SayError);
+      expect((err as SayError).exitCode).toBe(2);
+      expect((err as Error).message).toBe("text is empty");
+    }
+  });
+});

@@ -26,6 +26,12 @@ function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined 
   return undefined;
 }
 
+function defaultBackendForPlatform(): string | undefined {
+  if (process.platform === "darwin" && process.arch === "arm64") return "coreml";
+  if (process.platform === "linux" && process.arch === "x64") return "onnx";
+  return undefined;
+}
+
 async function performInstall(
   noCache: boolean,
   backend?: string,
@@ -41,7 +47,15 @@ async function performInstall(
   if (diarize && !(process.platform === "darwin" && process.arch === "arm64")) {
     log.error(
       "--diarize is currently darwin-arm64 only " +
-        "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
+      "(see https://github.com/drakulavich/kesha-voice-kit/issues/199).",
+    );
+    process.exit(1);
+  }
+  const platformBackend = defaultBackendForPlatform();
+  if (backend && !process.env.KESHA_ENGINE_BIN && platformBackend && backend !== platformBackend) {
+    log.error(
+      `Requested backend "${backend}" is not available on this platform; ` +
+        `the release engine uses "${platformBackend}".`,
     );
     process.exit(1);
   }

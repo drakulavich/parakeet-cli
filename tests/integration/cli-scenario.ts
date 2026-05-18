@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from "fs";
+import { delimiter, dirname } from "path";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
 const DEFAULT_TIMEOUT_MS = 4_000;
@@ -57,12 +58,13 @@ export async function runCliScenario(
     FORCE_COLOR: "0",
     ...(opts.env ?? {}),
   };
-  const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
+  const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
     cwd: opts.cwd ?? DEFAULT_CWD,
     env: {
       ...process.env,
+      PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
       ...envOverrides,
     },
   });

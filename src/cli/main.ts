@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { existsSync } from "fs";
 import { detect } from "tinyld";
-import { transcribeWithSegments } from "../transcribe";
+import { preflightTranscribeWithSegments, transcribeWithSegments } from "../transcribe";
 import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
@@ -259,6 +259,11 @@ export const mainCommand = defineCommand({
       const startedAt = performance.now();
       let progress: ReturnType<typeof createActivityProgress> | null = null;
       try {
+        await preflightTranscribeWithSegments({
+          vad: vadMode,
+          timestamps: args.timestamps,
+          speakers: args.speakers,
+        });
         progress = reportProgress ? createActivityProgress(`Transcribing ${file}`) : null;
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([

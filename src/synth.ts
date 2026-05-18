@@ -14,6 +14,7 @@ import { log } from "./log";
  *   Signal, and Discord render as native voice messages. See #223.
  */
 export type SayFormat = "wav" | "ogg-opus";
+export const MAX_TEXT_CHARS = 5000;
 
 export interface SayOptions {
   /**
@@ -103,6 +104,15 @@ export class SayError extends Error {
  * the engine writes to the file and this function returns an empty buffer.
  */
 export async function say(opts: SayOptions): Promise<Uint8Array> {
+  const text = opts.text ?? "";
+  if (text.length === 0) {
+    throw new SayError("text is empty", 2, "");
+  }
+  const chars = Array.from(text).length;
+  if (chars > MAX_TEXT_CHARS) {
+    throw new SayError(`text exceeds ${MAX_TEXT_CHARS} chars (${chars})`, 5, "");
+  }
+
   if (!isEngineInstalled()) {
     throw new SayError(
       "kesha-engine not installed. run: kesha install",

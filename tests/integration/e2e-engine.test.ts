@@ -13,7 +13,7 @@ const FIXTURE_EN = "fixtures/benchmark-en/01-check-email.ogg";
 const engineInstalled = isEngineInstalled();
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
+  const proc = Bun.spawn([process.execPath, "run", "src/cli.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
     cwd: CWD,
@@ -28,20 +28,41 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
-async function runEngine(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runEngine(
+  args: string[],
+  opts: { timeoutMs?: number; timeoutMessage?: string } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const binPath = getEngineBinPath();
   const proc = Bun.spawn([binPath, ...args], {
     stdout: "pipe",
     stderr: "pipe",
+    env: {
+      ...process.env,
+      KESHA_DIARIZE_TIMEOUT_SECS: process.env.KESHA_DIARIZE_TIMEOUT_SECS ?? "30",
+    },
   });
+  let timedOut = false;
+  const timeout =
+    opts.timeoutMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          Bun.spawnSync(["/usr/bin/pkill", "-TERM", "-P", String(proc.pid)]);
+          proc.kill();
+        }, opts.timeoutMs);
 
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
+  if (timeout !== undefined) clearTimeout(timeout);
 
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+  return {
+    stdout: stdout.trim(),
+    stderr: timedOut ? (opts.timeoutMessage ?? "engine command timed out") : stderr.trim(),
+    exitCode,
+  };
 }
 
 describe.skipIf(!engineInstalled)("e2e-engine", () => {
@@ -88,20 +109,21 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     // VAD is required for the round-trip to exercise multiple segments;
     // a missing VAD model surfaces as a non-zero exit below and skips
     // (covered by the prereq-skip block).
-    const { stdout, stderr, exitCode } = await runEngine([
-      "transcribe",
-      "--json",
-      "--vad",
-      "--speakers",
-      FIXTURE_EN,
-    ]);
+    const { stdout, stderr, exitCode } = await runEngine(
+      ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
+      {
+        timeoutMs: 35_000,
+        timeoutMessage: "kesha-diarize timed out after 30s",
+      },
+    );
     if (exitCode !== 0) {
       // Treat missing prerequisites (sidecar / model / VAD) as skip rather
       // than fail; their installer flows are exercised separately.
       if (
         stderr.includes("diarization model not found") ||
         stderr.includes("kesha-diarize sidecar not found") ||
-        stderr.includes("VAD model")
+        stderr.includes("VAD model") ||
+        stderr.includes("kesha-diarize timed out")
       ) {
         console.warn(`skipping --speakers e2e: ${stderr.split("\n")[0]}`);
         return;

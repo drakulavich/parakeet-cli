@@ -12,6 +12,8 @@ pub struct LangDetectResult {
 const MAX_SECONDS: f32 = 10.0;
 
 pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
+    audio::ensure_audio_track(audio_path)?;
+
     if !models::is_cached(models::ModelKind::LangId) {
         anyhow::bail!("Lang-ID model not installed. Run: kesha install");
     }
@@ -61,4 +63,22 @@ pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
         code: labels.get(best_idx).cloned().unwrap_or_default(),
         confidence: best_val,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_audio_fails_before_model_lookup() {
+        let err = match detect_audio_language("/nonexistent/kesha/lang-id.wav") {
+            Ok(_) => panic!("missing audio should fail before lang-id model lookup"),
+            Err(err) => err,
+        };
+        let msg = format!("{err:#}");
+        assert!(
+            !msg.contains("Lang-ID model not installed"),
+            "input validation must happen before model lookup, got: {msg}"
+        );
+    }
 }

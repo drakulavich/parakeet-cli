@@ -1,5 +1,6 @@
 import {
   isEngineInstalled,
+  preflightTranscribeEngineWithSegments,
   transcribeEngine,
   transcribeEngineWithSegments,
   type TranscriptionOutput,
@@ -25,10 +26,7 @@ export async function transcribe(audioPath: string, opts: TranscribeOptions = {}
   return (await transcribeWithSegments(audioPath, opts)).text;
 }
 
-export async function transcribeWithSegments(
-  audioPath: string,
-  opts: TranscribeOptions = {},
-): Promise<TranscriptionOutput> {
+export async function preflightTranscribeWithSegments(opts: TranscribeOptions = {}): Promise<void> {
   if (!isEngineInstalled()) {
     throw new Error(
       "Error: No transcription backend is installed\n\n" +
@@ -40,6 +38,20 @@ export async function transcribeWithSegments(
       "╚══════════════════════════════════════════════════════════╝",
     );
   }
+
+  if (opts.timestamps || opts.speakers) {
+    await preflightTranscribeEngineWithSegments({
+      vad: opts.vad,
+      speakers: opts.speakers,
+    });
+  }
+}
+
+export async function transcribeWithSegments(
+  audioPath: string,
+  opts: TranscribeOptions = {},
+): Promise<TranscriptionOutput> {
+  await preflightTranscribeWithSegments(opts);
 
   if (opts.timestamps || opts.speakers) {
     return transcribeEngineWithSegments(audioPath, {
