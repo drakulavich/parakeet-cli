@@ -58,13 +58,13 @@ export function createPercentProgress(
   let lastLineLength = 0;
   let timer: Timer | undefined;
   let stopped = false;
+  let firstRender = true;
 
   const render = () => {
     if (stopped) return;
-    const line = formatPercentProgress(
-      label,
-      estimatePercent(performance.now() - startedAt, estimatedTotalMs),
-    );
+    const percent = firstRender ? 0 : estimatePercent(performance.now() - startedAt, estimatedTotalMs);
+    firstRender = false;
+    const line = formatPercentProgress(label, percent);
     lastLineLength = line.length;
     process.stderr.write(`\r${line}`);
   };

@@ -110,6 +110,7 @@ describe("createPercentProgress", () => {
 
       const combined = writes.join("");
       expect(combined).toContain("Transcribing file.wav");
+      expect(combined).toContain("Transcribing file.wav  [░░░░░░░░░░░░░░░░░░░░] 0%");
       expect(combined).toContain("Transcribed file.wav  [████████████████████] 100%\n");
       expect(combined).toContain("\r");
     } finally {
