@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { generateShellArtifacts } from "../../src/shell-artifacts";
 
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n/g, "\n");
+}
+
 describe("shell artifacts (#344 P2)", () => {
   test("generated completions and manpage match checked-in package files", async () => {
     const artifacts = await generateShellArtifacts();
@@ -13,7 +17,7 @@ describe("shell artifacts (#344 P2)", () => {
     ]);
 
     for (const artifact of artifacts) {
-      expect(readFileSync(artifact.path, "utf8")).toBe(artifact.content);
+      expect(normalizeLineEndings(readFileSync(artifact.path, "utf8"))).toBe(artifact.content);
     }
   });
 
