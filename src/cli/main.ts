@@ -278,7 +278,9 @@ export const mainCommand = defineCommand({
 
         if (audioLanguage && args.lang && audioLanguage.confidence > 0.8) {
           const mismatch = checkLanguageMismatch(args.lang, audioLanguage.code);
-          if (mismatch) log.warn(`${file}: ${mismatch} (from audio)`);
+          if (mismatch) {
+            progress?.interrupt(() => log.warn(`${file}: ${mismatch} (from audio)`));
+          }
         }
 
         const tinyldLang = wantsLangId ? detectLanguage(text) : "";
@@ -294,7 +296,9 @@ export const mainCommand = defineCommand({
         const lang = textLanguage?.code || tinyldLang;
 
         const mismatchWarning = checkLanguageMismatch(args.lang, lang);
-        if (mismatchWarning) log.warn(`${file}: ${mismatchWarning}`);
+        if (mismatchWarning) {
+          progress?.interrupt(() => log.warn(`${file}: ${mismatchWarning}`));
+        }
 
         const sttTimeMs = Math.round(performance.now() - startedAt);
         const result: TranscribeResult = {

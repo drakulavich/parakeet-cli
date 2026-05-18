@@ -112,6 +112,32 @@ describe("createActivityProgress", () => {
       process.stderr.write = originalWrite;
     }
   });
+
+  test("TTY mode can interrupt the live bar for side-band output", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    const writes: string[] = [];
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const progress = createActivityProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      progress.interrupt(() => process.stderr.write("warning: language mismatch\n"));
+      progress.finish("Transcribed file.wav (123ms)");
+
+      const combined = writes.join("");
+      expect(combined).toContain("warning: language mismatch\n");
+      expect(combined).toContain("Transcribing file.wav");
+      expect(combined).toContain("Transcribed file.wav (123ms)\n");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
 });
 
 describe("createProgressBar", () => {

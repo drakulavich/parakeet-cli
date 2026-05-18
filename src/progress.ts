@@ -37,6 +37,7 @@ export function createActivityProgress(
   options: { intervalMs?: number } = {},
 ): {
   finish(finalMessage: string): void;
+  interrupt(writeLine: () => void): void;
   stop(): void;
 } {
   const isTTY = process.stderr.isTTY;
@@ -47,6 +48,9 @@ export function createActivityProgress(
       finish(finalMessage: string) {
         process.stderr.write(`${finalMessage}\n`);
       },
+      interrupt(writeLine: () => void) {
+        writeLine();
+      },
       stop() {},
     };
   }
@@ -56,15 +60,18 @@ export function createActivityProgress(
   let frame = 0;
   let lastLineLength = 0;
   let timer: Timer | undefined;
+  let stopped = false;
 
   const render = () => {
+    if (stopped) return;
     const line = formatActivityProgress(label, performance.now() - startedAt, frame);
     frame += 1;
     lastLineLength = line.length;
     process.stderr.write(`\r${line}`);
   };
 
-  const clearLine = () => {
+  const clearLine = (stopTimer: boolean) => {
+    if (stopTimer) stopped = true;
     if (timer) {
       clearInterval(timer);
       timer = undefined;
@@ -80,11 +87,17 @@ export function createActivityProgress(
 
   return {
     finish(finalMessage: string) {
-      clearLine();
+      clearLine(true);
       process.stderr.write(`${finalMessage}\n`);
     },
+    interrupt(writeLine: () => void) {
+      clearLine(false);
+      writeLine();
+      render();
+      timer = setInterval(render, intervalMs);
+    },
     stop() {
-      clearLine();
+      clearLine(true);
     },
   };
 }
