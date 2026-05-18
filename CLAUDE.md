@@ -107,7 +107,7 @@ gh pr create --base main --head "codex/$TASK"
 When done, remove only the isolated tree/workspace:
 
 ```bash
-git -C "$REPO" worktree remove "$WT" && git -C "$REPO" worktree prune
+git -C "$REPO" worktree remove --force "$WT" && git -C "$REPO" worktree prune
 # or, for JJ:
 jj --repository "$REPO" workspace forget "$TASK" && rm -rf "$WT"
 ```
