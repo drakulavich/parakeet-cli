@@ -1,6 +1,6 @@
 [package]
 name = "kesha-engine"
-version = "1.18.4"
+version = "1.18.5"
 edition = "2021"
 description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 # Not for crates.io. The library target (`src/lib.rs`) exists only for the
