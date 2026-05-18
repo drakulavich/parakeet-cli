@@ -1,6 +1,57 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
-import { parseLangResult, getEngineBinPath, spawnStdioWithDebugFd } from "../../src/engine";
+import {
+  parseLangResult,
+  getEngineBinPath,
+  preflightTranscribeEngineWithSegments,
+  spawnStdioWithDebugFd,
+  transcribeEngineWithSegments,
+} from "../../src/engine";
+
+function fakeEngine(features: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-engine-test-"));
+  const path = join(dir, "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${JSON.stringify({ protocolVersion: 2, backend: "fake", features })}'
+  exit 0
+fi
+if [ "$1" = "transcribe" ]; then
+  printf '%s\\n' '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok","speaker":0}]}'
+  exit 0
+fi
+exit 2
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+async function withEngineEnv<T>(
+  enginePath: string,
+  fn: () => T | Promise<T>,
+  extraEnv: Record<string, string | undefined> = {},
+): Promise<T> {
+  const savedEngine = process.env.KESHA_ENGINE_BIN;
+  const savedDiarize = process.env.KESHA_DIARIZE_MODEL_PATH;
+  try {
+    process.env.KESHA_ENGINE_BIN = enginePath;
+    for (const [key, value] of Object.entries(extraEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    return await fn();
+  } finally {
+    if (savedEngine === undefined) delete process.env.KESHA_ENGINE_BIN;
+    else process.env.KESHA_ENGINE_BIN = savedEngine;
+    if (savedDiarize === undefined) delete process.env.KESHA_DIARIZE_MODEL_PATH;
+    else process.env.KESHA_DIARIZE_MODEL_PATH = savedDiarize;
+  }
+}
 
 describe("engine", () => {
   test("getEngineBinPath returns path under .cache kesha", () => {
@@ -38,6 +89,48 @@ describe("engine", () => {
 
   test("parseLangResult returns null for missing code field", () => {
     expect(parseLangResult('{"confidence":0.94}')).toBeNull();
+  });
+
+  test("preflight rejects timestamp requests when the engine lacks segment support", async () => {
+    await withEngineEnv(fakeEngine([]), async () => {
+      await expect(preflightTranscribeEngineWithSegments()).rejects.toThrow("Timestamped segments require");
+    });
+  });
+
+  test("preflight rejects speakers when the engine lacks diarization support", async () => {
+    await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
+      await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
+        "speaker diarization is currently darwin-arm64 only",
+      );
+    });
+  });
+
+  test("preflight rejects missing KESHA_DIARIZE_MODEL_PATH before transcription", async () => {
+    await withEngineEnv(
+      fakeEngine(["transcribe.segments", "transcribe.diarize"]),
+      async () => {
+        await expect(preflightTranscribeEngineWithSegments({ speakers: true })).rejects.toThrow(
+          "KESHA_DIARIZE_MODEL_PATH set but path does not exist",
+        );
+      },
+      { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
+    );
+  });
+
+  test("transcribeEngineWithSegments accepts a valid diarize override and parses speakers", async () => {
+    const modelPath = mkdtempSync(join(tmpdir(), "kesha-diarize-model-"));
+    mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
+    await withEngineEnv(
+      fakeEngine(["transcribe.segments", "transcribe.diarize"]),
+      async () => {
+        const out = await transcribeEngineWithSegments("audio.wav", {
+          vad: "on",
+          speakers: true,
+        });
+        expect(out.segments[0]).toEqual({ start: 0, end: 1, text: "ok", speaker: 0 });
+      },
+      { KESHA_DIARIZE_MODEL_PATH: modelPath },
+    );
   });
 });
 

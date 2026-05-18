@@ -1,6 +1,49 @@
 import { describe, expect, it } from "bun:test";
+import { chmodSync, mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { transcribe } from "../../src/lib";
-import { transcribe as transcribeWrapper } from "../../src/transcribe";
+import {
+  preflightTranscribeWithSegments,
+  transcribe as transcribeWrapper,
+  transcribeWithSegments,
+} from "../../src/transcribe";
+
+function fakeEngine(features: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "kesha-transcribe-test-"));
+  const path = join(dir, "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "--capabilities-json" ]; then
+  printf '%s\\n' '${JSON.stringify({ protocolVersion: 2, backend: "fake", features })}'
+  exit 0
+fi
+if [ "$1" = "transcribe" ]; then
+  if [ "$3" = "--json" ] || [ "$2" = "--json" ]; then
+    printf '%s\\n' '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok"}]}'
+  else
+    printf '%s\\n' 'ok'
+  fi
+  exit 0
+fi
+exit 2
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+async function withEngine<T>(enginePath: string, fn: () => T | Promise<T>): Promise<T> {
+  const saved = process.env.KESHA_ENGINE_BIN;
+  try {
+    process.env.KESHA_ENGINE_BIN = enginePath;
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
+    else process.env.KESHA_ENGINE_BIN = saved;
+  }
+}
 
 describe("lib API", () => {
   it("rejects missing file", async () => {
@@ -46,5 +89,31 @@ describe("lib API", () => {
       if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
       else process.env.KESHA_ENGINE_BIN = saved;
     }
+  });
+
+  it("preflights timestamp support before segment transcription", async () => {
+    await withEngine(fakeEngine([]), async () => {
+      await expect(preflightTranscribeWithSegments({ timestamps: true })).rejects.toThrow(
+        "Timestamped segments require",
+      );
+    });
+  });
+
+  it("routes timestamp requests through the JSON segment path", async () => {
+    await withEngine(fakeEngine(["transcribe.segments"]), async () => {
+      await expect(transcribeWithSegments("audio.wav", { timestamps: true })).resolves.toEqual({
+        text: "ok",
+        segments: [{ start: 0, end: 1, text: "ok" }],
+      });
+    });
+  });
+
+  it("plain transcription still returns an empty segment list", async () => {
+    await withEngine(fakeEngine(["transcribe.segments"]), async () => {
+      await expect(transcribeWithSegments("audio.wav")).resolves.toEqual({
+        text: "ok",
+        segments: [],
+      });
+    });
   });
 });

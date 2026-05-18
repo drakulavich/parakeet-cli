@@ -3,6 +3,8 @@ import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
 import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat } from "../../src/cli";
 
+type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
+
 function normalizeUsage(usage: string): string {
   return usage
     .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/g, "(kesha v<version>)")
@@ -10,6 +12,48 @@ function normalizeUsage(usage: string): string {
     .map((line) => line.trimEnd())
     .join("\n")
     .trim();
+}
+
+function defaultMainArgs(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    _: [],
+    json: false,
+    toon: false,
+    verbose: false,
+    debug: false,
+    vad: false,
+    "no-vad": false,
+    timestamps: false,
+    speakers: false,
+    "include-errors": false,
+    ...overrides,
+  };
+}
+
+async function expectMainExit(
+  args: Record<string, unknown>,
+  rawArgs: string[],
+): Promise<number> {
+  const savedExit = process.exit;
+  const savedLog = console.log;
+  const savedError = console.error;
+  try {
+    console.log = () => {};
+    console.error = () => {};
+    process.exit = ((code?: string | number | null | undefined) => {
+      throw new Error(`exit:${code ?? 0}`);
+    }) as typeof process.exit;
+    await (mainCommand.run as MainRun)({ args, rawArgs });
+    throw new Error("main command did not exit");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    expect(message.startsWith("exit:")).toBe(true);
+    return Number(message.slice("exit:".length));
+  } finally {
+    process.exit = savedExit;
+    console.log = savedLog;
+    console.error = savedError;
+  }
 }
 
 describe("CLI help", () => {
@@ -113,6 +157,24 @@ describe("CLI help", () => {
     const usage = await renderUsage(statsCommand);
     expect(usage).toContain("stats");
     expect(usage).toContain("enable");
+  });
+});
+
+describe("main command validation side effects", () => {
+  test("--timestamps requires machine-readable output", async () => {
+    await expect(
+      expectMainExit(defaultMainArgs({ timestamps: true, _: ["audio.wav"] }), ["--timestamps"]),
+    ).resolves.toBe(2);
+  });
+
+  test("--vad and --no-vad are mutually exclusive", async () => {
+    await expect(
+      expectMainExit(defaultMainArgs({ vad: true, _: ["audio.wav"] }), ["--vad", "--no-vad"]),
+    ).resolves.toBe(2);
+  });
+
+  test("empty invocation exits after printing usage", async () => {
+    await expect(expectMainExit(defaultMainArgs(), [])).resolves.toBe(1);
   });
 });
 
