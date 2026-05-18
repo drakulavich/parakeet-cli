@@ -56,61 +56,47 @@ If the spike persists into project work, ask which env tool the user wants (uv, 
 
 ### RELEASE PROCESS — CLI AND ENGINE ARE VERSIONED INDEPENDENTLY
 
-`package.json#version` (CLI) and `package.json#keshaEngine.version` (engine, mirrored in `rust/Cargo.toml`) are **decoupled**. `src/engine-install.ts` downloads from `v${keshaEngine.version}`, falling back to `package.json#version`.
+`package.json#version` (CLI) and `package.json#keshaEngine.version` (engine, mirrored in `rust/Cargo.toml`) are decoupled. `src/engine-install.ts` downloads `v${keshaEngine.version}` with fallback to `package.json#version`.
 
-CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also `bun run check:versions` or `make versions` locally — runs in `ci.yml`'s "🔢 Check version drift" step on ubuntu, fast-fails before any test job). Two rules enforced (#267 F16):
+Version drift gate: `bun .github/scripts/check-versions.ts` (`bun run check:versions` / `make versions`, CI "🔢 Check version drift") enforces:
 
-1. **`keshaEngine.version === rust/Cargo.toml#version`** — these are the same number, just stored twice. Drift here means `kesha install` downloads a release that doesn't match the source. (See "BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS" below for the v1.1.0 incident this guards against.)
-2. **`package.json#version >= keshaEngine.version`** — CLI is allowed to lead the engine for CLI-only patches but must never lag.
+1. `keshaEngine.version === rust/Cargo.toml#version` — one engine version stored twice; drift makes `kesha install` fetch the wrong source/release.
+2. `package.json#version >= keshaEngine.version` — CLI may lead for CLI-only patches, never lag.
 
-**CLI-only patch** (docs, TS fix, plugin tweak):
+**CLI-only patch** (docs, TS, plugin): bump only `package.json#version`; leave `keshaEngine.version` + `rust/Cargo.toml`; PR CI uses the existing engine; merge; create a marker release:
 
-1. Bump only `package.json#version`. Leave `keshaEngine.version` and `rust/Cargo.toml` alone.
-2. PR CI uses the existing engine binary — integration tests pass.
-3. Merge to main.
-4. Cut a marker release: `gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" --notes "Engine: v<keshaEngine.version> (unchanged)."` The `-cli` suffix is excluded from `build-engine.yml`'s tag filter — no Rust rebuild. `gh release create` creates a published (non-draft) release, which fires the `📦 npm Publish` workflow → `npm publish --provenance --access public` runs automatically. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`.
+```bash
+gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" \
+  --notes "Engine: v<keshaEngine.version> (unchanged)."
+npm view @drakulavich/kesha-voice-kit version   # within ~60s, expect X.Y.Z
+```
 
-**Engine release** (anything under `rust/`, or bumping `keshaEngine.version`):
+`v*-cli` is excluded from `build-engine.yml`; the published marker fires `📦 npm Publish` automatically.
 
-1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (via `cargo check`), and `package.json#keshaEngine.version` in lockstep. Usually bump `package.json#version` too.
+**Engine release** (anything under `rust/` or an engine bump):
+
+1. Bump `rust/Cargo.toml`, `rust/Cargo.lock` (`cargo check`), `package.json#keshaEngine.version`, usually `package.json#version`.
 2. Merge to main.
-3. `git tag vX.Y.Z && git push origin vX.Y.Z` — triggers `build-engine.yml`.
+3. Tag/push: `git tag vX.Y.Z && git push origin vX.Y.Z` → `build-engine.yml`.
+4. Write release notes before publishing. Draft releases start with an empty body:
 
-   **Alternate path: `workflow_dispatch` (no tag-push permission required, fix #306).** Use this when running from a sandboxed remote that rejects tag pushes (Claude Code on the web, restricted git proxies). Authors the notes inline so they land with the draft — skips step 4 entirely.
-   ```bash
-   gh workflow run "🔨 Build Engine" \
-     -R drakulavich/kesha-voice-kit \
-     -f tag=vX.Y.Z \
-     -f ref=main \
-     -f notes="$(cat release-notes.md)"
-   ```
-   Mechanics: the dispatch run executes a `tag` job that creates an annotated tag (with `notes` as the tag message) and pushes via `GITHUB_TOKEN`. That push **should** fire a second `build-engine.yml` run via `on.push.tags` which runs build + release as usual; the release job reads the tag annotation back via `git tag -l --format='%(contents)'` and passes it as the draft body. Tag-shape regex (`^v[0-9]+\.[0-9]+\.[0-9]+$`) and a `git rev-parse refs/tags/...` idempotency check fire before the tag is created — bad inputs fail fast without producing a tag.
-
-   **⚠️ Known break (v1.16.0 cut, 2026-05-14):** GitHub Actions blocks the downstream `on.push.tags` trigger when the push uses the default `GITHUB_TOKEN` — anti-recursion protection. The dispatch run completes with `tag: success, build: skipped, release: skipped`, the tag is created on origin, but the matrix never fires. Symptom: `gh run list --workflow "🔨 Build Engine"` shows the dispatch run completed but no follow-up `event=push` run. **Workaround until fixed**: after the dispatch completes, yank and re-push the tag from a maintainer laptop so the push is attributed to a user and triggers the build:
-   ```bash
-   git fetch --tags
-   git push origin :refs/tags/vX.Y.Z   # delete on origin
-   git push origin vX.Y.Z              # re-push from local credentials → triggers on.push.tags
-   ```
-   Proper fix is to use a PAT or GitHub App token for the push instead of `GITHUB_TOKEN` (tracked separately). Until then: the `workflow_dispatch` path saves the tag-shape validation + injection-safe notes flow, but the maintainer still needs laptop access to actually fire the build.
-
-4. **Write release notes before publishing.** `build-engine.yml` creates a draft with EMPTY body via `softprops/action-gh-release`. Author the notes now:
    ```bash
    gh release edit vX.Y.Z --notes "$(cat <<'EOF'
    <summary of changes, new features, breaking changes, PR list>
    EOF
    )"
    ```
-   Use the v1.1.3 release as a template: features → platform support → breaking changes → shipped PRs → follow-up issues → upgrade instructions. **Skip this step if you used the `workflow_dispatch` path in step 3** — notes are already on the draft.
 
-   **If you forgot and already published:** `gh release edit --notes` silently drops content on published releases (a `gh` CLI quirk — not a GitHub restriction). The `immutable: true` flag protects tag/assets, not the body. Escape hatch is a direct API PATCH:
+   Template: v1.1.3 style — features → platform support → breaking changes → shipped PRs → follow-up issues → upgrade instructions. If notes were forgotten on a published release, `gh release edit --notes` can silently drop them; patch via API:
+
    ```bash
    RELEASE_ID=$(gh api repos/OWNER/REPO/releases/tags/vX.Y.Z --jq '.id')
    jq -Rs '{body: .}' < notes.md > body.json
    gh api -X PATCH "repos/OWNER/REPO/releases/$RELEASE_ID" --input body.json
    ```
-   v1.1.3 shipped with empty notes and was recovered this way.
-5. Validate the draft assets BEFORE un-drafting (see the "make smoke-test ALONE DOES NOT VALIDATE" section below). Authenticated `gh release download vX.Y.Z -p "kesha-engine-darwin-arm64" -D <smoke-dir>` works on drafts; anonymous `curl` does not (see "DRAFT RELEASE ASSET URLS ARE NOT PUBLIC"). Release drafts must include `SHA256SUMS`, `kesha-release-manifest.json`, one `*.sigstore.json` bundle per non-signature asset, and `kesha-voice-kit-vX.Y.Z.spdx.json`. Verify at least the primary engine binary before publishing:
+
+5. Validate draft assets before un-drafting. Authenticated `gh release download` works on drafts; anonymous `curl` / `kesha install` 404s. Release drafts must include `SHA256SUMS`, `kesha-release-manifest.json`, one `*.sigstore.json` per non-signature asset, and `kesha-voice-kit-vX.Y.Z.spdx.json`.
+
    ```bash
    gh release download vX.Y.Z -p SHA256SUMS -p kesha-release-manifest.json -p '*.sigstore.json' -p 'kesha-*' -p 'say-*' -D <smoke-dir>
    cd <smoke-dir>
@@ -121,36 +107,41 @@ CI gates against silent drift via `bun .github/scripts/check-versions.ts` (also 
      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
      kesha-engine-darwin-arm64
    ```
-6. `make smoke-test` locally is still useful but only sees the OLD globally-installed engine — treat it as a sanity check, not a release gate. The gate is step 5.
-7. Publish the draft: `gh release edit vX.Y.Z --draft=false`. This fires the `📦 npm Publish` workflow (`release: published` event) which runs `npm publish --provenance --access public` with provenance attestation. Verify within ~60 s: `npm view @drakulavich/kesha-voice-kit version` should report `X.Y.Z`. Manual fallback if the workflow is broken: `npm publish --access public` from the maintainer's laptop.
 
-8. Stable `vX.Y.Z` releases also update the public Homebrew tap
-   `drakulavich/homebrew-tap` via the `🍺 Homebrew Tap` workflow. Required
-   secret: `HOMEBREW_TAP_TOKEN`, a fine-scoped token with write access only to
-   the tap repository. CLI-only `vX.Y.Z-cli` marker releases are intentionally
-   skipped for now.
-9. Stable engine releases (not `vX.Y.Z-cli` marker releases) also attach Linux
-   x64 `.deb` and `.rpm` packages.
-   They are built in `build-engine.yml` before `SHA256SUMS` and Sigstore
-   signing, so the packages are covered by the normal release verification
-   flow. The packages install the standalone CLI wrapper only; `kesha install`
-   remains the explicit engine/model download step.
+6. Treat `make smoke-test` as a local sanity check only; it can run the old globally installed CLI/engine. The release gate is draft-asset validation.
+7. Publish: `gh release edit vX.Y.Z --draft=false`. This fires `📦 npm Publish`; verify `npm view @drakulavich/kesha-voice-kit version` within ~60s. Manual fallback: `npm publish --access public` from the maintainer laptop.
+8. Stable `vX.Y.Z` engine releases also update `drakulavich/homebrew-tap` via `🍺 Homebrew Tap` using `HOMEBREW_TAP_TOKEN` scoped only to the tap repo, and attach Linux x64 `.deb`/`.rpm` packages covered by `SHA256SUMS` + Sigstore. CLI-only marker releases skip Homebrew/packages.
+
+**Alternate tag path:** `workflow_dispatch` validates tag shape and authors notes inline, useful when a sandbox cannot push tags:
+
+```bash
+gh workflow run "🔨 Build Engine" \
+  -R drakulavich/kesha-voice-kit \
+  -f tag=vX.Y.Z \
+  -f ref=main \
+  -f notes="$(cat release-notes.md)"
+```
+
+Because `workflow_dispatch` authors release notes inline via `-f notes`, skip engine-release step 4 when using this path.
+
+Known break (v1.16.0, 2026-05-14): `GITHUB_TOKEN` tag pushes do not trigger downstream `on.push.tags`; dispatch ends with `tag: success, build/release: skipped`. Workaround until PAT/GitHub App token fix: fetch tags, delete the remote tag, re-push it from a maintainer laptop so a user-authored push triggers the build:
+
+```bash
+git fetch --tags
+git push origin :refs/tags/vX.Y.Z
+git push origin vX.Y.Z
+```
 
 ### NPM PUBLISH IS AUTOMATED WITH PROVENANCE ATTESTATION
 
-Post-#291: un-drafting a GitHub release fires `.github/workflows/npm-publish.yml`, which runs `npm publish --provenance --access public` from GHA. No more `npm publish` from the maintainer's laptop in the happy path.
+Post-#291 happy path: publishing a GitHub release runs `.github/workflows/npm-publish.yml` → `npm publish --provenance --access public` in GHA. Do not publish from a maintainer laptop unless the workflow is broken.
 
-How it works:
-- Trigger: `release: published` event (un-draft an engine tag OR `gh release create v*-cli` without `--draft`). Also `workflow_dispatch` for re-runs.
-- `permissions.id-token: write` unlocks npm provenance — GitHub's OIDC token gets signed by GHA's identity provider and npm verifies against the public sigstore log. The result is a green "verified" badge on the package's npm page and a cryptographic chain from `commit SHA` → `built tarball`.
-- Guards: validates `package.json#version` against the tag (strips leading `v` and trailing `-cli`); idempotent on already-published versions (skips the publish step, exits 0).
-- User-controlled inputs (`inputs.tag`, `github.event.release.tag_name`) flow through `env:` — never directly into `run:` scripts — to avoid shell injection in a job that holds `id-token: write` (would otherwise leak the OIDC token to an attacker-controlled tag).
-
-Required secret: **`NPM_TOKEN`** (granular access token, publish-only scope on `@drakulavich/kesha-voice-kit`). Add via `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. Without it, the workflow runs and the publish step fails with an auth error; the GitHub release stays published, so the manual fallback (`npm publish --access public` from a laptop) still works.
-
-**Implications for the release flow** (already reflected in the engine + CLI-only steps above):
-- Un-drafting is now the **commit-to-publish** point. Validate against the draft assets via `gh release download` (authenticated, works on drafts) BEFORE un-drafting; once un-drafted, the npm publish is permanent (npm allows unpublish only within 72 h, and provenance attestations make a re-publish noisy).
-- If validation fails: delete the GitHub release + tag, bump patch, retry. Since the draft never went public, no npm recall is needed.
+- Trigger: `release: published` (engine un-draft or published `v*-cli` marker) plus `workflow_dispatch` re-runs.
+- Provenance: `permissions.id-token: write` gives npm the GHA OIDC chain (`commit SHA` → built tarball) and the npm "verified" badge.
+- Guards: tag must match `package.json#version` after stripping leading `v` and trailing `-cli`; already-published versions skip publish and exit 0.
+- Injection rule: route `inputs.tag` / `github.event.release.tag_name` through `env:`, never directly into `run:` while the job holds `id-token: write`.
+- Required secret: `NPM_TOKEN` (granular publish-only token for `@drakulavich/kesha-voice-kit`), set with `gh secret set NPM_TOKEN -R drakulavich/kesha-voice-kit`. If missing, the release remains published but the publish step fails; fallback is `npm publish --access public` from a laptop.
+- Release implication: un-draft is the commit-to-publish point. Validate draft assets via authenticated `gh release download` before un-drafting; npm publish is effectively permanent (72 h unpublish window, noisy provenance). If validation fails before publish: delete release + tag, bump patch, retry.
 
 ### TAG NAMES ARE ONE-USE
 
@@ -164,15 +155,13 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 - Backend module changes: also `cargo check --features coreml --no-default-features`
 - Do NOT push broken code
 
-**Always `cargo nextest run`, never plain `cargo test`.** CI runs nextest via `.github/workflows/rust-test.yml` with the `ci` profile (JUnit XML → Flakiness.io). Local plain `cargo test` diverges from CI on three dimensions: (1) test isolation — nextest spawns a fresh process per test, so global state (`tts/warn.rs` warn-once bucket #311, models cache, env vars) doesn't leak between tests; (2) per-binary parallelism — 11 integration binaries run concurrently instead of serially; (3) slow-test surface — nextest streams `SLOW [>60.000s]` markers for Vosk/Kokoro tests so a long run doesn't look hung. Install once: `cargo install cargo-nextest --locked`. After that, `make rust-test` or `cargo nextest run --features tts` is the canonical local command. `cargo test --doc` is the only acceptable cargo-test invocation (nextest doesn't run doctests; this project has near-zero anyway).
+Rust verification rules:
 
-**Why `--all-targets` matters:** CI's ubuntu job runs clippy; the macOS jobs run `cargo nextest run`. Without `--all-targets`, local clippy misses dead code in `#[cfg(test)]` blocks and tests — which then breaks CI after push. (Lesson: #125 M1 landed a dead enum variant + struct field that passed on macOS but failed ubuntu.)
-
-**Clippy lint set differs by rustc minor version.** Ubuntu CI typically runs a newer rustc than the developer's local toolchain (we have no `rust-toolchain.toml`). Each Rust release adds new lints under `-D warnings` — local can pass while CI fails on lints like `derivable_impls`, `useless_conversion`, `manual_is_multiple_of`. When CI fails but local passes, pull the exact errors via `gh run view <id> --log-failed` and fix from the report rather than re-running locally. Mechanical fixes: `#[derive(Default)]` + `#[default]` for unit-default enums; drop redundant `.map_err(Into::into)` and `u64::from(u64_value)`; use `x.is_multiple_of(n)` instead of `x % n == 0`. (Lesson: PR #224 hit this — 5 lints in `tts/encode.rs` flagged only by ubuntu's rustc 1.95 vs local 1.94.)
-
-**`rustfmt` is stricter on CI than locally — even for the same toolchain.** Symptom: `cargo fmt` (without `--check`) is happy locally; CI's `cargo fmt -- --check` fails with line-wrap diffs. The local `cargo fmt` will rewrite to whichever shape the resident `rustfmt` prefers, but ubuntu's bundled `rustfmt` makes different short-line-wrap decisions. Two-line `let foo =\n    one_arg_call(...)` was the v1.17.0-precursor F5 example — local accepted it, ubuntu CI demanded the single-line form. Fix: re-run `cargo fmt` after the warning, push the resulting whitespace-only diff. Don't argue with rustfmt; the CI version always wins. (Lesson: F5 PR #309 fixup commit `46b5287` — pushed once with local-rustfmt output, CI's stricter rustfmt diff-rejected it, fixup made it whitespace-only and CI went green.)
-
-**Fresh cargo builds need `protoc` on PATH.** `vosk-tts-rs` uses `prost-build`, which shells out to `protoc` at build-script time. macOS: `brew install protobuf` then `export PATH="/opt/homebrew/opt/protobuf/bin:$PATH"` (or set `PROTOC=...`). Cached builds hide this — only `cargo clean` runs surface the missing dep.
+- Always use `cargo nextest run`, never plain `cargo test`. CI uses nextest (`ci` profile, JUnit → Flakiness.io); nextest isolates tests in fresh processes, runs integration binaries in parallel, and streams `SLOW [>60.000s]` markers for Vosk/Kokoro. Install once: `cargo install cargo-nextest --locked`. `cargo test --doc` is the only acceptable `cargo test` call.
+- Keep `--all-targets` on clippy. Without it, local clippy misses `#[cfg(test)]` dead code that ubuntu CI catches (#125 M1).
+- CI rustc may be newer than local (no `rust-toolchain.toml`). If CI-only clippy fails, read `gh run view <id> --log-failed`; common fixes are `#[derive(Default)]` + `#[default]`, removing redundant `.map_err(Into::into)` / `u64::from(u64_value)`, and using `x.is_multiple_of(n)` (#224).
+- CI `rustfmt --check` wins over local formatting. If it rejects line wrapping, re-run `cargo fmt` and push the whitespace-only diff (#309).
+- Fresh cargo builds need `protoc` for `vosk-tts-rs`/`prost-build`; macOS: `brew install protobuf` and expose the protobuf bin dir or set `PROTOC`.
 
 ### NO SPECULATIVE FIELDS OR ENUM VARIANTS
 
@@ -220,14 +209,9 @@ gh label create WIP -R drakulavich/kesha-voice-kit --color FBCA04 \
 
 ### LINK PRS TO ISSUES — AUTO-CLOSE ON MERGE
 
-When a PR addresses a GitHub issue, link it in the PR body with a closing keyword so the issue auto-closes the moment the PR merges into `main`. Drifting issues (merged PR, open issue) are a recurring cleanup tax.
+When a PR fully addresses an issue, put `Closes #N`, `Fixes #N`, or `Resolves #N` in the PR body or commit message (not only the title) so GitHub closes it on merge to `main`. Multiple issues each need their own keyword (`Closes #N, closes #M`). Use `Refs #N` for partial work, then close manually after the remaining acceptance criteria land.
 
-- **Closing keywords:** `Closes #N`, `Fixes #N`, or `Resolves #N`. Case-insensitive, must be in the PR body or a commit message, not just in the title. Multiple issues: `Closes #N, closes #M` — each needs its own keyword.
-- **Non-closing reference:** `Refs #N` — use this when the PR is only a partial step toward the issue (e.g. acceptance criteria include "cut a release" that happens after merge). Close manually once the remaining steps land.
-- **After merge, verify:** `gh issue view <N> -R drakulavich/kesha-voice-kit --json state` — if it's still OPEN but the work is done, close it with `gh issue close <N> -R drakulavich/kesha-voice-kit --comment "..."`. GitHub only auto-closes when the PR merges into the repo's default branch; merges into other branches leave the issue open.
-- **Cross-repo links** (rare here) need the full `owner/repo#N` form.
-
-Past drift this rule prevents: #136 acceptance list had four items; PR #159 closed item #1 but #136 was left open (correct — needed #162 + a release to finish). PR #162 closed item #2 but again stayed open pending release. Without an explicit close-manually discipline these accumulate.
+After merge, verify `gh issue view <N> -R drakulavich/kesha-voice-kit --json state`; if complete but still open, close with `gh issue close <N> -R drakulavich/kesha-voice-kit --comment "..."`. Cross-repo links need `owner/repo#N`. This avoids drift like #136, where #159/#162 were partial and the issue properly stayed open until release work finished.
 
 ### VERIFY THIRD-PARTY MODEL FORMATS WITH A SPIKE
 
@@ -260,31 +244,13 @@ PRs receive automated review from Greptile (as a PR comment on each push). Treat
 - Past incidents caught this way: `--backend=` forwarded to an engine that didn't accept it (#125 P1); `--rate` silently discarded for Piper voices (#126 P1); hard-coded 22050 Hz assertion that would break on other Piper voices (#126 P2); silent zero-speakers on `transcribe_with_options({with_speakers: true, with_segments: false})` (#290 P1).
 - Exception: findings that are clearly false positives can be dismissed with a PR comment explaining why — but that's rare in practice.
 
-**Greptile UPDATES its existing top-level comment in place — it does NOT post a new one.** To detect a re-review, watch:
-- `body | match("commit/([a-f0-9]+)")` — the "Last reviewed commit" SHA inside the body
-- `.updated_at` on the comment itself
+Greptile comment mechanics:
 
-Both must change to confirm a re-review. `gh pr view <N> --json comments` returns the comment list but its `updatedAt` field is null for issue-comments — fetch via `gh api repos/OWNER/REPO/issues/<N>/comments` for the real timestamp.
-
-**NEVER post `@greptileai review` immediately after opening a PR.** Greptile auto-fires the review on PR open — manual trigger right after `gh pr create` is redundant noise and the only effect is an extra "review queued" comment cluttering the timeline. Just open the PR and let the auto-trigger run. (Reminder posted by drakulavich on #298 after I trigger-spammed.)
-
-**Greptile does NOT reliably auto-re-review subsequent pushes** — the first push fires the bot, but later pushes (fix commits, polish, P2 follow-ups) often go unreviewed. Empirically this session: #287/#288/#292 got auto re-reviews; #291/#293/#294 did not.
-
-**Trigger `@greptileai review` manually only when the diff materially changes the review verdict AND auto-trigger missed it.** Use judgment — not every commit needs a fresh review.
-
-- **Trigger** (after a SUBSEQUENT push, not initial PR open) for: code fixes addressing P1/P2 findings, new tests that change coverage of flagged behavior, logic changes after an initial pass, security-relevant edits (workflow inputs, secrets handling), version bumps in a release PR.
-- **Skip** for: initial PR open (always — auto-trigger handles it), comment-only edits, typo fixes, docs prose without behavior change, reverts that undo a previous commit on the same branch, formatting (`cargo fmt`/prettier) without semantic change, README/CLAUDE.md text shuffles.
-
-Command: `gh pr comment <N> --body "@greptileai review"`. Typical re-review latency: 1-5 min after the trigger.
-
-**Cascade hazard:** if auto-merge fires on CI-green BEFORE Greptile finishes re-reviewing the last push, a P1/P2 found post-merge becomes a follow-up PR. Three-PR chains have happened this session (#287→#288→#289 for F9, #290→#291→#292 was avoided by NOT arming auto-merge). When in doubt: don't arm auto-merge; merge by hand after `Confidence Score: ≥4/5` shows up in the body for the LATEST SHA.
-
-**Always arm a `/loop`-style waiting mechanism when Greptile is the next gate.** Narrating "жду Greptile pass" without setting up an actual wait is dishonest — the check has to happen somewhere. Two-part pattern:
-
-1. `ScheduleWakeup(delaySeconds: 300-900, prompt: "<<autonomous-loop-dynamic>>", reason: "<…>")` — typical Greptile latency is 1-15 min after push or after `@greptileai review` trigger. Pick delay by cache-window: 270s (cache-warm) for short waits, 900s+ once a cache miss is accepted. Avoid the dead zone around 300s.
-2. Optional background `Bash` poll with `run_in_background: true` when the goal is auto-merge on green — `while :; do gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login | contains("greptile"))'; done` — wire auto-merge when `Confidence Score: ≥4/5` AND the body's `commit/SHA` matches the head SHA.
-
-`TaskStop` the background poll if the user says "подожди" (or similar) so it doesn't merge under their feet.
+- It updates one existing top-level comment, not a new comment per review. Confirm re-review by checking both the "Last reviewed commit" SHA (`body | match("commit/([a-f0-9]+)")`) and the issue-comment `.updated_at`; `gh pr view --json comments` has null `updatedAt`, so use `gh api repos/OWNER/REPO/issues/<N>/comments`.
+- Never post `@greptileai review` immediately after PR creation; the initial review auto-fires (#298 reminder).
+- Subsequent pushes do not reliably auto-re-review (#287/#288/#292 did; #291/#293/#294 did not). If the verdict materially changed and auto-trigger missed it, run `gh pr comment <N> --body "@greptileai review"` after the subsequent push. Trigger for P1/P2 fixes, new coverage for flagged behavior, logic/security/workflow-input changes, and release version bumps. Skip for initial PR open, comment/typo/docs-only text shuffles, pure formatting, and same-branch reverts. Typical latency: 1-5 min.
+- Do not arm auto-merge before Greptile reviews the latest head; otherwise CI-green can merge before a new P1/P2 arrives (#287→#288→#289; #290→#291→#292 avoided by waiting). Merge by hand after `Confidence Score: ≥4/5` references the latest SHA.
+- If Greptile is the next gate, set a real wait: `ScheduleWakeup(delaySeconds: 300-900, prompt: "<<autonomous-loop-dynamic>>", reason: "<...>")` (270s for cache-warm, 900s+ for cache miss; avoid the dead zone around 300s). Optional auto-merge poll: `while :; do gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login | contains("greptile"))'; done`, merging only when `Confidence Score: ≥4/5` and `commit/SHA` match head. Stop the poll if the user says to wait.
 
 ### DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS
 
@@ -362,9 +328,7 @@ Recommended user config:
 
 ### JJ + GIT LFS WORKAROUND
 
-This repo uses Git LFS for fixtures/assets. Stock `jj` can surface LFS-managed
-files as modified in colocated repos. Use the LFS fork until upstream support
-lands:
+This repo uses Git LFS for fixtures/assets. Stock `jj` can surface LFS-managed files as modified in colocated repos. Use the LFS fork until upstream support lands:
 
 ```bash
 cargo install --git https://github.com/gusinacio/jj.git \
@@ -375,48 +339,14 @@ git lfs pull
 
 Operational lessons from the 2026-05-16 setup:
 
-- If `jj --version` still shows Homebrew's newer binary, `which -a jj` will
-  usually show `/opt/homebrew/bin/jj` before `~/.cargo/bin/jj`. Run
-  `brew unlink jj` so the Cargo-installed fork is active.
-- The fork reports an older version string (`jj 0.35.0-<sha>`); that is
-  expected for the `gusinacio/jj` `lfs` branch.
-- Preserve identity after switching binaries:
-  `jj config set --user user.name "<Your Name>"` and
-  `jj config set --user user.email "<your@email.com>"`.
-  Replace with your own credentials; do not use the repo owner's details.
-- If the repo already has `.jj`, do not reclone. Keep the existing colocated
-  checkout, set the config, run `git lfs pull`, then verify with `jj status`.
-- If the repo already has `.jj`, do not create a separate Git worktree just to
-  isolate agent work. Start with `jj status` / `jj log`, create a new JJ change
-  or bookmark for the task, and use Git worktrees only when the user explicitly
-  asks for one or JJ is unavailable/broken.
-- Disk model: JJ changes/bookmarks are cheap because history and operations are
-  shared in the repo; extra workspaces are more expensive because each one has
-  its own checked-out working tree. Expect disk use to scale roughly as shared
-  repo objects plus one source checkout per workspace, plus duplicated
-  generated artifacts (`node_modules`, `rust/target`, temp caches, materialized
-  LFS files) inside each workspace. Prefer a new JJ change/bookmark for normal
-  agent isolation, and create additional JJ workspaces only when two physical
-  checkouts are genuinely needed (long test in one tree, parallel comparison,
-  etc.).
-- If two physical checkouts are needed, use JJ workspaces rather than Git
-  worktrees:
-  `jj workspace add ../kesha-voice-kit-<topic> --name <topic> --revision main`.
-  In a JJ workspace there may be no `.git` directory, so use `jj status`,
-  `jj diff`, and `jj log` for local inspection; use `gh -R
-  drakulavich/kesha-voice-kit ...` for GitHub operations that normally infer
-  the repo from `.git`.
-- Before calling files "external changes", determine whether they are dirty
-  edits or just the checked-out content of a stale feature branch. Check
-  `jj status` and `jj workspace list` everywhere; in the colocated checkout
-  that has `.git`, also check `git status --short --branch` and
-  `git log --oneline --decorate -5`. After a PR is merged and the remote branch
-  is deleted, a local bookmark/branch can remain checked out and make merged
-  feature files look unrelated. Fetch, move back to `main`, and only then start
-  the next task.
-- Treat Git as the source of truth if JJ behavior looks suspicious:
-  `git status --short --branch` should be clean before making release or PR
-  decisions.
+- If `jj --version` still shows Homebrew's binary, `which -a jj` usually lists `/opt/homebrew/bin/jj` before `~/.cargo/bin/jj`; run `brew unlink jj`. The fork reporting `jj 0.35.0-<sha>` is expected.
+- Preserve identity after switching: `jj config set --user user.name "<Your Name>"` and `jj config set --user user.email "<your@email.com>"`; use your own credentials, never the repo owner's.
+- Existing `.jj`: do not reclone. Keep the colocated checkout, set config, run `git lfs pull`, verify `jj status`.
+- Normal agent isolation: use a new JJ change/bookmark, not a Git worktree. Start with `jj status` / `jj log`; use Git worktrees only if the user asks or JJ is unavailable/broken.
+- Disk model: changes/bookmarks share history and are cheap; extra workspaces add a checked-out tree plus duplicated `node_modules`, `rust/target`, temp caches, and materialized LFS files. Prefer changes/bookmarks; create workspaces only for genuinely parallel physical checkouts.
+- If two checkouts are needed, use `jj workspace add ../kesha-voice-kit-<topic> --name <topic> --revision main`. A JJ workspace may lack `.git`; inspect with `jj status` / `jj diff` / `jj log`, and use `gh -R drakulavich/kesha-voice-kit ...` for GitHub operations.
+- Before calling files "external changes", distinguish dirty edits from a stale checked-out feature branch: check `jj status` + `jj workspace list` everywhere; in the colocated checkout also `git status --short --branch` + `git log --oneline --decorate -5`. After a PR merges and the remote branch is deleted, fetch, move back to `main`, then start the next task.
+- If JJ looks suspicious, trust Git as the source of truth: `git status --short --branch` must be clean before release/PR decisions.
 
 ### RELEASE CHICKEN-AND-EGG — `integration-tests` SKIPS ON `release/*`
 
@@ -424,17 +354,13 @@ Operational lessons from the 2026-05-16 setup:
 
 ### DRAFT RELEASE ASSET URLS ARE 404 TO ANONYMOUS CLIENTS — USE `gh release download`
 
-`build-engine.yml` creates a DRAFT release with the 3 platform binaries. The download URLs (`/releases/download/vX.Y.Z/kesha-engine-*`) return HTTP 404 to **unauthenticated** clients while the release is a draft, so `curl` and `kesha install` (anonymous) will fail. **Authenticated** `gh release download vX.Y.Z -p "..." -D <dir>` works on drafts and is the right tool for the pre-undraft validation step (see next section).
-
-`make smoke-test` is anonymous (`kesha install` curls the URL), so it cannot run against a draft. Treat it as a sanity check AFTER un-drafting — but post-#291 (auto npm publish on un-draft), un-drafting is the irreversible commit point, so the actual release gate is the `gh release download`-based validation BELOW.
+`build-engine.yml` creates a draft release with 3 platform binaries. Draft asset URLs 404 for unauthenticated clients, so `curl`, `kesha install`, and anonymous `make smoke-test` cannot validate the draft. Authenticated `gh release download vX.Y.Z -p "..." -D <dir>` works on drafts and is the pre-undraft release gate; `make smoke-test` is only a post-undraft sanity check, but post-#291 un-draft also triggers npm publish.
 
 ### `make smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — `gh release download` THE DRAFT BINARY AND EXERCISE IT BEFORE `gh release edit --draft=false`
 
-`make smoke-test` does `bun link @drakulavich/kesha-voice-kit` then `kesha install` then `bun scripts/smoke-test.ts`. **`bun link` does not always replace a globally-installed `kesha`** — if `bun add -g @drakulavich/kesha-voice-kit@<old>` previously ran on this machine, the global shim wins, `kesha --version` keeps reporting the old CLI, `kesha install` re-fetches the OLD `keshaEngine.version`, and the smoke test happily passes against the previous engine release. The "6/6 passed" turns into a false-green publish gate.
+`make smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: `--capabilities-json` passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
 
-Lesson learned the hard way: v1.5.0 darwin engine ran `--capabilities-json` clean (CI's pre-upload smoke) but actually crashed on Kokoro synth (`Invalid input name: tokens`). `make smoke-test` reported pass because it was still routing through the locally-installed v1.4.4 CLI + v1.4.1 engine.
-
-**Always run this independent v\<NEW\>.\<NEW\>.\<NEW\> validation BEFORE `gh release edit --draft=false`.** Once un-drafted, the `📦 npm Publish` workflow fires within ~60 s and the publish is permanent (npm allows unpublish only within 72 h, and provenance attestations make a re-publish noisy). Greptile reviewed #291 and flagged this ordering. **Use `gh release download` (authenticated, works on drafts), NOT `curl` (which 404s on drafts):**
+Before `gh release edit --draft=false`, always validate the draft binary directly with authenticated `gh release download`, not `curl` (drafts 404 anonymously). Un-draft starts `📦 npm Publish` within ~60 s; npm unpublish is limited/noisy, and #291's Greptile review flagged this ordering.
 
 ```bash
 SMOKE=/tmp/kesha-vX.Y.Z-smoke && rm -rf "$SMOKE" && mkdir "$SMOKE" && cd "$SMOKE"
@@ -467,13 +393,9 @@ The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchai
 
 ### `bun link` DOES NOT OVERRIDE A GLOBALLY-INSTALLED PACKAGE — REMOVE FIRST
 
-`bun link` (in the package root) only **registers** the local checkout under its package name. It does NOT swap an existing `~/.bun/install/global/node_modules/<pkg>/` directory if one is already there (placed by a previous `bun add -g <pkg>`).
+`bun link` in the package root only registers the local checkout; it does not replace an existing `~/.bun/install/global/node_modules/<pkg>/` created by `bun add -g`. If the old directory wins, the global `kesha` shim keeps using the previously installed CLI and old embedded `keshaEngine.version`.
 
-Result: the global `kesha` shim keeps running the previously-installed version, not the local checkout. `kesha --version` reports the old number, `kesha install` downloads the OLD engine version embedded in that old `package.json`, and "smoke testing locally" silently exercises the previously-released CLI — a textbook false-green publish gate.
-
-How to spot: `readlink ~/.bun/install/global/node_modules/@drakulavich/kesha-voice-kit`. If it prints nothing (real directory) → the old install wins. If it prints a path back to your checkout → the link wins.
-
-Fix (one-time, then `bun link` works as expected):
+Detect with `readlink ~/.bun/install/global/node_modules/@drakulavich/kesha-voice-kit`: no output means a real old directory wins; a path back to the checkout means the link wins. One-time fix:
 
 ```bash
 bun remove -g @drakulavich/kesha-voice-kit   # delete the previously-installed copy
@@ -483,7 +405,7 @@ readlink ~/.bun/install/global/node_modules/@drakulavich/kesha-voice-kit
 # should print: /path/to/your/kesha-voice-kit checkout (absolute path)
 ```
 
-Incident this session: I ran `bun link` to test local main, `kesha --version` reported `1.14.0` (looked right because npm-published 1.14.0 happened to match the local checkout). But `kesha install` showed `Upgrading engine v1.14.0 → v1.6.0...` — proving the global shim was the OLD `bun add -g` v1.6.0 install, NOT the local link. `bun remove -g` + `bun link` fixed it.
+Incident: `bun link` on local main still reported `kesha --version` 1.14.0, but `kesha install` said `Upgrading engine v1.14.0 → v1.6.0...`; the shim was the old `bun add -g` v1.6.0 install. `bun remove -g` + `bun link` fixed it.
 
 ### TESTS THAT STAGE A TEMPDIR CACHE MUST STAGE G2P TOO
 
@@ -645,21 +567,21 @@ Text-to-speech via three engines selected by voice id prefix:
 
 - `en-*` → **Kokoro-82M**. Separate model + per-voice style embedding. Output 24 kHz.
 - `ru-*` → **Vosk-TTS** (`alphacep/vosk-tts`). Multi-speaker model, 5 baked-in speakers. Output 22.05 kHz.
-- `macos-*` → **AVSpeechSynthesizer** via a Swift sidecar (#141). Zero model download, notification-grade quality. Enabled on darwin-arm64 release binaries (`--features coreml,tts,system_tts` in build-engine.yml). `kesha install` fetches `say-avspeech-darwin-arm64` next to the engine; runtime lookup is sibling-first (see `rust/src/tts/avspeech.rs::helper_path`).
+- `macos-*` → **AVSpeechSynthesizer** Swift sidecar (#141). Zero model download, notification-grade quality, darwin-arm64 release feature set `coreml,tts,system_tts`; `kesha install` places `say-avspeech-darwin-arm64` next to the engine and runtime lookup is sibling-first (`rust/src/tts/avspeech.rs::helper_path`).
 
-Opt-in via `kesha install --tts` (downloads Kokoro + Vosk-TTS, ~990 MB). `macos-*` voices need no install — they use voices already on macOS.
+Install Kokoro + Vosk-TTS explicitly with `kesha install --tts` (~990 MB). `macos-*` voices use installed macOS voices and need no model install.
 
 - TTS models are **never auto-downloaded** — `kesha say` fails loudly with a `kesha install --tts` hint when models are missing.
 - `kesha say` writes WAV mono f32 to stdout unless `--out` is given. Stderr is progress/errors only.
-- G2P split (post-#213): English (`en`/`en-us`/`en-gb`) routes to embedded `misaki-rs` (Kokoro-trained inventory, no system deps, OOV words letter-spell). Russian goes through Vosk-TTS internally (BERT prosody + dictionary lookup, no system deps). Other languages: not supported by shipped engines ([#212](https://github.com/drakulavich/kesha-voice-kit/issues/212) follow-up). CharsiuG2P (ONNX ByT5-tiny, [#123](https://github.com/drakulavich/kesha-voice-kit/issues/123)) and the espeak-ng subprocess ([#210](https://github.com/drakulavich/kesha-voice-kit/issues/210)) were both removed in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213).
-- **Auto-routing:** when `--voice` is omitted, the TS CLI calls `NLLanguageRecognizer` on the input text and picks `en-am_michael` (English) or `macos-com.apple.voice.compact.ru-RU.Milena` (Russian on darwin) / `ru-vosk-m02` (Russian elsewhere). Confidence < 0.5 or unmapped language falls through to the engine default. `pickVoiceForLang` in `src/cli/say.ts` is the routing table — add a language by adding a match arm.
-- **SSML** (opt-in via `--ssml`): uses the `ssml-parser` crate; supports `<speak>` root and `<break time="...">` for silence. Unknown tags (`<emphasis>`, `<prosody>`, `<phoneme>`, `<say-as>`) warn to stderr once per name and are stripped, but contained text is still synthesized. Hardening: required `<speak>` root, `<!DOCTYPE>` rejected anywhere in input. `tts::ssml::parse` returns `Vec<Segment>`; `tts::say()` loads the engine once and concatenates f32 samples for text vs silence for breaks before a single `wav::encode_wav`. See issue #122 for the full scope matrix and future tag support.
-- Kokoro ONNX (post-#207, official `kokoro-onnx` v1.0 release): `tokens` (int64 `[1,N]`), `style` (f32 `[1,256]` — rank-2), `speed` (f32 `[1]`). Output name `"audio"`. Voice file 510 rows × 256 cols. The earlier HF onnx-community variant used `input_ids`/`waveform` and produced broken audio with `af_heart`.
-- Vosk-TTS ONNX (post-#213): one `Synth` + `Model` pair per call (`Vosk::load` loads `model.onnx` + `bert/model.onnx` + dictionary, ~1-2s cold). `Model::new` takes `Option<&str>` directory path. `Synth::synth_audio` returns `Vec<i16>` PCM at `model.config.audio.sample_rate` (22050 Hz for `vosk-model-tts-ru-0.9-multi`). Wrapper in `rust/src/tts/vosk.rs` converts to f32 by dividing by 32768.0. 5 baked-in speakers, ids 0..4 mapped to `ru-vosk-{f01,f02,f03,m01,m02}` via `voices::resolve_vosk_ru`. Multi-call performance is tracked in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213).
-- **AVSpeech** (#141, `system_tts` feature, default-on for darwin-arm64 release builds): `kesha-engine` spawns the `say-avspeech` Swift helper. Runtime path resolution tries sibling-of-exe first (release layout: `~/.cache/kesha/bin/say-avspeech` next to `kesha-engine`) and falls back to the build-time `$OUT_DIR/say-avspeech` baked in by `build.rs` for `cargo run` / `cargo test`. UTF-8 text on stdin, voice id as argv[1]; `--list-voices` prints `identifier|language|name` rows that the Rust side prefixes with `macos-` and merges into `say --list-voices`. Output: complete mono f32 IEEE_FLOAT WAV @ 22050 Hz. Gotcha: AVSpeechSynthesizer callbacks dispatch on the main queue, so the helper MUST pump `CFRunLoopRun()` — `DispatchSemaphore` hangs. `--rate` not wired yet (AVSpeechUtterance has its own `.rate`, mapping TBD). SSML + AVSpeech explicitly rejected in v1.
+- G2P split (post-#213): English (`en`/`en-us`/`en-gb`) uses embedded `misaki-rs` (Kokoro-trained inventory, no system deps, OOV letter-spell); Russian uses Vosk-TTS internals (BERT prosody + dictionary, no system deps); other shipped engines are unsupported ([#212](https://github.com/drakulavich/kesha-voice-kit/issues/212)). CharsiuG2P ([#123](https://github.com/drakulavich/kesha-voice-kit/issues/123)) and espeak-ng ([#210](https://github.com/drakulavich/kesha-voice-kit/issues/210)) were removed in [#213](https://github.com/drakulavich/kesha-voice-kit/issues/213).
+- Auto-routing: omitted `--voice` calls TS `NLLanguageRecognizer` and picks `en-am_michael`, `macos-com.apple.voice.compact.ru-RU.Milena` on darwin Russian, or `ru-vosk-m02` elsewhere. Confidence < 0.5 or unmapped language falls to engine default. Routing table: `src/cli/say.ts::pickVoiceForLang`.
+- SSML (`--ssml`): `ssml-parser`; supports required `<speak>` root and `<break time="...">`; rejects `<!DOCTYPE>`; unknown tags (`<emphasis>`, `<prosody>`, `<phoneme>`, `<say-as>`) warn once and strip tags while synthesizing contained text. `tts::ssml::parse` returns `Vec<Segment>`; `tts::say()` loads the engine once, concatenates text/silence f32 samples, then calls `wav::encode_wav`. Scope/future tags: #122.
+- Kokoro ONNX (post-#207 official `kokoro-onnx` v1.0): inputs `tokens` int64 `[1,N]`, `style` f32 `[1,256]` rank-2, `speed` f32 `[1]`; output `"audio"`; voice file 510x256. The earlier HF onnx-community variant used `input_ids`/`waveform` and broke `af_heart`.
+- Vosk-TTS ONNX (post-#213): one `Synth` + `Model` per call (`Vosk::load`: `model.onnx`, `bert/model.onnx`, dictionary, ~1-2s cold). `Model::new` takes `Option<&str>` dir; `Synth::synth_audio` returns i16 PCM at model sample rate (22050 Hz for `vosk-model-tts-ru-0.9-multi`); `rust/src/tts/vosk.rs` converts to f32 / 32768.0. Speakers 0..4 map to `ru-vosk-{f01,f02,f03,m01,m02}` in `voices::resolve_vosk_ru`; multi-call perf tracked in #213.
+- AVSpeech (#141, `system_tts`, default darwin-arm64): engine spawns `say-avspeech`; path resolution tries sibling-of-exe (`~/.cache/kesha/bin/say-avspeech`) then build-time `$OUT_DIR/say-avspeech`. stdin UTF-8, argv[1] voice id, `--list-voices` emits `identifier|language|name`, Rust prefixes `macos-` and merges into `say --list-voices`. Output: complete mono f32 IEEE_FLOAT WAV @ 22050 Hz. Must pump `CFRunLoopRun()` because callbacks dispatch on main queue; `DispatchSemaphore` hangs. `--rate` mapping TBD; SSML + AVSpeech rejected in v1.
 - `KESHA_ENGINE_BIN` — override the engine-binary path (useful when iterating on `rust/target/release/kesha-engine`).
 - `KESHA_CACHE_DIR` — isolated test cache.
-- `KESHA_MODEL_MIRROR` — redirect HuggingFace model downloads onto an internal mirror (#121). Preserves the HF URL path (`/<owner>/<repo>/resolve/<ref>/<file>`) so operators can `wget --mirror` the upstream tree. Empty/unset = no-op. Implemented in Rust (`rust/src/models.rs::apply_mirror`) and surfaced in `kesha status` via `src/status.ts::activeModelMirror` — both trim trailing slashes to stay in lockstep.
+- `KESHA_MODEL_MIRROR` — redirect HF downloads to an internal mirror (#121), preserving `/<owner>/<repo>/resolve/<ref>/<file>` for `wget --mirror`; empty/unset = no-op. Rust `models.rs::apply_mirror` and TS `status.ts::activeModelMirror` both trim trailing slashes.
 - macOS dev runtime: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`. Release binaries fix up via `install_name_tool`.
 - macOS build env: `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`, `RUSTFLAGS="-L /opt/homebrew/lib"`.
 
