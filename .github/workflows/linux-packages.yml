@@ -1,24 +1,6 @@
 name: "📦 Linux Packages"
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - packaging/**
-      - .github/scripts/build-linux-packages.mjs
-      - .github/scripts/linux-package-names.mjs
-      - .github/workflows/linux-packages.yml
-      - .github/workflows/build-engine.yml
-      - .github/actions/setup-bun/action.yml
-      - package.json
-      - bun.lock
-      - tsconfig.json
-      - bin/**
-      - src/**
-      - README.md
-      - docs/linux-packages.md
-      - LICENSE
-      - NOTICES.md
   push:
     branches: [main]
     paths:
