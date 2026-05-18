@@ -138,6 +138,31 @@ describe("createActivityProgress", () => {
       process.stderr.write = originalWrite;
     }
   });
+
+  test("TTY interrupt after stop writes without restarting the timer", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    const writes: string[] = [];
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const progress = createActivityProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      progress.stop();
+      writes.length = 0;
+
+      progress.interrupt(() => process.stderr.write("warning after stop\n"));
+
+      expect(writes).toEqual(["warning after stop\n"]);
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
 });
 
 describe("createProgressBar", () => {

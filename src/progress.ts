@@ -91,6 +91,10 @@ export function createActivityProgress(
       process.stderr.write(`${finalMessage}\n`);
     },
     interrupt(writeLine: () => void) {
+      if (stopped) {
+        writeLine();
+        return;
+      }
       clearLine(false);
       writeLine();
       render();
