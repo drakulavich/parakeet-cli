@@ -209,7 +209,7 @@ $ kesha freedom.ogg tahiti.ogg
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
-Stdout: transcript. Stderr: errors. Pipe-friendly. Also available as `parakeet` command (backward-compatible alias).
+Stdout: transcript. Stderr: errors. Pipe-friendly.
 
 For long / silence-heavy audio, use `--vad` (auto-on past 120 s). Details: [docs/vad.md](docs/vad.md).
 

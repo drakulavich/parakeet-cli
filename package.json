@@ -4,8 +4,7 @@
   "description": "Give your local tools a voice: fast STT in 25 languages (~19x faster than Whisper on Apple Silicon, ONNX CPU fallback), TTS via Kokoro/Vosk/macOS voices, VAD + 107-language detection. Rust engine, Bun CLI, OpenClaw skill.",
   "type": "module",
   "bin": {
-    "kesha": "bin/kesha.js",
-    "parakeet": "bin/kesha.js"
+    "kesha": "bin/kesha.js"
   },
   "exports": {
     ".": "./src/cli.ts",

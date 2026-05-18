@@ -21,14 +21,9 @@ class KeshaVoiceKit < Formula
       exec "#{Formula["oven-sh/bun/bun"].opt_bin}/bun" "#{libexec}/bin/kesha.js" "$@"
     EOS
 
-    (bin/"parakeet").write <<~EOS
-      #!/bin/bash
-      exec "#{Formula["oven-sh/bun/bun"].opt_bin}/bun" "#{libexec}/bin/kesha.js" "$@"
-    EOS
   end
 
   test do
     assert_match version.to_s, shell_output("#{bin}/kesha --version")
-    assert_match version.to_s, shell_output("#{bin}/parakeet --version")
   end
 end

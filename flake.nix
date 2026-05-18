@@ -238,7 +238,7 @@
         # Bun-based `kesha` CLI bundle. Bun executes TypeScript directly so
         # there is no transpile step — we just stage the source tree and
         # makeWrapper a shim that locks `KESHA_ENGINE_BIN` to the flake-built
-        # Rust engine. `parakeet` is exposed as a backward-compatible alias.
+        # Rust engine.
         #
         # `kesha install` reads the engine version marker written by the
         # `kesha-engine` derivation's postInstall and short-circuits the
@@ -280,11 +280,9 @@
             # engine output so the CLI never falls back to the
             # ~/.cache/kesha download path.
             chmod +x $out/lib/kesha/bin/kesha.js
-            for shim in kesha parakeet; do
-              makeWrapper $out/lib/kesha/bin/kesha.js $out/bin/$shim \
-                --prefix PATH : ${lib.makeBinPath [ pkgs.bun ]} \
-                --set KESHA_ENGINE_BIN ${kesha-engine}/bin/kesha-engine
-            done
+            makeWrapper $out/lib/kesha/bin/kesha.js $out/bin/kesha \
+              --prefix PATH : ${lib.makeBinPath [ pkgs.bun ]} \
+              --set KESHA_ENGINE_BIN ${kesha-engine}/bin/kesha-engine
 
             runHook postInstall
           '';

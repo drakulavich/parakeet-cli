@@ -201,7 +201,6 @@ function validateSourceConsistency(manifest) {
   assertIncludes(packageScript, "LINUX_PACKAGE_RELEASE", ".github/scripts/build-linux-packages.mjs");
   assertIncludes(packageNames, "LINUX_PACKAGE_RELEASE", ".github/scripts/linux-package-names.mjs");
   assertIncludes(nfpmConfig, "dst: /usr/bin/kesha", "packaging/nfpm.yaml");
-  assertIncludes(nfpmConfig, "dst: /usr/bin/parakeet", "packaging/nfpm.yaml");
 
   const names = new Set();
   for (const a of manifest.assets) {

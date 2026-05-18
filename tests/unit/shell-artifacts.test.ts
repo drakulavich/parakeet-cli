@@ -21,15 +21,13 @@ describe("shell artifacts (#344 P2)", () => {
     }
   });
 
-  test("completions cover command aliases and new installer commands", async () => {
+  test("completions cover the command and installer commands", async () => {
     const bash = readFileSync("completions/kesha.bash", "utf8");
     expect(bash).toContain("complete -F _kesha_completion kesha");
-    expect(bash).toContain("complete -F _kesha_completion parakeet");
     expect(bash).toContain("completions doctor install manpage record say stats status support-bundle");
 
     const fish = readFileSync("completions/kesha.fish", "utf8");
     expect(fish).toContain("complete -c kesha");
-    expect(fish).toContain("complete -c parakeet");
   });
 
   test("manpage documents generated completion files", () => {

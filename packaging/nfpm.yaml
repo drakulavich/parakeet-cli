@@ -17,9 +17,6 @@ contents:
     dst: /usr/bin/kesha
     file_info:
       mode: 0755
-  - src: /usr/bin/kesha
-    dst: /usr/bin/parakeet
-    type: symlink
   - src: LICENSE
     dst: /usr/share/doc/kesha-voice-kit/LICENSE
     file_info:

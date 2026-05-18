@@ -1,4 +1,4 @@
-#compdef kesha parakeet
+#compdef kesha
 # zsh completion for kesha.
 
 _kesha() {

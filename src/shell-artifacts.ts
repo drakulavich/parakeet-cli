@@ -156,7 +156,6 @@ ${cases}
 }
 
 complete -F _kesha_completion kesha
-complete -F _kesha_completion parakeet
 `;
 }
 
@@ -185,7 +184,7 @@ function renderZsh(model: ArtifactModel): string {
     })
     .join("\n");
 
-  return `#compdef kesha parakeet
+  return `#compdef kesha
 # zsh completion for kesha.
 
 _kesha() {
@@ -227,24 +226,21 @@ function renderFishOption(bin: string, condition: string, option: CliOption): st
 }
 
 function renderFish(model: ArtifactModel): string {
-  const bins = ["kesha", "parakeet"];
   const lines = ["# fish completion for kesha."];
 
-  for (const bin of bins) {
-    lines.push(`complete -c ${bin} -f`);
-    for (const command of model.commands) {
-      lines.push(
-        `complete -c ${bin} -n '__fish_use_subcommand' -a '${command.name}' -d '${fishEscape(command.description)}'`,
-      );
-    }
-    for (const option of [...ROOT_BUILT_INS, ...model.root.options]) {
-      lines.push(renderFishOption(bin, " -n '__fish_use_subcommand'", option));
-    }
-    for (const command of model.commands) {
-      const condition = ` -n '__fish_seen_subcommand_from ${command.name}'`;
-      for (const option of [...HELP_OPTIONS, ...command.options]) {
-        lines.push(renderFishOption(bin, condition, option));
-      }
+  lines.push("complete -c kesha -f");
+  for (const command of model.commands) {
+    lines.push(
+      `complete -c kesha -n '__fish_use_subcommand' -a '${command.name}' -d '${fishEscape(command.description)}'`,
+    );
+  }
+  for (const option of [...ROOT_BUILT_INS, ...model.root.options]) {
+    lines.push(renderFishOption("kesha", " -n '__fish_use_subcommand'", option));
+  }
+  for (const command of model.commands) {
+    const condition = ` -n '__fish_seen_subcommand_from ${command.name}'`;
+    for (const option of [...HELP_OPTIONS, ...command.options]) {
+      lines.push(renderFishOption("kesha", condition, option));
     }
   }
 

@@ -1,9 +1,8 @@
 # Linux Packages
 
 Kesha publishes `.deb` and `.rpm` packages for Linux x64 on stable engine
-releases. They install a standalone Bun-compiled CLI wrapper as `kesha` and
-the backward-compatible `parakeet` alias. Engine binaries and models are still
-downloaded explicitly with `kesha install`.
+releases. They install a standalone Bun-compiled CLI wrapper as `kesha`.
+Engine binaries and models are still downloaded explicitly with `kesha install`.
 
 ## Debian / Ubuntu
 
@@ -32,7 +31,6 @@ kesha audio.ogg
 The Linux packages install:
 
 - `/usr/bin/kesha`
-- `/usr/bin/parakeet`
 - license, notices, and README under `/usr/share/doc/kesha-voice-kit`
 
 They depend on `ca-certificates` so `kesha install` can download release assets

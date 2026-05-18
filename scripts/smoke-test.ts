@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Smoke test: verify the installed package works end-to-end.
- * Checks that `kesha` and `parakeet` commands are linked and functional.
+ * Checks that the `kesha` command is linked and functional.
  * Detailed transcription/lang-id tests live in tests/integration/.
  *
  * Usage: bun scripts/smoke-test.ts
@@ -34,12 +34,10 @@ function check(name: string, ok: boolean, detail = "") {
   }
 }
 
-// 1. Both commands are available and return version
-for (const cmd of ["kesha", "parakeet"] as const) {
-  const proc = Bun.spawnSync([cmd, "--version"], { stdout: "pipe", stderr: "pipe" });
-  const version = proc.stdout.toString().trim();
-  check(`"${cmd}" command works (${version})`, proc.exitCode === 0 && version.length > 0);
-}
+// 1. The command is available and returns version
+const versionProc = Bun.spawnSync(["kesha", "--version"], { stdout: "pipe", stderr: "pipe" });
+const version = versionProc.stdout.toString().trim();
+check(`"kesha" command works (${version})`, versionProc.exitCode === 0 && version.length > 0);
 
 // 2. kesha install completes (models already cached = fast)
 const installProc = Bun.spawnSync(["kesha", "install"], { stdout: "pipe", stderr: "pipe" });

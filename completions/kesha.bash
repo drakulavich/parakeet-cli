@@ -36,4 +36,3 @@ _kesha_completion() {
 }
 
 complete -F _kesha_completion kesha
-complete -F _kesha_completion parakeet

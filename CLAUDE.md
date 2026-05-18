@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kesha Voice Kit is a fast multilingual voice toolkit: speech-to-text (NVIDIA Parakeet TDT 0.6B) plus audio- and text-based language detection. It runs entirely locally with no cloud dependencies.
 
-The CLI (`kesha`, with `parakeet` as a backward-compatible alias) is a thin Bun/TypeScript wrapper around a single Rust binary, `kesha-engine`, downloaded from GitHub Releases during `kesha install`. The Rust engine has two compile-time backends for ASR:
+The CLI (`kesha`) is a thin Bun/TypeScript wrapper around a single Rust binary, `kesha-engine`, downloaded from GitHub Releases during `kesha install`. The Rust engine has two compile-time backends for ASR:
 - **CoreML** (Apple Silicon): FluidAudio / Apple Neural Engine via `fluidaudio-rs`. Built on `macos-14` with Xcode 16.2 and `MACOSX_DEPLOYMENT_TARGET=14.0`.
 - **ONNX** (Linux / Windows / fallback): `ort` crate with the `istupakov/parakeet-tdt-0.6b-v3-onnx` models.
 
@@ -546,7 +546,7 @@ Alternate reproducible build path: the repo also ships a Nix flake (`flake.nix`,
 
 ```
 kesha-voice-kit/
-├── bin/kesha.js                    # Shebang entry point (aliased as `parakeet` too)
+├── bin/kesha.js                    # Shebang entry point
 ├── src/                            # Bun/TypeScript CLI + library
 │   ├── cli.ts                      # Argument parsing, --format, install/transcribe/status
 │   ├── lib.ts                      # Public API at `@drakulavich/kesha-voice-kit/core`

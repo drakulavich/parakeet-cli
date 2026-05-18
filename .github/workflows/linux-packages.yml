@@ -63,6 +63,5 @@ jobs:
         run: |
           sudo apt install -y ./dist/linux-packages/*.deb
           kesha --version
-          parakeet --version
           kesha install --plan
           sudo apt remove -y kesha-voice-kit

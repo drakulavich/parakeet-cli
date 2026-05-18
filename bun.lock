@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "parakeet-cli",
+      "name": "@drakulavich/kesha-voice-kit",
       "dependencies": {
         "@toon-format/toon": "^2.1.0",
         "citty": "^0.2.2",
