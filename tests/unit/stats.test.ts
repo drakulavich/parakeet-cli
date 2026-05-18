@@ -100,46 +100,48 @@ describe("stats storage", () => {
 
   test("week summary renders stage percentiles, bottlenecks, buckets, and slowest runs", () => {
     enableStats();
-    seedStatsRun({
-      command: "transcribe",
-      status: "success",
-      startedAt: "2026-05-16T10:00:00.000Z",
-      finishedAt: "2026-05-16T10:00:02.000Z",
-      itemCount: 1,
-      stages: [
-        { stage: "transcribe", durationMs: 100, status: "success" },
-        { stage: "lang_id_audio", durationMs: 30, status: "success" },
-      ],
-      inputArtifact: { format: "wav", sizeBytes: 500_000, durationMs: 45_000 },
-    });
-    seedStatsRun({
-      command: "say",
-      status: "success",
-      startedAt: "2026-05-16T11:00:00.000Z",
-      finishedAt: "2026-05-16T11:00:02.000Z",
-      itemCount: 1,
-      stages: [{ stage: "tts", durationMs: 1_500, status: "success" }],
-    });
-    seedStatsRun({
-      command: "transcribe",
-      status: "failed",
-      startedAt: "2026-05-16T12:00:00.000Z",
-      finishedAt: "2026-05-16T12:00:05.000Z",
-      itemCount: 2,
-      stages: [
-        { stage: "transcribe", durationMs: 3_000, status: "failed" },
-        { stage: "lang_id_text", durationMs: 100, status: "success" },
-      ],
-      inputArtifact: { format: "mp3", sizeBytes: 15 * 1024 * 1024, durationMs: 15 * 60_000 },
-    });
-    seedStatsRun({
-      command: "say",
-      status: "success",
-      startedAt: "2026-04-01T10:00:00.000Z",
-      finishedAt: "2026-04-01T10:00:20.000Z",
-      itemCount: 1,
-      stages: [{ stage: "tts", durationMs: 20_000, status: "success" }],
-    });
+    seedStatsRuns([
+      {
+        command: "transcribe",
+        status: "success",
+        startedAt: "2026-05-16T10:00:00.000Z",
+        finishedAt: "2026-05-16T10:00:02.000Z",
+        itemCount: 1,
+        stages: [
+          { stage: "transcribe", durationMs: 100, status: "success" },
+          { stage: "lang_id_audio", durationMs: 30, status: "success" },
+        ],
+        inputArtifact: { format: "wav", sizeBytes: 500_000, durationMs: 45_000 },
+      },
+      {
+        command: "say",
+        status: "success",
+        startedAt: "2026-05-16T11:00:00.000Z",
+        finishedAt: "2026-05-16T11:00:02.000Z",
+        itemCount: 1,
+        stages: [{ stage: "tts", durationMs: 1_500, status: "success" }],
+      },
+      {
+        command: "transcribe",
+        status: "failed",
+        startedAt: "2026-05-16T12:00:00.000Z",
+        finishedAt: "2026-05-16T12:00:05.000Z",
+        itemCount: 2,
+        stages: [
+          { stage: "transcribe", durationMs: 3_000, status: "failed" },
+          { stage: "lang_id_text", durationMs: 100, status: "success" },
+        ],
+        inputArtifact: { format: "mp3", sizeBytes: 15 * 1024 * 1024, durationMs: 15 * 60_000 },
+      },
+      {
+        command: "say",
+        status: "success",
+        startedAt: "2026-04-01T10:00:00.000Z",
+        finishedAt: "2026-04-01T10:00:20.000Z",
+        itemCount: 1,
+        stages: [{ stage: "tts", durationMs: 20_000, status: "success" }],
+      },
+    ]);
 
     const summary = getWeekSummary(new Date("2026-05-17T00:00:00.000Z"));
     const rendered = renderWeekSummary(summary);
@@ -316,38 +318,60 @@ function seedStatsRun(input: {
   inputArtifact?: { format: string; sizeBytes: number; durationMs: number };
   error?: Error;
 }): void {
+  seedStatsRuns([input]);
+}
+
+function seedStatsRuns(inputs: Array<{
+  command: "transcribe" | "say";
+  status: "success" | "failed";
+  startedAt: string;
+  finishedAt: string;
+  itemCount: number;
+  stages: Array<{ stage: string; durationMs: number; status: "success" | "failed" }>;
+  inputArtifact?: { format: string; sizeBytes: number; durationMs: number };
+  error?: Error;
+}>): void {
   const db = new Database(resolveStatsDbPath());
   try {
-    const run = db.query(
-      `insert into runs
-        (command, started_at, finished_at, status, app_version, item_count)
-       values (?, ?, ?, ?, 'test', ?)
-       returning id`,
-    ).get(input.command, input.startedAt, input.finishedAt, input.status, input.itemCount) as { id: number };
+    db.exec("begin");
+    try {
+      for (const input of inputs) {
+        const run = db.query(
+          `insert into runs
+            (command, started_at, finished_at, status, app_version, item_count)
+           values (?, ?, ?, ?, 'test', ?)
+           returning id`,
+        ).get(input.command, input.startedAt, input.finishedAt, input.status, input.itemCount) as { id: number };
 
-    if (input.inputArtifact) {
-      db.query(
-        `insert into artifacts
-          (run_id, kind, format, size_bytes, duration_ms, sample_rate, channels)
-         values (?, 'input_audio', ?, ?, ?, null, null)`,
-      ).run(run.id, input.inputArtifact.format, input.inputArtifact.sizeBytes, input.inputArtifact.durationMs);
-    }
+        if (input.inputArtifact) {
+          db.query(
+            `insert into artifacts
+              (run_id, kind, format, size_bytes, duration_ms, sample_rate, channels)
+             values (?, 'input_audio', ?, ?, ?, null, null)`,
+          ).run(run.id, input.inputArtifact.format, input.inputArtifact.sizeBytes, input.inputArtifact.durationMs);
+        }
 
-    for (const stage of input.stages) {
-      db.query(
-        `insert into stage_timings
-          (run_id, stage, started_at, duration_ms, status)
-         values (?, ?, ?, ?, ?)`,
-      ).run(run.id, stage.stage, input.startedAt, stage.durationMs, stage.status);
-    }
+        for (const stage of input.stages) {
+          db.query(
+            `insert into stage_timings
+              (run_id, stage, started_at, duration_ms, status)
+             values (?, ?, ?, ?, ?)`,
+          ).run(run.id, stage.stage, input.startedAt, stage.durationMs, stage.status);
+        }
 
-    if (input.error) {
-      const { errorClass, message } = sanitizeStatsError(input.error);
-      db.query(
-        `insert into errors
-          (run_id, stage, error_class, error_code, sanitized_message, occurred_at)
-         values (?, 'transcribe', ?, 'failed', ?, ?)`,
-      ).run(run.id, errorClass, message, input.startedAt);
+        if (input.error) {
+          const { errorClass, message } = sanitizeStatsError(input.error);
+          db.query(
+            `insert into errors
+              (run_id, stage, error_class, error_code, sanitized_message, occurred_at)
+             values (?, 'transcribe', ?, 'failed', ?, ?)`,
+          ).run(run.id, errorClass, message, input.startedAt);
+        }
+      }
+      db.exec("commit");
+    } catch (err) {
+      db.exec("rollback");
+      throw err;
     }
   } finally {
     db.close();
