@@ -307,8 +307,8 @@ function renderMarkdown(report: BenchmarkReport): string {
 
 async function main(): Promise<void> {
   const repoDir = resolve(import.meta.dir, "..");
-  const ruFiles = scanFixtures(resolve(repoDir, "fixtures/benchmark"));
-  const enFiles = scanFixtures(resolve(repoDir, "fixtures/benchmark-en"));
+  const ruFiles = scanFixtures(resolve(repoDir, "tests/fixtures/benchmark"));
+  const enFiles = scanFixtures(resolve(repoDir, "tests/fixtures/benchmark-en"));
 
   if (ruFiles.length === 0 && enFiles.length === 0) {
     throw new Error("No fixture files found");

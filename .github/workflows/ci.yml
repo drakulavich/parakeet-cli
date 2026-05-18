@@ -58,7 +58,7 @@ jobs:
             code:
               - 'src/**'
               - 'tests/**'
-              - 'fixtures/**'
+              - 'tests/fixtures/**'
               - 'package.json'
               - 'bun.lock'
               - 'tsconfig.json'
@@ -73,7 +73,7 @@ jobs:
             integration:
               - 'src/**'
               - 'tests/integration/**'
-              - 'fixtures/**'
+              - 'tests/fixtures/**'
               - 'package.json'
               - 'bun.lock'
               - '.github/workflows/ci.yml'
@@ -102,7 +102,7 @@ jobs:
               - 'package.json'
               - 'bun.lock'
             homebrew:
-              - 'Formula/**'
+              - 'packaging/homebrew/Formula/**'
               - 'docs/homebrew.md'
               - '.github/workflows/ci.yml'
 
@@ -138,7 +138,7 @@ jobs:
       - name: 🧪 Create local test tap
         run: |
           brew tap-new local/kesha
-          cp Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
+          cp packaging/homebrew/Formula/kesha-voice-kit.rb "$(brew --repository local/kesha)/Formula/kesha-voice-kit.rb"
 
       - name: 📦 Install formula
         run: brew install --build-from-source local/kesha/kesha-voice-kit
@@ -288,7 +288,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: 🔊 Setup integration backend
-        uses: ./.github/actions/install-parakeet-backend
+        uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
             ~/.cache/kesha
@@ -343,7 +343,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: 🔊 Install published Linux backend
-        uses: ./.github/actions/install-parakeet-backend
+        uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
             ~/.cache/kesha
@@ -355,7 +355,7 @@ jobs:
         shell: bash
         run: |
           kesha status
-          kesha --json fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
+          kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
           bun -e '
             const output = await Bun.file("/tmp/kesha-linux-smoke.json").json();
             if (!Array.isArray(output) || output.length !== 1) {
@@ -415,7 +415,7 @@ jobs:
           '
 
       - name: 🔊 Install models through local backend
-        uses: ./.github/actions/install-parakeet-backend
+        uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: |
             ${{ github.workspace }}/.kesha-release-smoke
@@ -428,7 +428,7 @@ jobs:
         shell: bash
         run: |
           kesha status
-          kesha --json fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-release-smoke.json
+          kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-release-smoke.json
           bun -e '
             const output = await Bun.file("/tmp/kesha-release-smoke.json").json();
             if (!Array.isArray(output) || output.length !== 1) {

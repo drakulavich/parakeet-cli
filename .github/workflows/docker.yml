@@ -38,8 +38,8 @@ jobs:
               - bun.lock
               - bin/**
               - src/**
-              - fixtures/benchmark/**
-              - fixtures/benchmark-en/**
+              - tests/fixtures/benchmark/**
+              - tests/fixtures/benchmark-en/**
               - .github/workflows/docker.yml
 
       - name: 🔐 Login to GHCR

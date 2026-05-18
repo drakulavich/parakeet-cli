@@ -29,7 +29,7 @@ Sleep 1s
 
 # 1) English transcript — hero one-liner. Voice message in, plain text +
 #    `[lang: en, confidence: 1.00]` tail out.
-Type "kesha --format transcript fixtures/benchmark-en/01-check-email.ogg"
+Type "kesha --format transcript tests/fixtures/benchmark-en/01-check-email.ogg"
 Sleep 500ms
 Enter
 # Sleep long enough for the user to read the 2-line output comfortably.
@@ -38,7 +38,7 @@ Sleep 6s
 # 2) Russian JSON — same engine, different consumer. Stable JSON envelope
 #    with `text`, `lang`, `audioLanguage`, `textLanguage` — the shape
 #    agents (OpenClaw skill, MCP tools) consume.
-Type "kesha --json fixtures/benchmark/03-ty-dobavil-sebe-v-pamyat.ogg"
+Type "kesha --json tests/fixtures/benchmark/03-ty-dobavil-sebe-v-pamyat.ogg"
 Sleep 500ms
 Enter
 # JSON output is ~14 lines; give the viewer enough time to scan it.

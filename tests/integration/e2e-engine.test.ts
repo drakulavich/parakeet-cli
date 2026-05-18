@@ -7,8 +7,8 @@ import {
 } from "../../src/engine";
 
 const CWD = import.meta.dir + "/../..";
-const FIXTURE_RU = "fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
-const FIXTURE_EN = "fixtures/benchmark-en/01-check-email.ogg";
+const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
+const FIXTURE_EN = "tests/fixtures/benchmark-en/01-check-email.ogg";
 
 const engineInstalled = isEngineInstalled();
 

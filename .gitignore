@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.f32le
 fixtures/corrupt.bin
+tests/fixtures/corrupt.bin
 swift/.build/
 swift/*/.build/
 rust/target/

@@ -11,7 +11,7 @@
 import { Glob } from "bun";
 import { resolve } from "path";
 
-const fixturesDir = resolve(import.meta.dir, "../fixtures/benchmark");
+const fixturesDir = resolve(import.meta.dir, "../tests/fixtures/benchmark");
 const files = [...new Glob("*.ogg").scanSync(fixturesDir)].sort();
 
 if (files.length === 0) {

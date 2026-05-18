@@ -37,7 +37,7 @@ release:
 ```bash
 brew tap oven-sh/bun
 brew tap-new local/tap
-cp Formula/kesha-voice-kit.rb "$(brew --repository local/tap)/Formula/"
+cp packaging/homebrew/Formula/kesha-voice-kit.rb "$(brew --repository local/tap)/Formula/"
 brew install local/tap/kesha-voice-kit
 brew test local/tap/kesha-voice-kit
 brew audit --strict --formula local/tap/kesha-voice-kit

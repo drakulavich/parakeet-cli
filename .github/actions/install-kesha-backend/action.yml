@@ -19,7 +19,7 @@ inputs:
     required: false
     default: skip
   install-args:
-    description: Additional arguments for `parakeet install`
+    description: Additional arguments for `kesha install`
     required: false
     default: ""
 
