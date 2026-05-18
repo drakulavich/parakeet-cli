@@ -11,8 +11,15 @@ interface ActiveProcess {
 }
 
 const FORCE_KILL_GRACE_MS = 1_000;
+const SIGNAL_EXIT_BUFFER_MS = 50;
 const activeProcesses = new Set<ActiveProcess>();
 let signalHandlersInstalled = false;
+let pendingSignalCleanup:
+  | {
+      exitCode: number;
+      done: Promise<void>;
+    }
+  | null = null;
 
 export function engineAbortError(): Error {
   const err = new Error("kesha-engine process aborted");
@@ -38,6 +45,16 @@ export function registerProcessTree(proc: KillableProcess): {
     terminate: (signal: ManagedSignal = "SIGTERM") => active.kill(signal),
     forceKillAfterGrace: () => scheduleForceKill(active),
   };
+}
+
+export function getPendingSignalExitCode(): number | null {
+  return pendingSignalCleanup?.exitCode ?? null;
+}
+
+export async function waitForPendingSignalCleanup(): Promise<number | null> {
+  if (!pendingSignalCleanup) return null;
+  await pendingSignalCleanup.done;
+  return pendingSignalCleanup.exitCode;
 }
 
 export function terminateProcessTree(proc: KillableProcess, signal: ManagedSignal = "SIGTERM"): void {
@@ -77,9 +94,9 @@ function safeKillDirect(proc: KillableProcess, signal: ManagedSignal): void {
   }
 }
 
-function scheduleForceKill(proc: ActiveProcess): Timer {
+function scheduleForceKill(proc: ActiveProcess, opts: { ref?: boolean } = {}): Timer {
   const timer = setTimeout(() => proc.kill("SIGKILL"), FORCE_KILL_GRACE_MS);
-  timer.unref?.();
+  if (opts.ref !== true) timer.unref?.();
   return timer;
 }
 
@@ -91,10 +108,26 @@ function ensureSignalHandlers(): void {
 }
 
 function terminateActiveProcessTrees(signal: ManagedSignal, exitCode: number): void {
-  for (const proc of activeProcesses) {
+  const processes = [...activeProcesses];
+  process.exitCode = exitCode;
+
+  for (const proc of processes) {
     proc.kill(signal);
-    scheduleForceKill(proc);
+    scheduleForceKill(proc, { ref: true });
   }
-  const timer = setTimeout(() => process.exit(exitCode), 50);
-  timer.unref?.();
+
+  if (pendingSignalCleanup) {
+    return;
+  }
+
+  const delayMs = processes.length > 0
+    ? FORCE_KILL_GRACE_MS + SIGNAL_EXIT_BUFFER_MS
+    : SIGNAL_EXIT_BUFFER_MS;
+  let resolveDone!: () => void;
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  pendingSignalCleanup = { exitCode, done };
+  setTimeout(resolveDone, delayMs);
+  done.then(() => process.exit(exitCode));
 }

@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   parseLangResult,
   getEngineBinPath,
@@ -54,31 +55,6 @@ process.exit(2);
   );
   chmodSync(path, 0o755);
   return path;
-}
-
-async function waitForPidFile(path: string): Promise<number> {
-  for (let i = 0; i < 80; i++) {
-    if (existsSync(path)) return Number(readFileSync(path, "utf8"));
-    await Bun.sleep(25);
-  }
-  throw new Error(`timed out waiting for pid file: ${path}`);
-}
-
-function pidIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForPidExit(pid: number): Promise<boolean> {
-  for (let i = 0; i < 120; i++) {
-    if (!pidIsAlive(pid)) return true;
-    await Bun.sleep(25);
-  }
-  return false;
 }
 
 async function withEngineEnv<T>(

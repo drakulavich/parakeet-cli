@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { waitForPidExit, waitForPidFile } from "../helpers/process";
 import {
   installFakeDiarizeModel,
   runCliScenario,
@@ -123,7 +124,7 @@ function createSiblingCancellationEngine(dir: string, langPidPath: string): stri
   const enginePath = join(dir, "kesha-engine-sibling-cancel");
   writeFileSync(
     enginePath,
-    `#!/usr/bin/env bun
+    `#!${process.execPath}
 const args = Bun.argv.slice(2);
 if (args[0] === "--capabilities-json") {
   console.log(JSON.stringify({ protocolVersion: 1, backend: "fake", features: [] }));
@@ -148,31 +149,6 @@ process.exit(2);
   );
   chmodSync(enginePath, 0o755);
   return enginePath;
-}
-
-async function waitForPidFile(path: string): Promise<number> {
-  for (let i = 0; i < 80; i++) {
-    if (existsSync(path)) return Number(readFileSync(path, "utf8"));
-    await Bun.sleep(25);
-  }
-  throw new Error(`timed out waiting for pid file: ${path}`);
-}
-
-function pidIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForPidExit(pid: number): Promise<boolean> {
-  for (let i = 0; i < 120; i++) {
-    if (!pidIsAlive(pid)) return true;
-    await Bun.sleep(25);
-  }
-  return false;
 }
 
 function expectContract(
@@ -454,7 +430,7 @@ describe("CLI contracts", () => {
     proc.kill("SIGINT");
 
     const [stdout, stderr, exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
-    expect(exitCode).not.toBe(0);
+    expect(exitCode).toBe(130);
     expect(stdout).not.toContain("fake media");
     expect(stderr).toContain(`Transcribing ${mediaPath}`);
     expect(await waitForPidExit(helperPid)).toBe(true);

@@ -16,6 +16,7 @@ import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, createStatsRecorder } from "../stats";
 import { createPercentProgress } from "../progress";
+import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 
 interface MainCommandArgs {
   _: string[];
@@ -378,6 +379,13 @@ export const mainCommand = defineCommand({
 
     stats.finish(hasError ? "failed" : "success", files.length);
 
-    if (hasError) process.exit(1);
+    if (hasError) {
+      const signalExitCode = getPendingSignalExitCode();
+      if (signalExitCode !== null) {
+        await waitForPendingSignalCleanup();
+        process.exit(signalExitCode);
+      }
+      process.exit(1);
+    }
   },
 });
