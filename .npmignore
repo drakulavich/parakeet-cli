@@ -1,5 +1,4 @@
 tests/
-fixtures/
 docs/
 src/__tests__/
 .gitattributes

@@ -20,7 +20,6 @@ class KeshaVoiceKit < Formula
       #!/bin/bash
       exec "#{Formula["oven-sh/bun/bun"].opt_bin}/bun" "#{libexec}/bin/kesha.js" "$@"
     EOS
-
   end
 
   test do
