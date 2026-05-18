@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "macos", test))]
+use std::io::Write;
 #[cfg(target_os = "macos")]
 use std::io::{self, IsTerminal, Read};
 use std::path::Path;
@@ -14,6 +16,27 @@ use anyhow::{bail, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 #[cfg(target_os = "macos")]
 use cpal::{SampleFormat, StreamConfig};
+
+#[cfg(any(target_os = "macos", test))]
+const OUTPUT_CHANNELS: u16 = 1;
+#[cfg(any(target_os = "macos", test))]
+const FORMAT_IEEE_FLOAT: u16 = 0x0003;
+#[cfg(any(target_os = "macos", test))]
+const BITS_PER_SAMPLE: u16 = 32;
+#[cfg(any(target_os = "macos", test))]
+const BYTES_PER_SAMPLE: u32 = (BITS_PER_SAMPLE as u32) / 8;
+#[cfg(any(target_os = "macos", test))]
+const RIFF_HEADER_SIZE: u32 = 4;
+#[cfg(any(target_os = "macos", test))]
+const FMT_CHUNK_HEADER: u32 = 8;
+#[cfg(any(target_os = "macos", test))]
+const FMT_CHUNK_SIZE: u32 = 18;
+#[cfg(any(target_os = "macos", test))]
+const FACT_CHUNK_HEADER: u32 = 8;
+#[cfg(any(target_os = "macos", test))]
+const FACT_CHUNK_SIZE: u32 = 4;
+#[cfg(any(target_os = "macos", test))]
+const DATA_CHUNK_HEADER: u32 = 8;
 
 pub struct RecordSummary {
     pub path: std::path::PathBuf,
@@ -42,7 +65,8 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         .context("failed to read default microphone format")?;
     let sample_format = supported.sample_format();
     let config: StreamConfig = supported.into();
-    let channels = config.channels;
+    let input_channels = config.channels;
+    ensure_input_channels(input_channels)?;
     let sample_rate = config.sample_rate.0;
 
     let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
@@ -57,29 +81,28 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         other => bail!("unsupported microphone sample format: {other:?}"),
     };
 
-    let mut writer = create_wav_writer(path, sample_rate, channels)?;
     stream
         .play()
         .context("failed to start microphone recording")?;
 
     let started = Instant::now();
-    let mut sample_count = 0u64;
+    let mut mono_samples = Vec::new();
     'recording: loop {
         if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
             break;
         }
         match sample_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(samples) => {
-                for (index, sample) in samples.into_iter().enumerate() {
+                for (index, frame) in samples
+                    .chunks_exact(usize::from(input_channels))
+                    .enumerate()
+                {
                     if index % 1024 == 0
                         && (stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration)
                     {
                         break 'recording;
                     }
-                    writer
-                        .write_sample(sample.clamp(-1.0, 1.0))
-                        .context("failed to write microphone sample")?;
-                    sample_count += 1;
+                    mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -88,15 +111,14 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     }
 
     drop(stream);
-    writer
-        .finalize()
-        .context("failed to finalize WAV recording")?;
+    write_plain_mono_float_wav(path, sample_rate, &mono_samples)
+        .context("failed to write WAV recording")?;
 
     Ok(RecordSummary {
         path: path.to_path_buf(),
         sample_rate,
-        channels,
-        frames: sample_count / u64::from(channels),
+        channels: OUTPUT_CHANNELS,
+        frames: mono_samples.len() as u64,
     })
 }
 
@@ -168,27 +190,84 @@ impl FromInputSample<u16> for f32 {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
-fn create_wav_writer(
-    path: &Path,
-    sample_rate: u32,
-    channels: u16,
-) -> Result<hound::WavWriter<std::io::BufWriter<std::fs::File>>> {
+#[cfg(target_os = "macos")]
+fn ensure_input_channels(channels: u16) -> Result<()> {
     if channels == 0 {
         bail!("microphone reported zero channels");
     }
+    Ok(())
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn mix_frame_to_mono(frame: &[f32]) -> f32 {
+    if frame.is_empty() {
+        return 0.0;
+    }
+    frame.iter().sum::<f32>() / frame.len() as f32
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn wav_sizes_for_sample_count(sample_count: usize) -> Result<(u32, u32, u32)> {
+    let sample_count = u32::try_from(sample_count).context("recording too long to write as WAV")?;
+    let data_size = sample_count
+        .checked_mul(BYTES_PER_SAMPLE)
+        .ok_or_else(|| anyhow::anyhow!("WAV data chunk overflow ({sample_count} samples)"))?;
+    let overhead = RIFF_HEADER_SIZE
+        + FMT_CHUNK_HEADER
+        + FMT_CHUNK_SIZE
+        + FACT_CHUNK_HEADER
+        + FACT_CHUNK_SIZE
+        + DATA_CHUNK_HEADER;
+    let total_size = overhead
+        .checked_add(data_size)
+        .ok_or_else(|| anyhow::anyhow!("WAV total size overflow"))?;
+
+    Ok((sample_count, data_size, total_size))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn write_plain_mono_float_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create output directory: {}", parent.display()))?;
     }
-    let spec = hound::WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
-    };
-    hound::WavWriter::create(path, spec)
-        .with_context(|| format!("failed to create WAV recording: {}", path.display()))
+
+    let (sample_count, data_size, total_size) = wav_sizes_for_sample_count(samples.len())?;
+
+    let mut file = std::io::BufWriter::new(
+        std::fs::File::create(path)
+            .with_context(|| format!("failed to create WAV recording: {}", path.display()))?,
+    );
+
+    file.write_all(b"RIFF")?;
+    file.write_all(&total_size.to_le_bytes())?;
+    file.write_all(b"WAVE")?;
+
+    file.write_all(b"fmt ")?;
+    file.write_all(&FMT_CHUNK_SIZE.to_le_bytes())?;
+    file.write_all(&FORMAT_IEEE_FLOAT.to_le_bytes())?;
+    file.write_all(&OUTPUT_CHANNELS.to_le_bytes())?;
+    file.write_all(&sample_rate.to_le_bytes())?;
+    let byte_rate = sample_rate
+        .checked_mul(u32::from(OUTPUT_CHANNELS) * BYTES_PER_SAMPLE)
+        .ok_or_else(|| anyhow::anyhow!("WAV byte rate overflow"))?;
+    file.write_all(&byte_rate.to_le_bytes())?;
+    let block_align = OUTPUT_CHANNELS * (BITS_PER_SAMPLE / 8);
+    file.write_all(&block_align.to_le_bytes())?;
+    file.write_all(&BITS_PER_SAMPLE.to_le_bytes())?;
+    file.write_all(&0_u16.to_le_bytes())?;
+
+    file.write_all(b"fact")?;
+    file.write_all(&FACT_CHUNK_SIZE.to_le_bytes())?;
+    file.write_all(&sample_count.to_le_bytes())?;
+
+    file.write_all(b"data")?;
+    file.write_all(&data_size.to_le_bytes())?;
+    for sample in samples {
+        file.write_all(&sample.to_le_bytes())?;
+    }
+    file.flush()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -196,18 +275,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wav_writer_finalizes_readable_float_wav() {
+    fn wav_writer_finalizes_readable_mono_float_wav() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        let mut writer = create_wav_writer(&path, 16_000, 1).unwrap();
-        writer.write_sample(0.0f32).unwrap();
-        writer.write_sample(0.5f32).unwrap();
-        writer.write_sample(-0.5f32).unwrap();
-        writer.finalize().unwrap();
+        write_plain_mono_float_wav(&path, 16_000, &[0.0, 0.5, -0.5]).unwrap();
 
         let reader = hound::WavReader::open(&path).unwrap();
         let spec = reader.spec();
-        assert_eq!(spec.channels, 1);
+        assert_eq!(spec.channels, OUTPUT_CHANNELS);
         assert_eq!(spec.sample_rate, 16_000);
         assert_eq!(spec.bits_per_sample, 32);
         assert_eq!(spec.sample_format, hound::SampleFormat::Float);
@@ -216,5 +291,57 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(samples, vec![0.0, 0.5, -0.5]);
+    }
+
+    #[test]
+    fn wav_writer_uses_plain_ieee_float_without_channel_mask() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mic.wav");
+        write_plain_mono_float_wav(&path, 16_000, &[0.0; 8]).unwrap();
+        let wav = std::fs::read(path).unwrap();
+        let fmt_chunk_offset = (0..wav.len() - 8)
+            .find(|i| &wav[*i..*i + 4] == b"fmt ")
+            .expect("fmt chunk not found");
+        let fmt_size = u32::from_le_bytes([
+            wav[fmt_chunk_offset + 4],
+            wav[fmt_chunk_offset + 5],
+            wav[fmt_chunk_offset + 6],
+            wav[fmt_chunk_offset + 7],
+        ]);
+        let format_tag = u16::from_le_bytes([wav[fmt_chunk_offset + 8], wav[fmt_chunk_offset + 9]]);
+
+        assert_eq!(fmt_size, FMT_CHUNK_SIZE);
+        assert_eq!(
+            format_tag, FORMAT_IEEE_FLOAT,
+            "record WAV must not use WAVE_FORMAT_EXTENSIBLE, which can be \
+             interpreted as front-left-only by CoreAudio"
+        );
+    }
+
+    #[test]
+    fn mix_frame_to_mono_averages_input_channels() {
+        assert_eq!(mix_frame_to_mono(&[1.0, -1.0]), 0.0);
+        assert_eq!(mix_frame_to_mono(&[0.25, 0.5, 1.0]), 0.5833333);
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn wav_size_rejects_sample_count_that_would_truncate_to_u32() {
+        let err = wav_sizes_for_sample_count(u32::MAX as usize + 1).unwrap_err();
+        assert!(
+            err.to_string().contains("recording too long"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn wav_size_rejects_total_size_overflow() {
+        let max_sample_count_before_data_size_overflow = u32::MAX / BYTES_PER_SAMPLE;
+        let err = wav_sizes_for_sample_count(max_sample_count_before_data_size_overflow as usize)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("WAV total size overflow"),
+            "unexpected error: {err}"
+        );
     }
 }
