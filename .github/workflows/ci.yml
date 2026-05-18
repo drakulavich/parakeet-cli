@@ -441,14 +441,17 @@ jobs:
 
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
-    # or the say-e2e test itself changes. No `unit-tests` gate: a rust-only
-    # PR has `code == 'false'`, `unit-tests` is skipped, and GitHub Actions
-    # skip-propagation would silently skip a downstream gate even with
-    # `result == 'skipped'` in the `if:` — the latent bug behind #274 that
-    # made rust-only PRs miss tts-e2e coverage for ~a session. Path filter
-    # alone is the contract.
-    needs: changes
-    if: needs.changes.outputs.tts_e2e == 'true'
+    # or the say-e2e test itself changes. Wait for `unit-tests` so a red
+    # typecheck/unit lane fail-fasts this expensive macOS TTS lane. Keep
+    # `always()` because rust-only PRs have `code == 'false'`, so `unit-tests`
+    # is legitimately skipped; those still need the TTS engine coverage that
+    # #274 accidentally dropped when relying on normal skip propagation.
+    needs: [changes, unit-tests]
+    if: |
+      always() &&
+      needs.changes.outputs.tts_e2e == 'true' &&
+      needs.unit-tests.result != 'failure' &&
+      needs.unit-tests.result != 'cancelled'
     runs-on: macos-latest
     timeout-minutes: 20
     permissions:
