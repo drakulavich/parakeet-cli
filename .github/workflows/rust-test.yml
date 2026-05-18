@@ -154,9 +154,8 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
-            --category rust --project Laputa/kesha-voice-kit
-          bunx flakiness upload ./flakiness-report
+          bunx @flakiness/junit-xml rust/target/nextest/ci/junit.xml \
+            --category rust --flakiness-project Laputa/kesha-voice-kit
 
   coverage:
     permissions:
@@ -235,9 +234,8 @@ jobs:
             echo "No Ubuntu JUnit report found; skipping Flakiness.io upload."
             exit 0
           fi
-          bunx flakiness convert-junit rust/target/nextest/ci/junit.xml \
-            --category rust --project Laputa/kesha-voice-kit
-          bunx flakiness upload ./flakiness-report
+          bunx @flakiness/junit-xml rust/target/nextest/ci/junit.xml \
+            --category rust --flakiness-project Laputa/kesha-voice-kit
 
       - name: 🧯 Enforce Rust coverage gates
         run: bun run coverage:check:rust
