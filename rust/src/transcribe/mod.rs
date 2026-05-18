@@ -37,6 +37,11 @@ const AUTO_VAD_MIN_SECONDS: f32 = 120.0;
 /// absent — can reach seconds on large CBR files).
 const AUTO_VAD_MIN_FILE_SIZE: u64 = 200_000;
 
+/// Safety ceiling for explicit `--no-vad` on the CoreML backend. FluidAudio's
+/// full-file path can abort the whole process on very long media before Rust
+/// gets a recoverable error, so refuse the hazardous shape before backend load.
+const COREML_NO_VAD_MAX_SECONDS: f32 = 30.0 * 60.0;
+
 /// Caller-requested VAD behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VadMode {
@@ -206,11 +211,14 @@ pub fn transcribe_with_options(
         .into_owned();
     let vad_installed = models::is_cached(models::ModelKind::Vad);
 
-    // `Auto` needs a duration probe first. `On`/`Off` are deterministic.
+    // `Auto` needs a duration probe for routing. `Off` probes too so we can
+    // reject hazardous very-long CoreML full-file runs before native code can
+    // abort the process.
     let duration = match mode {
-        VadMode::Auto => probe_duration_if_plausible(audio_path),
+        VadMode::Auto | VadMode::Off => probe_duration_if_plausible(audio_path),
         _ => None,
     };
+    validate_plain_transcribe_safety(mode, duration, vad_installed, cfg!(feature = "coreml"))?;
     let decision = decide(mode, duration, vad_installed);
     dtrace!(
         "asr::mode={mode:?} duration={:?} vad_installed={vad_installed} decision={decision:?}",
@@ -476,6 +484,35 @@ fn probe_duration_if_plausible(path: &str) -> Option<f32> {
     }
 }
 
+fn validate_plain_transcribe_safety(
+    mode: VadMode,
+    duration_s: Option<f32>,
+    vad_installed: bool,
+    coreml_backend: bool,
+) -> Result<()> {
+    if !coreml_backend || mode != VadMode::Off {
+        return Ok(());
+    }
+
+    let Some(duration_s) = duration_s else {
+        return Ok(());
+    };
+    if duration_s < COREML_NO_VAD_MAX_SECONDS {
+        return Ok(());
+    }
+
+    let action = if vad_installed {
+        "omit --no-vad so Kesha can segment the file with VAD"
+    } else {
+        "run `kesha install --vad`, then rerun without --no-vad"
+    };
+    anyhow::bail!(
+        "refusing --no-vad for very long audio on the CoreML backend \
+         (detected {duration_s:.0}s; limit is {COREML_NO_VAD_MAX_SECONDS:.0}s). \
+         FluidAudio may abort the process on full-file long audio; {action}."
+    );
+}
+
 /// Resolve the diarization model path. Priority:
 /// 1. `KESHA_DIARIZE_MODEL_PATH` env var (must point to an existing path).
 /// 2. Default cache location populated by `kesha install --diarize`
@@ -638,6 +675,69 @@ mod tests {
             err.to_string()
                 .contains("failed to probe audio duration for timestamped segments"),
             "{err}"
+        );
+    }
+
+    #[test]
+    fn coreml_no_vad_rejects_very_long_plain_runs() {
+        let err = validate_plain_transcribe_safety(
+            VadMode::Off,
+            Some(COREML_NO_VAD_MAX_SECONDS + 1.0),
+            true,
+            true,
+        )
+        .expect_err("very long CoreML --no-vad should be rejected before backend load");
+        assert!(err.to_string().contains("refusing --no-vad"), "{err}");
+        assert!(err.to_string().contains("omit --no-vad"), "{err}");
+    }
+
+    #[test]
+    fn coreml_no_vad_rejection_points_at_vad_install_when_missing() {
+        let err = validate_plain_transcribe_safety(
+            VadMode::Off,
+            Some(COREML_NO_VAD_MAX_SECONDS + 1.0),
+            false,
+            true,
+        )
+        .expect_err("very long CoreML --no-vad should explain missing VAD");
+        assert!(err.to_string().contains("kesha install --vad"), "{err}");
+    }
+
+    #[test]
+    fn plain_safety_allows_non_coreml_or_short_or_auto_runs() {
+        assert!(
+            validate_plain_transcribe_safety(
+                VadMode::Off,
+                Some(COREML_NO_VAD_MAX_SECONDS + 1.0),
+                true,
+                false,
+            )
+            .is_ok(),
+            "non-CoreML backends should keep their existing --no-vad behavior"
+        );
+        assert!(
+            validate_plain_transcribe_safety(
+                VadMode::Off,
+                Some(COREML_NO_VAD_MAX_SECONDS - 1.0),
+                true,
+                true,
+            )
+            .is_ok(),
+            "short CoreML --no-vad runs should still be allowed"
+        );
+        assert!(
+            validate_plain_transcribe_safety(
+                VadMode::Auto,
+                Some(COREML_NO_VAD_MAX_SECONDS + 1.0),
+                true,
+                true,
+            )
+            .is_ok(),
+            "Auto mode should route through the existing VAD decision path"
+        );
+        assert!(
+            validate_plain_transcribe_safety(VadMode::Off, None, true, true).is_ok(),
+            "unknown duration should not fail before the backend can report the real error"
         );
     }
 

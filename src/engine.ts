@@ -52,6 +52,10 @@ export function isEngineInstalled(): boolean {
 /** A Bun.spawn `stdio` array entry: per-fd action or inherit-by-number. */
 type SpawnStdioEntry = "inherit" | "pipe" | "ignore" | number;
 
+interface RunEngineOptions {
+  signal?: AbortSignal;
+}
+
 /**
  * Upper bound on the fd number we'll forward (#323 Greptile P2).
  *

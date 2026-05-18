@@ -184,6 +184,7 @@ describe("main command validation side effects", () => {
   test("empty invocation exits after printing usage", async () => {
     await expect(expectMainExit(defaultMainArgs(), [])).resolves.toBe(1);
   });
+
 });
 
 describe("transcription progress reporting", () => {
