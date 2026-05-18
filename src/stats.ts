@@ -7,9 +7,11 @@ import { packageVersion } from "./package-info";
 
 const SCHEMA_VERSION = 1;
 const MAX_ERROR_MESSAGE_CHARS = 300;
+const DEFAULT_RETENTION_DAYS = 90;
 const APP_VERSION = readPackageVersion();
 
 export type StatsCommandName = "transcribe" | "say";
+export type StatsExportFormat = "json" | "csv";
 export type StatsStageStatus = "success" | "failed";
 export type StatsRunStatus = "success" | "failed";
 
@@ -172,6 +174,7 @@ export function enableStats(): void {
   const db = openStatsDatabase(resolveStatsDbPath());
   try {
     setSetting(db, "enabled", "1");
+    applyStatsRetention(db);
   } finally {
     db.close();
   }
@@ -191,12 +194,19 @@ export interface StatsStatus {
   dbPath: string;
   runCount: number;
   exists: boolean;
+  retentionDays: number | null;
 }
 
 export function getStatsStatus(): StatsStatus {
   const dbPath = resolveStatsDbPath();
   if (!existsSync(dbPath)) {
-    return { enabled: false, dbPath, runCount: 0, exists: false };
+    return {
+      enabled: false,
+      dbPath,
+      runCount: 0,
+      exists: false,
+      retentionDays: defaultRetentionDays(),
+    };
   }
   const db = openStatsDatabase(dbPath);
   try {
@@ -205,9 +215,76 @@ export function getStatsStatus(): StatsStatus {
       dbPath,
       runCount: Number((db.query("select count(*) as n from runs").get() as { n: number }).n),
       exists: true,
+      retentionDays: getStatsRetentionDays(db),
     };
   } finally {
     db.close();
+  }
+}
+
+export interface StatsResetResult {
+  runs: number;
+  artifacts: number;
+  stageTimings: number;
+  errors: number;
+}
+
+export function resetStats(): StatsResetResult {
+  const db = openStatsDatabase(resolveStatsDbPath());
+  try {
+    const artifacts = runChanges(db, "delete from artifacts");
+    const stageTimings = runChanges(db, "delete from stage_timings");
+    const errors = runChanges(db, "delete from errors");
+    const runs = runChanges(db, "delete from runs");
+    return { runs, artifacts, stageTimings, errors };
+  } finally {
+    db.close();
+  }
+}
+
+export interface StatsVacuumResult {
+  dbPath: string;
+  beforeBytes: number;
+  afterBytes: number;
+}
+
+export function vacuumStats(): StatsVacuumResult {
+  const dbPath = resolveStatsDbPath();
+  const beforeBytes = fileSize(dbPath);
+  const db = openStatsDatabase(dbPath);
+  try {
+    db.exec("pragma wal_checkpoint(TRUNCATE)");
+    db.exec("vacuum");
+  } finally {
+    db.close();
+  }
+  return {
+    dbPath,
+    beforeBytes,
+    afterBytes: fileSize(dbPath),
+  };
+}
+
+export function setStatsRetentionDays(days: number | null): void {
+  if (days !== null && (!Number.isInteger(days) || days < 1)) {
+    throw new Error("Stats retention must be a positive whole number of days, or 'off'");
+  }
+  const db = openStatsDatabase(resolveStatsDbPath());
+  try {
+    setSetting(db, "retention_days", days === null ? "off" : String(days));
+    applyStatsRetention(db);
+  } finally {
+    db.close();
+  }
+}
+
+export function exportStats(format: StatsExportFormat): string {
+  const data = readStatsExport();
+  switch (format) {
+    case "json":
+      return `${JSON.stringify(data, null, 2)}\n`;
+    case "csv":
+      return renderStatsCsv(data);
   }
 }
 
@@ -336,6 +413,50 @@ export function getWeekSummary(now = new Date()): StatsWeekSummary {
   } finally {
     db.close();
   }
+}
+
+export interface StatsRunExportRow {
+  id: number;
+  command: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: StatsRunStatus;
+  appVersion: string;
+  itemCount: number;
+}
+
+export interface StatsArtifactExportRow {
+  id: number;
+  runId: number;
+  kind: string;
+  format: string | null;
+  sizeBytes: number | null;
+  durationMs: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+}
+
+export interface StatsStageTimingExportRow {
+  id: number;
+  runId: number;
+  stage: string;
+  startedAt: string;
+  durationMs: number;
+  status: StatsStageStatus;
+}
+
+export interface StatsExportData {
+  schemaVersion: number;
+  exportedAt: string;
+  retentionDays: number | null;
+  privacy: {
+    contentFree: true;
+    neverStored: string[];
+  };
+  runs: StatsRunExportRow[];
+  artifacts: StatsArtifactExportRow[];
+  stageTimings: StatsStageTimingExportRow[];
+  errors: StatsErrorRow[];
 }
 
 export interface StatsErrorRow {
@@ -628,10 +749,249 @@ function setSetting(db: Database, key: string, value: string): void {
 }
 
 function insertRun(db: Database, command: StatsCommandName): number {
+  applyStatsRetention(db);
   const result = db.query(
     "insert into runs (command, started_at, status, app_version) values (?, ?, 'failed', ?) returning id",
   ).get(command, new Date().toISOString(), APP_VERSION) as { id: number };
   return Number(result.id);
+}
+
+function readStatsExport(): StatsExportData {
+  const dbPath = resolveStatsDbPath();
+  if (!existsSync(dbPath)) {
+    return emptyStatsExport(defaultRetentionDays());
+  }
+
+  const db = openStatsDatabase(dbPath);
+  try {
+    applyStatsRetention(db);
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      retentionDays: getStatsRetentionDays(db),
+      privacy: statsPrivacyContract(),
+      runs: db.query(
+        `select
+          id,
+          command,
+          started_at as startedAt,
+          finished_at as finishedAt,
+          status,
+          app_version as appVersion,
+          item_count as itemCount
+         from runs
+         order by started_at asc, id asc`,
+      ).all() as StatsRunExportRow[],
+      artifacts: db.query(
+        `select
+          id,
+          run_id as runId,
+          kind,
+          format,
+          size_bytes as sizeBytes,
+          duration_ms as durationMs,
+          sample_rate as sampleRate,
+          channels
+         from artifacts
+         order by id asc`,
+      ).all() as StatsArtifactExportRow[],
+      stageTimings: db.query(
+        `select
+          id,
+          run_id as runId,
+          stage,
+          started_at as startedAt,
+          duration_ms as durationMs,
+          status
+         from stage_timings
+         order by started_at asc, id asc`,
+      ).all() as StatsStageTimingExportRow[],
+      errors: db.query(
+        `select
+          e.occurred_at as occurredAt,
+          r.command as command,
+          e.stage as stage,
+          e.error_class as errorClass,
+          e.error_code as errorCode,
+          e.sanitized_message as message
+         from errors e
+         left join runs r on r.id = e.run_id
+         order by e.occurred_at asc, e.id asc`,
+      ).all() as StatsErrorRow[],
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function emptyStatsExport(retentionDays: number | null): StatsExportData {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    retentionDays,
+    privacy: statsPrivacyContract(),
+    runs: [],
+    artifacts: [],
+    stageTimings: [],
+    errors: [],
+  };
+}
+
+function statsPrivacyContract(): StatsExportData["privacy"] {
+  return {
+    contentFree: true,
+    neverStored: [
+      "audio bytes",
+      "transcripts",
+      "input text",
+      "output text",
+      "file names",
+      "full file paths",
+      "raw stdout",
+      "raw stderr",
+      "environment variables",
+      "model files",
+    ],
+  };
+}
+
+function renderStatsCsv(data: StatsExportData): string {
+  const header = [
+    "table",
+    "id",
+    "run_id",
+    "command",
+    "kind",
+    "stage",
+    "status",
+    "started_at",
+    "finished_at",
+    "occurred_at",
+    "duration_ms",
+    "format",
+    "size_bytes",
+    "sample_rate",
+    "channels",
+    "error_class",
+    "error_code",
+    "sanitized_message",
+    "app_version",
+    "item_count",
+  ];
+  const rows: Array<Record<string, string | number | null>> = [];
+
+  for (const run of data.runs) {
+    rows.push({
+      table: "runs",
+      id: run.id,
+      command: run.command,
+      status: run.status,
+      started_at: run.startedAt,
+      finished_at: run.finishedAt,
+      app_version: run.appVersion,
+      item_count: run.itemCount,
+    });
+  }
+  for (const artifact of data.artifacts) {
+    rows.push({
+      table: "artifacts",
+      id: artifact.id,
+      run_id: artifact.runId,
+      kind: artifact.kind,
+      format: artifact.format,
+      size_bytes: artifact.sizeBytes,
+      duration_ms: artifact.durationMs,
+      sample_rate: artifact.sampleRate,
+      channels: artifact.channels,
+    });
+  }
+  for (const timing of data.stageTimings) {
+    rows.push({
+      table: "stage_timings",
+      id: timing.id,
+      run_id: timing.runId,
+      stage: timing.stage,
+      status: timing.status,
+      started_at: timing.startedAt,
+      duration_ms: timing.durationMs,
+    });
+  }
+  for (const error of data.errors) {
+    rows.push({
+      table: "errors",
+      command: error.command,
+      stage: error.stage,
+      occurred_at: error.occurredAt,
+      error_class: error.errorClass,
+      error_code: error.errorCode,
+      sanitized_message: error.message,
+    });
+  }
+
+  return [
+    header.join(","),
+    ...rows.map((row) => header.map((name) => csvCell(row[name] ?? null)).join(",")),
+  ].join("\n") + "\n";
+}
+
+function csvCell(value: string | number | null): string {
+  if (value === null) return "";
+  const text = String(value);
+  if (!/[",\n\r]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function getStatsRetentionDays(db: Database): number | null {
+  const row = db.query("select value from settings where key = 'retention_days'").get() as
+    | { value: string }
+    | null;
+  if (!row) return defaultRetentionDays();
+  return parseRetentionSetting(row.value);
+}
+
+function defaultRetentionDays(): number | null {
+  const raw = process.env.KESHA_STATS_RETENTION_DAYS;
+  if (!raw) return DEFAULT_RETENTION_DAYS;
+  return parseRetentionSetting(raw);
+}
+
+function parseRetentionSetting(raw: string): number | null {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "off" || normalized === "none" || normalized === "never") return null;
+  const days = Number(normalized);
+  if (Number.isInteger(days) && days >= 1) return days;
+  return DEFAULT_RETENTION_DAYS;
+}
+
+function applyStatsRetention(db: Database): void {
+  const retentionDays = getStatsRetentionDays(db);
+  if (retentionDays === null) return;
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  db.exec("begin");
+  try {
+    db.query("delete from artifacts where run_id in (select id from runs where started_at < ?)").run(cutoff);
+    db.query("delete from stage_timings where run_id in (select id from runs where started_at < ?)").run(cutoff);
+    db.query("delete from errors where run_id in (select id from runs where started_at < ?)").run(cutoff);
+    db.query("delete from errors where run_id is null and occurred_at < ?").run(cutoff);
+    db.query("delete from runs where started_at < ?").run(cutoff);
+    db.exec("commit");
+  } catch (err) {
+    db.exec("rollback");
+    throw err;
+  }
+}
+
+function runChanges(db: Database, sql: string): number {
+  const result = db.query(sql).run() as { changes?: number };
+  return Number(result.changes ?? 0);
+}
+
+function fileSize(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
 }
 
 function normalizeFormat(format?: string | null): string | null {

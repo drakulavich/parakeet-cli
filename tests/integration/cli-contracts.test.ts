@@ -383,7 +383,7 @@ describe("CLI contracts", () => {
     const status = await runCli(["stats", "status"], { env });
     expectContract(status, {
       exitCode: 0,
-      stdoutContains: ["Kesha Stats: disabled", `Database: ${env.KESHA_STATS_DB}`, "Runs: 0"],
+      stdoutContains: ["Kesha Stats: disabled", `Database: ${env.KESHA_STATS_DB}`, "Runs: 0", "Retention: 90 day(s)"],
       stderrEmpty: true,
     });
 
@@ -409,6 +409,43 @@ describe("CLI contracts", () => {
       exitCode: 0,
       stdoutContains: ["file_not_found"],
       stdoutNotContains: ["private-recording.wav"],
+      stderrEmpty: true,
+    });
+
+    const jsonExport = await runCli(["stats", "export", "--format", "json"], { env });
+    expectContract(jsonExport, {
+      exitCode: 0,
+      stdoutContains: ['"contentFree": true', '"runs"', '"errors"'],
+      stdoutNotContains: ["private-recording.wav"],
+      stderrEmpty: true,
+    });
+
+    const csvExport = await runCli(["stats", "export", "--format", "csv"], { env });
+    expectContract(csvExport, {
+      exitCode: 0,
+      stdoutContains: ["table,id,run_id", "runs,", "errors,"],
+      stdoutNotContains: ["private-recording.wav"],
+      stderrEmpty: true,
+    });
+
+    const retention = await runCli(["stats", "retention", "30"], { env });
+    expectContract(retention, {
+      exitCode: 0,
+      stdoutContains: ["Kesha Stats retention set to 30 day(s)"],
+      stderrEmpty: true,
+    });
+
+    const vacuum = await runCli(["stats", "vacuum"], { env });
+    expectContract(vacuum, {
+      exitCode: 0,
+      stdoutContains: ["Kesha Stats vacuumed:", `Database: ${env.KESHA_STATS_DB}`],
+      stderrEmpty: true,
+    });
+
+    const reset = await runCli(["stats", "reset"], { env });
+    expectContract(reset, {
+      exitCode: 0,
+      stdoutContains: ["Kesha Stats reset:", "run(s)"],
       stderrEmpty: true,
     });
   });

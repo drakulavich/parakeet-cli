@@ -230,7 +230,7 @@ export const mainCommand = defineCommand({
           "       kesha manpage\n" +
           "       kesha status\n" +
           "       kesha say <text>\n" +
-          "       kesha stats [enable|disable|status|week|errors]\n" +
+          "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
           "       kesha support-bundle [--output path.tar.gz]",
       );
       process.exit(1);
