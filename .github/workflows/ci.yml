@@ -551,9 +551,8 @@ jobs:
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
         run: npm run lint
 
-  # Supplementary check: verify the Nix flake still evaluates and the
-  # engine derivation builds. Catches regressions in `flake.nix` /
-  # naersk / ort-sys env-var wiring before they reach main. Does NOT
+  # Supplementary post-merge check: verify the Nix flake still evaluates and
+  # the engine derivation builds after relevant changes land on main. Does NOT
   # replace `build-engine.yml` — distributable release artifacts
   # continue to go through Github-runner cargo + Swift toolchain pins.
   #
@@ -573,7 +572,7 @@ jobs:
   # still ships the CoreML backend.
   nix-build:
     needs: changes
-    if: needs.changes.outputs.nix == 'true'
+    if: github.event_name == 'push' && needs.changes.outputs.nix == 'true'
     strategy:
       fail-fast: false
       matrix:
