@@ -123,6 +123,8 @@ Version drift gate: `bun .github/scripts/check-versions.ts` (`bun run check:vers
 
 **CLI-only patch** (docs, TS, plugin): bump only `package.json#version`; leave `keshaEngine.version` + `rust/Cargo.toml`; PR CI uses the existing engine; merge; create a marker release:
 
+CLI-only is allowed only when the changed CLI surface works against the already-published engine pinned by `package.json#keshaEngine.version`. If a CLI command delegates to a new engine subcommand, capability flag, feature behavior, or output contract, it is an **engine release**: bump `package.json#keshaEngine.version`, `rust/Cargo.toml`, and `rust/Cargo.lock` together. Before cutting any `v*-cli` marker, smoke-test new/changed CLI commands against the published pinned engine, not only a repo-local engine build. The `v1.18.2-cli` / `v1.18.3-cli` mistake was exposing `kesha record` while the pinned published engine was still `v1.18.0` and did not implement `kesha-engine record`.
+
 ```bash
 gh release create vX.Y.Z-cli --title "vX.Y.Z (CLI-only)" \
   --notes "Engine: v<keshaEngine.version> (unchanged)."
