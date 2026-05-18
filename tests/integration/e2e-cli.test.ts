@@ -356,8 +356,11 @@ describe("e2e-cli", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(stderr).toContain(`Transcribing ${mediaPath}...`);
-    expect(stderr).toMatch(/Transcribed .*workshop\.mp4 \(\d+ms\)/);
+    expect(stderr).toContain(`Transcribing ${mediaPath}`);
+    expect(stderr).toContain("0%");
+    expect(stderr).toContain(`Transcribed ${mediaPath}`);
+    expect(stderr).toContain("100%");
+    expect(stderr).not.toMatch(/Transcribed .*workshop\.mp4 \(\d+ms\)/);
 
     const parsed = JSON.parse(stdout);
     expect(parsed).toHaveLength(1);

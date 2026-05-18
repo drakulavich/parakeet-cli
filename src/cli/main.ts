@@ -15,7 +15,7 @@ import {
 import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, createStatsRecorder } from "../stats";
-import { createActivityProgress } from "../progress";
+import { createPercentProgress } from "../progress";
 
 interface MainCommandArgs {
   _: string[];
@@ -257,14 +257,18 @@ export const mainCommand = defineCommand({
       if (inputArtifact) stats.recordArtifact(inputArtifact);
 
       const startedAt = performance.now();
-      let progress: ReturnType<typeof createActivityProgress> | null = null;
+      let progress: ReturnType<typeof createPercentProgress> | null = null;
       try {
         await preflightTranscribeWithSegments({
           vad: vadMode,
           timestamps: args.timestamps,
           speakers: args.speakers,
         });
-        progress = reportProgress ? createActivityProgress(`Transcribing ${file}`) : null;
+        progress = reportProgress
+          ? createPercentProgress(`Transcribing ${file}`, {
+              estimatedTotalMs: args.speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
+            })
+          : null;
         // Run audio lang-id and transcription concurrently.
         const [audioResult, transcript] = await Promise.all([
           wantsLangId
@@ -318,7 +322,7 @@ export const mainCommand = defineCommand({
           result.segments = segments;
         }
         results.push(result);
-        progress?.finish(`Transcribed ${file} (${sttTimeMs}ms)`);
+        progress?.finish(`Transcribed ${file}`);
       } catch (err: unknown) {
         progress?.stop();
         hasError = true;

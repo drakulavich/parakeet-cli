@@ -254,8 +254,10 @@ describe("CLI contracts", () => {
     expectContract(run, {
       exitCode: 1,
       stderrContains: [
-        `Transcribing ${mediaPath}...`,
+        `Transcribing ${mediaPath}`,
+        "0%",
         `Transcribed ${mediaPath}`,
+        "100%",
         "missing.wav: File not found",
       ],
       stdoutNotContains: ["Transcribing", "Transcribed", "missing.wav: File not found"],
@@ -283,7 +285,7 @@ describe("CLI contracts", () => {
     const json = await runCli([mediaPath, "--json", "--speakers"], { env });
     expectContract(json, {
       exitCode: 0,
-      stderrContains: [`Transcribing ${mediaPath}...`, `Transcribed ${mediaPath}`],
+      stderrContains: [`Transcribing ${mediaPath}`, "0%", `Transcribed ${mediaPath}`, "100%"],
       stdoutNotContains: ["Transcribing", "Transcribed"],
     });
     const parsed = JSON.parse(json.stdout);
@@ -319,14 +321,14 @@ describe("CLI contracts", () => {
       exitCode: 0,
       stdoutContains: ["Привет с воркшопа", "[lang: ru, confidence: 0.98]"],
       stdoutNotContains: ["Transcribing", "Transcribed"],
-      stderrContains: [`Transcribing ${mediaPath}...`, `Transcribed ${mediaPath}`],
+      stderrContains: [`Transcribing ${mediaPath}`, "0%", `Transcribed ${mediaPath}`, "100%"],
     });
 
     const toon = await runCli([mediaPath, "--toon"], { env });
     expectContract(toon, {
       exitCode: 0,
       stdoutNotContains: ["Transcribing", "Transcribed"],
-      stderrContains: [`Transcribing ${mediaPath}...`, `Transcribed ${mediaPath}`],
+      stderrContains: [`Transcribing ${mediaPath}`, "0%", `Transcribed ${mediaPath}`, "100%"],
     });
     const { decode: decodeToon } = await import("@toon-format/toon");
     const decoded = decodeToon(toon.stdout) as Array<Record<string, unknown>>;
@@ -337,7 +339,7 @@ describe("CLI contracts", () => {
     expectContract(noVadJson, {
       exitCode: 0,
       stdoutNotContains: ["Transcribing", "Transcribed"],
-      stderrContains: [`Transcribing ${mediaPath}...`, `Transcribed ${mediaPath}`],
+      stderrContains: [`Transcribing ${mediaPath}`, "0%", `Transcribed ${mediaPath}`, "100%"],
     });
     expect(JSON.parse(noVadJson.stdout)[0].text).toBe("Привет без VAD");
   });

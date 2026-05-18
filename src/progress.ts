@@ -1,7 +1,7 @@
 import { log } from "./log";
 
 const BAR_WIDTH = 20;
-const ACTIVITY_PULSE_WIDTH = 5;
+const DEFAULT_ESTIMATED_PROGRESS_MS = 30 * 60 * 1000;
 
 export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
@@ -15,38 +15,35 @@ export function formatProgressBar(label: string, downloaded: number, total: numb
   return `${label}  [${bar}] ${pct}%  ${formatBytes(downloaded)}/${formatBytes(total)}`;
 }
 
-export function formatActivityProgress(label: string, elapsedMs: number, frame: number): string {
-  const range = BAR_WIDTH + ACTIVITY_PULSE_WIDTH;
-  const pulseEnd = frame % range;
-  const pulseStart = pulseEnd - ACTIVITY_PULSE_WIDTH;
-  const bar = Array.from({ length: BAR_WIDTH }, (_, i) =>
-    i >= pulseStart && i < pulseEnd ? "█" : "░",
-  ).join("");
-  return `${label}  [${bar}] ${formatElapsed(elapsedMs)}`;
+export function formatPercentProgress(label: string, percent: number): string {
+  const pct = Math.max(0, Math.min(100, Math.floor(percent)));
+  const filled = Math.round((pct / 100) * BAR_WIDTH);
+  const empty = BAR_WIDTH - filled;
+  const bar = "█".repeat(filled) + "░".repeat(empty);
+  return `${label}  [${bar}] ${pct}%`;
 }
 
-function formatElapsed(elapsedMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes}m${seconds.toString().padStart(2, "0")}s` : `${seconds}s`;
+function estimatePercent(elapsedMs: number, estimatedTotalMs: number): number {
+  if (elapsedMs <= 0) return 0;
+  const targetMs = Math.max(1, estimatedTotalMs);
+  return Math.max(1, Math.min(99, Math.floor((elapsedMs / targetMs) * 99)));
 }
 
-export function createActivityProgress(
+export function createPercentProgress(
   label: string,
-  options: { intervalMs?: number } = {},
+  options: { estimatedTotalMs?: number; intervalMs?: number } = {},
 ): {
-  finish(finalMessage: string): void;
+  finish(finalLabel: string): void;
   interrupt(writeLine: () => void): void;
   stop(): void;
 } {
   const isTTY = process.stderr.isTTY;
 
   if (!isTTY) {
-    process.stderr.write(`${label}...\n`);
+    process.stderr.write(`${formatPercentProgress(label, 0)}\n`);
     return {
-      finish(finalMessage: string) {
-        process.stderr.write(`${finalMessage}\n`);
+      finish(finalLabel: string) {
+        process.stderr.write(`${formatPercentProgress(finalLabel, 100)}\n`);
       },
       interrupt(writeLine: () => void) {
         writeLine();
@@ -56,16 +53,18 @@ export function createActivityProgress(
   }
 
   const intervalMs = options.intervalMs ?? 250;
+  const estimatedTotalMs = options.estimatedTotalMs ?? DEFAULT_ESTIMATED_PROGRESS_MS;
   const startedAt = performance.now();
-  let frame = 1;
   let lastLineLength = 0;
   let timer: Timer | undefined;
   let stopped = false;
+  let firstRender = true;
 
   const render = () => {
     if (stopped) return;
-    const line = formatActivityProgress(label, performance.now() - startedAt, frame);
-    frame += 1;
+    const percent = firstRender ? 0 : estimatePercent(performance.now() - startedAt, estimatedTotalMs);
+    firstRender = false;
+    const line = formatPercentProgress(label, percent);
     lastLineLength = line.length;
     process.stderr.write(`\r${line}`);
   };
@@ -86,9 +85,9 @@ export function createActivityProgress(
   timer = setInterval(render, intervalMs);
 
   return {
-    finish(finalMessage: string) {
+    finish(finalLabel: string) {
       clearLine(true);
-      process.stderr.write(`${finalMessage}\n`);
+      process.stderr.write(`${formatPercentProgress(finalLabel, 100)}\n`);
     },
     interrupt(writeLine: () => void) {
       if (stopped) {

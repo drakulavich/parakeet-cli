@@ -1,8 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import {
-  createActivityProgress,
+  createPercentProgress,
   createProgressBar,
-  formatActivityProgress,
+  formatPercentProgress,
   formatProgressBar,
   formatBytes,
 } from "../../src/progress";
@@ -53,18 +53,23 @@ describe("formatProgressBar", () => {
   });
 });
 
-describe("formatActivityProgress", () => {
-  test("renders an indeterminate activity bar with elapsed time", () => {
-    const bar = formatActivityProgress("Transcribing workshop.mp4", 65_000, 7);
+describe("formatPercentProgress", () => {
+  test("renders a determinate percentage bar", () => {
+    const bar = formatPercentProgress("Transcribing workshop.mp4", 42);
     expect(bar).toContain("Transcribing workshop.mp4");
     expect(bar).toContain("[");
-    expect(bar).toContain("1m05s");
+    expect(bar).toContain("42%");
     expect(bar).toContain("█");
     expect(bar).toContain("░");
   });
+
+  test("clamps percentages to the display range", () => {
+    expect(formatPercentProgress("Transcribing file.wav", -10)).toContain("0%");
+    expect(formatPercentProgress("Transcribing file.wav", 120)).toContain("100%");
+  });
 });
 
-describe("createActivityProgress", () => {
+describe("createPercentProgress", () => {
   test("non-TTY mode writes stable log lines", () => {
     const originalIsTTY = process.stderr.isTTY;
     const originalWrite = process.stderr.write;
@@ -77,11 +82,11 @@ describe("createActivityProgress", () => {
         return true;
       }) as typeof process.stderr.write;
 
-      const progress = createActivityProgress("Transcribing file.wav");
-      progress.finish("Transcribed file.wav (123ms)");
+      const progress = createPercentProgress("Transcribing file.wav");
+      progress.finish("Transcribed file.wav");
 
-      expect(writes.join("")).toContain("Transcribing file.wav...\n");
-      expect(writes.join("")).toContain("Transcribed file.wav (123ms)\n");
+      expect(writes.join("")).toContain("Transcribing file.wav  [░░░░░░░░░░░░░░░░░░░░] 0%\n");
+      expect(writes.join("")).toContain("Transcribed file.wav  [████████████████████] 100%\n");
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
       process.stderr.write = originalWrite;
@@ -100,12 +105,13 @@ describe("createActivityProgress", () => {
         return true;
       }) as typeof process.stderr.write;
 
-      const progress = createActivityProgress("Transcribing file.wav", { intervalMs: 10_000 });
-      progress.finish("Transcribed file.wav (123ms)");
+      const progress = createPercentProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      progress.finish("Transcribed file.wav");
 
       const combined = writes.join("");
       expect(combined).toContain("Transcribing file.wav");
-      expect(combined).toContain("Transcribed file.wav (123ms)\n");
+      expect(combined).toContain("Transcribing file.wav  [░░░░░░░░░░░░░░░░░░░░] 0%");
+      expect(combined).toContain("Transcribed file.wav  [████████████████████] 100%\n");
       expect(combined).toContain("\r");
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
@@ -125,14 +131,14 @@ describe("createActivityProgress", () => {
         return true;
       }) as typeof process.stderr.write;
 
-      const progress = createActivityProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      const progress = createPercentProgress("Transcribing file.wav", { intervalMs: 10_000 });
       progress.interrupt(() => process.stderr.write("warning: language mismatch\n"));
-      progress.finish("Transcribed file.wav (123ms)");
+      progress.finish("Transcribed file.wav");
 
       const combined = writes.join("");
       expect(combined).toContain("warning: language mismatch\n");
       expect(combined).toContain("Transcribing file.wav");
-      expect(combined).toContain("Transcribed file.wav (123ms)\n");
+      expect(combined).toContain("Transcribed file.wav  [████████████████████] 100%\n");
     } finally {
       Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
       process.stderr.write = originalWrite;
@@ -151,7 +157,7 @@ describe("createActivityProgress", () => {
         return true;
       }) as typeof process.stderr.write;
 
-      const progress = createActivityProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      const progress = createPercentProgress("Transcribing file.wav", { intervalMs: 10_000 });
       progress.stop();
       writes.length = 0;
 
