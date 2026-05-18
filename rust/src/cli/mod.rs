@@ -6,6 +6,7 @@
 pub mod detect_lang;
 pub mod detect_text_lang;
 pub mod install;
+pub mod record;
 pub mod transcribe;
 
 #[cfg(feature = "tts")]

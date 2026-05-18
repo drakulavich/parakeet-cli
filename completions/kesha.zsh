@@ -8,6 +8,7 @@ _kesha() {
     'doctor:Collect support diagnostics without changing local state'
     'install:Download inference engine and models'
     'manpage:Print the kesha(1) manpage'
+    'record:Record microphone audio to a WAV file'
     'say:Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes.'
     'stats:Manage local anonymous Kesha Stats'
     'status:Show backend installation status'
@@ -62,6 +63,13 @@ _kesha() {
     manpage)
       _arguments '--help[Show help]' \
         '-h[Show help]'
+      ;;
+    record)
+      _arguments '--help[Show help]' \
+        '-h[Show help]' \
+        '--out=[Write recorded WAV audio to this path]:out:' \
+        '--max-seconds=[Maximum recording duration in seconds]:max seconds:' \
+        '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]'
       ;;
     say)
       _arguments '--help[Show help]' \

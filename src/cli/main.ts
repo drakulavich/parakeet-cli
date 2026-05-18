@@ -119,6 +119,7 @@ export const mainCommand = defineCommand({
       "  doctor     Collect support diagnostics.\n" +
       "  install    Download engine and models.\n" +
       "  manpage    Print the kesha(1) manpage.\n" +
+      "  record     Record microphone audio to a WAV file.\n" +
       "  status     Inspect installed backend.\n" +
       "  say        Synthesize speech from text.\n" +
       "  stats      Manage local anonymous performance stats.\n" +
@@ -229,6 +230,7 @@ export const mainCommand = defineCommand({
           "       kesha doctor [--json] [--redact]\n" +
           "       kesha install [--no-cache]\n" +
           "       kesha manpage\n" +
+          "       kesha record --out path.wav [--max-seconds 120]\n" +
           "       kesha status\n" +
           "       kesha say <text>\n" +
           "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +

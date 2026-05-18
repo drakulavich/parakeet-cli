@@ -1,6 +1,6 @@
 [package]
 name = "kesha-engine"
-version = "1.18.0"
+version = "1.19.0"
 edition = "2021"
 description = "Inference engine for Kesha Voice Kit: ASR + language detection"
 # Not for crates.io. The library target (`src/lib.rs`) exists only for the
@@ -26,7 +26,7 @@ default = ["onnx", "tts"]
 # invalidAudioData")` (see #259) interleaves with kesha-engine's JSON output.
 coreml = ["dep:fluidaudio-rs", "dep:tempfile", "dep:libc"]
 onnx = []
-tts = ["dep:hound", "dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
+tts = ["dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
 # macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
 # Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
 # non-macOS targets even when enabled.
@@ -73,7 +73,7 @@ fluidaudio-rs = { version = "0.1", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
-hound = { version = "3.5", optional = true }
+hound = "3.5"
 thiserror = { version = "1", optional = true }
 sha2 = "0.10"
 ssml-parser = { version = "0.1", optional = true }
@@ -90,6 +90,9 @@ libc = { version = "0.2", optional = true }
 # our `g2p_parity` test freezes — see #207.
 misaki-rs = { version = "=0.3.0", default-features = false }
 vosk_tts = { path = "vendor/vosk-tts" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cpal = "0.15"
 
 [dev-dependencies]
 tempfile = "3"

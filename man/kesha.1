@@ -1,4 +1,4 @@
-.TH KESHA 1 "May 2026" "kesha 1.18.2" "User Commands"
+.TH KESHA 1 "May 2026" "kesha 1.19.0" "User Commands"
 .SH NAME
 kesha \- open-source local voice toolkit
 .SH SYNOPSIS
@@ -22,6 +22,9 @@ Download inference engine and models
 .TP
 .B manpage
 Print the kesha(1) manpage
+.TP
+.B record
+Record microphone audio to a WAV file
 .TP
 .B say
 Synthesize speech from text (TTS). Writes audio to stdout (or \-\-out file). Defaults to WAV; use \-\-format ogg\-opus for messenger\-ready voice notes.
@@ -98,6 +101,16 @@ Also install Silero VAD (~2.3MB) for long\-audio preprocessing
 .TP
 .B \-\-diarize
 Also install the Sortformer streaming\-diarization model (~245MB, darwin\-arm64 only — #199)
+.SS record
+.TP
+.B \-\-out
+Write recorded WAV audio to this path
+.TP
+.B \-\-max\-seconds
+Maximum recording duration in seconds
+.TP
+.B \-\-debug
+Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)
 .SS say
 .TP
 .B \-\-voice
