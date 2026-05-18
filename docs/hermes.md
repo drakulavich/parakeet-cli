@@ -87,7 +87,8 @@ which kesha
 kesha status
 
 tmp="$(mktemp -d)"
-kesha --format transcript fixtures/benchmark-en/01-check-email.ogg > "$tmp/transcript.txt"
+# Replace /path/to/audio.ogg with your own audio file:
+kesha --format transcript /path/to/audio.ogg > "$tmp/transcript.txt"
 cat "$tmp/transcript.txt"
 
 echo "Hello from Hermes" | kesha say --format ogg-opus --out "$tmp/reply.ogg"
