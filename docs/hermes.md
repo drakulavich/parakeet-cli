@@ -78,6 +78,7 @@ tts:
       output_format: ogg
       timeout: 60
       voice_compatible: true
+      max_text_length: 2000
 ```
 
 ## Verify
