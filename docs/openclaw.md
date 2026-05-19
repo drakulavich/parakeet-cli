@@ -37,7 +37,7 @@ openclaw config set tools.media.audio.models \
 ```
 Each segment carries `start`, `end`, and `text`. VAD-preprocessed long files yield one segment per utterance; short non-VAD files return one whole-file segment.
 
-Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the agent sees enriched context:
+Your agent receives a voice message in Telegram/WhatsApp/Slack, Kesha transcribes it locally, and the agent sees the bare transcript text:
 
 ```
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
