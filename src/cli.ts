@@ -18,7 +18,9 @@ export {
   mainCommand,
   detectLanguage,
   checkLanguageMismatch,
+  estimateTranscriptDurationSeconds,
   resolveOutputFormat,
+  shouldRunAudioLanguageDetection,
   shouldReportTranscribeProgress,
 } from "./cli/main";
 export type { ResolvedOutputFormat } from "./cli/main";

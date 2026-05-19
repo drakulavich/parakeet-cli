@@ -17,6 +17,7 @@ import { formatToonOutput } from "../toon";
 import { artifactFromFile, createStatsRecorder } from "../stats";
 import { createPercentProgress } from "../progress";
 import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
+import type { TranscriptionSegment } from "../types";
 
 interface MainCommandArgs {
   _: string[];
@@ -115,6 +116,25 @@ export function shouldReportTranscribeProgress(input: {
 }): boolean {
   if (input.debugEnabled) return false;
   return input.stderrIsTty || !input.stdoutIsTty;
+}
+
+const AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS = 10 * 60;
+
+export function estimateTranscriptDurationSeconds(segments: TranscriptionSegment[]): number | null {
+  const duration = segments.reduce((max, segment) => {
+    const end = Number(segment.end);
+    return Number.isFinite(end) && end > max ? end : max;
+  }, 0);
+  return duration > 0 ? duration : null;
+}
+
+export function shouldRunAudioLanguageDetection(input: {
+  wantsLangId: boolean;
+  transcriptDurationSeconds: number | null;
+}): boolean {
+  if (!input.wantsLangId) return false;
+  if (input.transcriptDurationSeconds === null) return true;
+  return input.transcriptDurationSeconds <= AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS;
 }
 
 export const mainCommand = defineCommand({
@@ -285,15 +305,8 @@ export const mainCommand = defineCommand({
               estimatedTotalMs: args.speakers ? 60 * 60 * 1000 : 30 * 60 * 1000,
             })
           : null;
-        // Run audio lang-id and transcription concurrently, but do not leave
-        // the sibling engine process alive if one side fails first.
         const engineAbort = new AbortController();
-        const audioPromise = wantsLangId
-          ? stats.timeStage("lang_id_audio", () =>
-              detectAudioLanguageEngine(file, { signal: engineAbort.signal })
-            )
-          : Promise.resolve(null);
-        const transcriptPromise = stats.timeStage("transcribe", () =>
+        const transcript = await stats.timeStage("transcribe", () =>
           transcribeWithSegments(file, {
             vad: vadMode,
             signal: engineAbort.signal,
@@ -301,16 +314,20 @@ export const mainCommand = defineCommand({
             speakers: args.speakers,
           })
         );
-        let audioResult: LangDetectResult | null;
-        let transcript: Awaited<ReturnType<typeof transcribeWithSegments>>;
-        try {
-          [audioResult, transcript] = await Promise.all([audioPromise, transcriptPromise]);
-        } catch (err) {
-          engineAbort.abort();
-          await Promise.allSettled([audioPromise, transcriptPromise]);
-          throw err;
-        }
         const { text, segments } = transcript;
+        const transcriptDurationSeconds = estimateTranscriptDurationSeconds(segments);
+
+        let audioResult: LangDetectResult | null = null;
+        if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
+          audioResult = await stats.timeStage("lang_id_audio", () =>
+            detectAudioLanguageEngine(file, { signal: engineAbort.signal })
+          );
+        } else if (wantsLangId) {
+          log.debug(
+            `skip lang_id_audio for ${file}: transcript duration ${transcriptDurationSeconds?.toFixed(1)}s exceeds ` +
+              `${AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS}s`,
+          );
+        }
 
         let audioLanguage: LangDetectResult | undefined;
         if (audioResult && audioResult.code) {
