@@ -51,139 +51,10 @@ kesha audio.ogg     # transcript to stdout
 
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
 
-## Shell Completions and Manpage
+## Requirements
 
-The npm package includes bash, zsh, and fish completions plus `kesha(1)`.
-The CLI can print the packaged files, so install paths do not depend on the
-Bun global package layout:
-
-```bash
-# bash
-mkdir -p ~/.local/share/bash-completion/completions
-kesha completions bash > ~/.local/share/bash-completion/completions/kesha
-
-# zsh
-mkdir -p ~/.zsh/completions
-kesha completions zsh > ~/.zsh/completions/_kesha
-# add to ~/.zshrc once: fpath=(~/.zsh/completions $fpath); autoload -Uz compinit; compinit
-
-# fish
-mkdir -p ~/.config/fish/completions
-kesha completions fish > ~/.config/fish/completions/kesha.fish
-
-# manpage
-mkdir -p ~/.local/share/man/man1
-kesha manpage > ~/.local/share/man/man1/kesha.1
-mandb ~/.local/share/man 2>/dev/null || true
-```
-
-## Homebrew Install
-
-Homebrew installs the Bun-based CLI wrapper. Engine and model downloads remain
-explicit:
-
-```bash
-brew tap oven-sh/bun
-brew install drakulavich/tap/kesha-voice-kit
-kesha install
-kesha audio.ogg
-```
-
-See [Homebrew install](docs/homebrew.md) for package scope and maintainer
-validation.
-
-## Support diagnostics
-
-Kesha can collect local diagnostics without downloading models or mutating cache state:
-
-```bash
-kesha doctor --json --redact
-kesha support-bundle --output kesha-support.tar.gz
-```
-
-`support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
-
-## Local Stats privacy and lifecycle
-
-Kesha Stats is disabled by default. When you opt in with `kesha stats enable`,
-Kesha writes a local SQLite database only on your machine:
-
-```bash
-kesha stats status
-kesha stats week
-kesha stats errors
-kesha stats export --format json   # or csv
-kesha stats retention 30           # default: 90 days
-kesha stats retention off          # keep until reset
-kesha stats reset                  # delete recorded stats rows
-kesha stats vacuum                 # compact the SQLite file
-```
-
-The database stores content-free operational records only: command name
-(`transcribe` or `say`), timestamps, success/failure status, app version, item
-count, anonymous stage timings, input/output artifact kind, file extension,
-size, optional duration/sample-rate/channel counts, and sanitized error
-class/code/message.
-
-Stats never stores audio bytes, transcripts, input text, generated speech text,
-file names, full file paths, raw stdout/stderr, environment variables, model
-files, API tokens, or cloud identifiers. `support-bundle` reports Stats status
-only; it never includes the Stats SQLite database.
-
-By default, Stats prunes rows older than 90 days before writing or exporting
-data. Use `kesha stats retention <days>` to change the TTL or `kesha stats
-retention off` to disable TTL pruning. `kesha stats reset` deletes recorded
-runs, artifacts, timings, and errors while preserving settings such as enabled
-state and retention.
-
-## Nix Install
-
-Alternative reproducible-build path on `aarch64-darwin` / `x86_64-linux`:
-
-```bash
-nix run github:drakulavich/kesha-voice-kit -- install      # downloads models (engine is bundled)
-nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe
-```
-
-Full recipes (one-liner, profile install, engine-only, dev shell) live in [docs/nix-install.md](docs/nix-install.md).
-
-## Docker
-
-Linux x64 CLI image, published to GHCR:
-
-```bash
-docker run --rm \
-  -v kesha-cache:/cache/kesha \
-  -v "$PWD:/work" -w /work \
-  ghcr.io/drakulavich/kesha-voice-kit:latest install
-
-docker run --rm \
-  -v kesha-cache:/cache/kesha \
-  -v "$PWD:/work" -w /work \
-  ghcr.io/drakulavich/kesha-voice-kit:latest audio.ogg
-```
-
-The image keeps model downloads and the engine cache under `/cache/kesha`.
-Mount that path as a named volume so `kesha install`, TTS models, VAD, and future
-runs reuse the same cache. `compose.yml` provides the same layout:
-
-```bash
-docker compose run --rm kesha install
-docker compose run --rm kesha audio.ogg
-```
-
-## Linux Packages
-
-Stable engine releases also publish `.deb` and `.rpm` packages for Linux x64.
-They install the standalone CLI wrapper; engine and model downloads remain explicit:
-
-```bash
-kesha install
-kesha audio.ogg
-```
-
-See [Linux packages](docs/linux-packages.md) for install commands and package
-scope.
+- [Bun](https://bun.sh) >= 1.3
+- macOS arm64, Linux x64, or Windows x64
 
 ## Speech-to-text
 
@@ -265,6 +136,96 @@ Honored when `<prosody rate>` wraps the whole utterance. Mid-utterance prosody w
 
 macOS system voices, SSML, voice listing, and the full voice catalogue: [docs/tts.md](docs/tts.md).
 
+## Homebrew Install
+
+Homebrew installs the Bun-based CLI wrapper. Engine and model downloads remain
+explicit:
+
+```bash
+brew tap oven-sh/bun
+brew install drakulavich/tap/kesha-voice-kit
+kesha install
+kesha audio.ogg
+```
+
+See [Homebrew install](docs/homebrew.md) for package scope and maintainer
+validation.
+
+## Linux Packages
+
+Stable engine releases also publish `.deb` and `.rpm` packages for Linux x64.
+They install the standalone CLI wrapper; engine and model downloads remain explicit:
+
+```bash
+kesha install
+kesha audio.ogg
+```
+
+See [Linux packages](docs/linux-packages.md) for install commands and package
+scope.
+
+## Docker
+
+Linux x64 CLI image, published to GHCR:
+
+```bash
+docker run --rm \
+  -v kesha-cache:/cache/kesha \
+  -v "$PWD:/work" -w /work \
+  ghcr.io/drakulavich/kesha-voice-kit:latest install
+
+docker run --rm \
+  -v kesha-cache:/cache/kesha \
+  -v "$PWD:/work" -w /work \
+  ghcr.io/drakulavich/kesha-voice-kit:latest audio.ogg
+```
+
+The image keeps model downloads and the engine cache under `/cache/kesha`.
+Mount that path as a named volume so `kesha install`, TTS models, VAD, and future
+runs reuse the same cache. `compose.yml` provides the same layout:
+
+```bash
+docker compose run --rm kesha install
+docker compose run --rm kesha audio.ogg
+```
+
+## Nix Install
+
+Alternative reproducible-build path on `aarch64-darwin` / `x86_64-linux`:
+
+```bash
+nix run github:drakulavich/kesha-voice-kit -- install      # downloads models (engine is bundled)
+nix run github:drakulavich/kesha-voice-kit -- audio.ogg    # transcribe
+```
+
+Full recipes (one-liner, profile install, engine-only, dev shell) live in [docs/nix-install.md](docs/nix-install.md).
+
+## Shell Completions and Manpage
+
+The npm package includes bash, zsh, and fish completions plus `kesha(1)`.
+The CLI can print the packaged files, so install paths do not depend on the
+Bun global package layout:
+
+```bash
+# bash
+mkdir -p ~/.local/share/bash-completion/completions
+kesha completions bash > ~/.local/share/bash-completion/completions/kesha
+
+# zsh
+mkdir -p ~/.zsh/completions
+kesha completions zsh > ~/.zsh/completions/_kesha
+# add to ~/.zshrc once: fpath=(~/.zsh/completions $fpath); autoload -Uz compinit; compinit
+
+# fish
+mkdir -p ~/.config/fish/completions
+kesha completions fish > ~/.config/fish/completions/kesha.fish
+
+# manpage
+mkdir -p ~/.local/share/man/man1
+kesha manpage > ~/.local/share/man/man1/kesha.1
+mandb ~/.local/share/man 2>/dev/null || true
+```
+
 ## Performance
 
 > **Up to ~19x faster than Whisper** on Apple Silicon (M2), **~2.5x faster** on CPU
@@ -309,10 +270,49 @@ await downloadModel();                       // install engine + models
 const text = await transcribe("audio.ogg");  // transcribe
 ```
 
-## Requirements
+## Support diagnostics
 
-- [Bun](https://bun.sh) >= 1.3
-- macOS arm64, Linux x64, or Windows x64
+Kesha can collect local diagnostics without downloading models or mutating cache state:
+
+```bash
+kesha doctor --json --redact
+kesha support-bundle --output kesha-support.tar.gz
+```
+
+`support-bundle` creates a redacted `.tar.gz` archive for GitHub issues. It includes runtime, engine, cache, optional-component, Stats status, and known Kesha environment settings. It does not include audio, transcripts, model files, or the Stats database.
+
+## Local Stats privacy and lifecycle
+
+Kesha Stats is disabled by default. When you opt in with `kesha stats enable`,
+Kesha writes a local SQLite database only on your machine:
+
+```bash
+kesha stats status
+kesha stats week
+kesha stats errors
+kesha stats export --format json   # or csv
+kesha stats retention 30           # default: 90 days
+kesha stats retention off          # keep until reset
+kesha stats reset                  # delete recorded stats rows
+kesha stats vacuum                 # compact the SQLite file
+```
+
+The database stores content-free operational records only: command name
+(`transcribe` or `say`), timestamps, success/failure status, app version, item
+count, anonymous stage timings, input/output artifact kind, file extension,
+size, optional duration/sample-rate/channel counts, and sanitized error
+class/code/message.
+
+Stats never stores audio bytes, transcripts, input text, generated speech text,
+file names, full file paths, raw stdout/stderr, environment variables, model
+files, API tokens, or cloud identifiers. `support-bundle` reports Stats status
+only; it never includes the Stats SQLite database.
+
+By default, Stats prunes rows older than 90 days before writing or exporting
+data. Use `kesha stats retention <days>` to change the TTL or `kesha stats
+retention off` to disable TTL pruning. `kesha stats reset` deletes recorded
+runs, artifacts, timings, and errors while preserving settings such as enabled
+state and retention.
 
 ## Contributing
 
