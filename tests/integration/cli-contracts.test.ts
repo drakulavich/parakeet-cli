@@ -61,6 +61,10 @@ if (args[0] === "detect-text-lang") {
 }
 
 if (args[0] === "transcribe") {
+  if (process.env.KESHA_FAKE_TRANSCRIBE_ERROR) {
+    console.error(process.env.KESHA_FAKE_TRANSCRIBE_ERROR);
+    process.exit(42);
+  }
   const text = args.includes("--no-vad") ? "Привет без VAD" : "Привет с воркшопа";
   if (args.includes("--speakers")) {
     console.log(JSON.stringify({
@@ -327,6 +331,41 @@ describe("CLI contracts", () => {
     expect(parsed.results[0].file).toBe(mediaPath);
     expect(parsed.errors).toEqual([
       { file: "missing.wav", code: "file_not_found", message: "File not found" },
+    ]);
+  });
+
+  test("--json --include-errors --speakers reports diarization failures structurally", async () => {
+    const dir = makeTempDir("kesha-cli-contract-diarize-error-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const diarizeError =
+      "speaker diarization failed\n\nCaused by:\n    kesha-diarize timed out after 600s for 12894s audio; try splitting the file or set KESHA_DIARIZE_TIMEOUT_SECS=1200 (or larger):";
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_TRANSCRIBE_ERROR: diarizeError,
+    };
+    installFakeDiarizeModel(env.KESHA_CACHE_DIR);
+
+    const run = await runCli(["--json", "--include-errors", "--speakers", mediaPath], { env });
+
+    expectContract(run, {
+      exitCode: 1,
+      stdoutNotContains: ["Transcribing"],
+      stderrContains: [
+        `${mediaPath}: speaker diarization failed`,
+        "kesha-diarize timed out after 600s for 12894s audio",
+      ],
+    });
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.errors).toEqual([
+      {
+        file: mediaPath,
+        code: "transcribe_failed",
+        message: diarizeError,
+      },
     ]);
   });
 

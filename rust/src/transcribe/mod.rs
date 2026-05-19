@@ -274,8 +274,13 @@ pub fn transcribe_with_options(
     #[cfg(all(feature = "system_diarize", target_os = "macos"))]
     {
         if let Some(model_path) = diarize_model_path {
-            let spans = diarize::run(std::path::Path::new(audio_path), &model_path)
-                .context("speaker diarization failed")?;
+            let spans = diarize::run(
+                std::path::Path::new(audio_path),
+                &model_path,
+                &output.segments,
+                duration,
+            )
+            .context("speaker diarization failed")?;
             output.segments = diarize::merge_into(output.segments, &spans);
         }
     }

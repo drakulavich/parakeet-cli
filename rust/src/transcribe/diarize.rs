@@ -9,8 +9,16 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::process_tree::ChildGuard;
+use crate::{dtrace, dtrace_json};
 
 use super::TranscriptionSegment;
+
+const DEFAULT_DIARIZE_TIMEOUT_SECS: u64 = 90;
+const MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS: u64 = 1_800;
+const DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND: f32 = 0.05;
+const DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT: f32 = 0.10;
+const MIN_DIARIZE_SEGMENT_COVERAGE: f32 = 0.95;
+const MAX_DIARIZE_TAIL_GAP_SECONDS: f32 = 30.0;
 
 /// One speaker span emitted by the sidecar. Cluster IDs are stable within
 /// one invocation but not across calls.
@@ -26,12 +34,24 @@ struct SidecarOutput {
     spans: Vec<DiarizeSpan>,
 }
 
-fn diarize_timeout() -> Duration {
-    let secs = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
+fn diarize_timeout(asr_segments: &[TranscriptionSegment], duration: Option<f32>) -> Duration {
+    if let Some(secs) = std::env::var("KESHA_DIARIZE_TIMEOUT_SECS")
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .filter(|secs| *secs > 0)
-        .unwrap_or(90);
+    {
+        return Duration::from_secs(secs);
+    }
+
+    let asr_end = max_asr_end(asr_segments);
+    let audio_secs = duration.or(asr_end).unwrap_or(0.0).max(0.0);
+    let by_audio = (audio_secs * DIARIZE_TIMEOUT_SECONDS_PER_AUDIO_SECOND).ceil() as u64;
+    let by_segments =
+        (asr_segments.len() as f32 * DIARIZE_TIMEOUT_SECONDS_PER_ASR_SEGMENT).ceil() as u64;
+    let secs = DEFAULT_DIARIZE_TIMEOUT_SECS
+        .max(by_audio)
+        .max(by_segments)
+        .min(MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS);
     Duration::from_secs(secs)
 }
 
@@ -61,10 +81,35 @@ fn sidecar_path() -> Result<PathBuf> {
     )
 }
 
-/// Run the sidecar against `audio_path` (16 kHz mono f32 IEEE_FLOAT WAV)
-/// using the diarization model at `model_path`. Returns the parsed span list.
-pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpan>> {
+/// Run the sidecar against `audio_path` using the diarization model at
+/// `model_path`. Returns a span list that is validated against the ASR
+/// timeline before merge, so callers never receive silently partial speaker
+/// labels (#397).
+pub(crate) fn run(
+    audio_path: &Path,
+    model_path: &Path,
+    asr_segments: &[TranscriptionSegment],
+    duration: Option<f32>,
+) -> Result<Vec<DiarizeSpan>> {
     let sidecar = sidecar_path()?;
+    let timeout = diarize_timeout(asr_segments, duration);
+    let audio_secs = duration
+        .or_else(|| max_asr_end(asr_segments))
+        .unwrap_or(0.0);
+    dtrace!(
+        "diarize::start timeout={}s audio_secs={:.1} asr_segments={}",
+        timeout.as_secs(),
+        audio_secs,
+        asr_segments.len()
+    );
+    dtrace_json!(
+        "diarize.start",
+        {
+            "timeout_secs": timeout.as_secs(),
+            "audio_secs": audio_secs,
+            "asr_segments": asr_segments.len()
+        }
+    );
     let child = Command::new(&sidecar)
         .arg(audio_path)
         .arg(model_path)
@@ -74,7 +119,6 @@ pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpa
         .with_context(|| format!("failed to spawn {}", sidecar.display()))?;
     let mut child = ChildGuard::new(child);
 
-    let timeout = diarize_timeout();
     let started = Instant::now();
     loop {
         if child
@@ -90,8 +134,11 @@ pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpa
                 .with_context(|| format!("failed to collect timed-out {}", sidecar.display()))?;
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!(
-                "kesha-diarize timed out after {}s: {}",
+                "kesha-diarize timed out after {}s for {:.0}s audio; try splitting the file \
+                 or set KESHA_DIARIZE_TIMEOUT_SECS={} (or larger): {}",
                 timeout.as_secs(),
+                audio_secs,
+                timeout.as_secs() * 2,
                 stderr.trim()
             );
         }
@@ -127,7 +174,96 @@ pub(crate) fn run(audio_path: &Path, model_path: &Path) -> Result<Vec<DiarizeSpa
             String::from_utf8_lossy(&output.stdout)
         )
     })?;
+    let coverage = validate_coverage(asr_segments, &parsed.spans)?;
+    dtrace!(
+        "diarize::coverage spans={} labeled={}/{} ratio={:.3} span_end={:.1}s asr_end={:.1}s",
+        parsed.spans.len(),
+        coverage.labeled_segments,
+        coverage.total_segments,
+        coverage.coverage_ratio,
+        coverage.max_span_end,
+        coverage.max_asr_end
+    );
+    dtrace_json!(
+        "diarize.coverage",
+        {
+            "spans": parsed.spans.len(),
+            "labeled_segments": coverage.labeled_segments,
+            "total_segments": coverage.total_segments,
+            "coverage_ratio": coverage.coverage_ratio,
+            "max_span_end": coverage.max_span_end,
+            "max_asr_end": coverage.max_asr_end
+        }
+    );
     Ok(parsed.spans)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DiarizeCoverage {
+    pub total_segments: usize,
+    pub labeled_segments: usize,
+    pub coverage_ratio: f32,
+    pub max_asr_end: f32,
+    pub max_span_end: f32,
+}
+
+pub(crate) fn validate_coverage(
+    asr_segments: &[TranscriptionSegment],
+    diarize_spans: &[DiarizeSpan],
+) -> Result<DiarizeCoverage> {
+    if asr_segments.is_empty() {
+        return Ok(DiarizeCoverage {
+            total_segments: 0,
+            labeled_segments: 0,
+            coverage_ratio: 1.0,
+            max_asr_end: 0.0,
+            max_span_end: 0.0,
+        });
+    }
+
+    let max_asr_end = max_asr_end(asr_segments).unwrap_or(0.0);
+    let max_span_end = diarize_spans
+        .iter()
+        .map(|span| span.end)
+        .fold(0.0_f32, f32::max);
+    let labeled_segments = asr_segments
+        .iter()
+        .filter(|seg| {
+            let midpoint = (seg.start + seg.end) / 2.0;
+            diarize_spans
+                .iter()
+                .any(|span| span.start <= midpoint && midpoint < span.end)
+        })
+        .count();
+    let total_segments = asr_segments.len();
+    let coverage_ratio = labeled_segments as f32 / total_segments as f32;
+    let coverage = DiarizeCoverage {
+        total_segments,
+        labeled_segments,
+        coverage_ratio,
+        max_asr_end,
+        max_span_end,
+    };
+
+    if max_span_end + MAX_DIARIZE_TAIL_GAP_SECONDS < max_asr_end
+        || coverage_ratio < MIN_DIARIZE_SEGMENT_COVERAGE
+    {
+        bail!(
+            "speaker diarization coverage incomplete: labeled {}/{} segments ({:.1}%), \
+             spans end at {:.1}s while transcript ends at {:.1}s",
+            labeled_segments,
+            total_segments,
+            coverage_ratio * 100.0,
+            max_span_end,
+            max_asr_end
+        );
+    }
+
+    Ok(coverage)
+}
+
+fn max_asr_end(asr_segments: &[TranscriptionSegment]) -> Option<f32> {
+    asr_segments.iter().map(|seg| seg.end).reduce(f32::max)
 }
 
 /// Project each ASR segment onto the diarization timeline by midpoint
@@ -229,5 +365,184 @@ mod tests {
             out.iter().map(|s| s.speaker).collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(2), Some(3)]
         );
+    }
+
+    #[test]
+    fn coverage_validation_accepts_full_timeline() {
+        let segs = vec![seg(0.0, 1.0, "a"), seg(1.0, 2.0, "b")];
+        let spans = vec![span(0.0, 1.0, 0), span(1.0, 2.0, 1)];
+
+        let coverage = validate_coverage(&segs, &spans).expect("full coverage should pass");
+
+        assert_eq!(coverage.total_segments, 2);
+        assert_eq!(coverage.labeled_segments, 2);
+        assert_eq!(coverage.coverage_ratio, 1.0);
+        assert_eq!(coverage.max_asr_end, 2.0);
+        assert_eq!(coverage.max_span_end, 2.0);
+    }
+
+    #[test]
+    fn coverage_validation_rejects_spans_that_end_mid_transcript() {
+        let segs = vec![seg(0.0, 10.0, "a"), seg(100.0, 110.0, "b")];
+        let spans = vec![span(0.0, 10.0, 0)];
+
+        let err = validate_coverage(&segs, &spans)
+            .expect_err("mid-run diarization stop should fail closed");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("speaker diarization coverage incomplete"));
+        assert!(msg.contains("labeled 1/2 segments"));
+        assert!(msg.contains("spans end at 10.0s while transcript ends at 110.0s"));
+    }
+
+    #[test]
+    fn coverage_validation_rejects_low_midpoint_coverage() {
+        let segs = vec![
+            seg(0.0, 1.0, "a"),
+            seg(1.0, 2.0, "b"),
+            seg(2.0, 3.0, "c"),
+            seg(3.0, 4.0, "d"),
+        ];
+        let spans = vec![span(0.0, 4.0, 0), span(10.0, 20.0, 1)];
+        let sparse_spans = vec![span(0.0, 1.0, 0), span(10.0, 20.0, 1)];
+
+        validate_coverage(&segs, &spans).expect("full midpoint coverage should pass");
+        let err =
+            validate_coverage(&segs, &sparse_spans).expect_err("low midpoint coverage should fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("labeled 1/4 segments"));
+        assert!(msg.contains("(25.0%)"));
+    }
+
+    #[test]
+    fn coverage_validation_rejects_empty_spans_when_asr_has_segments() {
+        let segs = vec![seg(0.0, 1.0, "a")];
+
+        let err = validate_coverage(&segs, &[]).expect_err("empty spans should fail");
+        let msg = format!("{err}");
+
+        assert!(msg.contains("labeled 0/1 segments"));
+    }
+
+    #[test]
+    fn coverage_validation_allows_empty_asr_segments() {
+        let coverage =
+            validate_coverage(&[], &[]).expect("no ASR segments means no missing labels");
+
+        assert_eq!(coverage.total_segments, 0);
+        assert_eq!(coverage.labeled_segments, 0);
+        assert_eq!(coverage.coverage_ratio, 1.0);
+    }
+
+    #[test]
+    fn adaptive_timeout_keeps_short_audio_near_current_default() {
+        let _guard = EnvLockGuard::new();
+        let segs = vec![seg(0.0, 1.0, "a")];
+
+        unsafe {
+            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
+        }
+
+        assert_eq!(
+            diarize_timeout(&segs, Some(10.0)),
+            Duration::from_secs(DEFAULT_DIARIZE_TIMEOUT_SECS)
+        );
+    }
+
+    #[test]
+    fn adaptive_timeout_scales_for_long_audio() {
+        let _guard = EnvLockGuard::new();
+        let segs: Vec<_> = (0..6_000)
+            .map(|i| {
+                let start = i as f32;
+                seg(start, start + 0.5, "a")
+            })
+            .collect();
+
+        unsafe {
+            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
+        }
+
+        assert_eq!(
+            diarize_timeout(&segs, Some(12_000.0)),
+            Duration::from_secs(600)
+        );
+    }
+
+    #[test]
+    fn adaptive_timeout_is_capped() {
+        let _guard = EnvLockGuard::new();
+        let segs: Vec<_> = (0..100_000)
+            .map(|i| {
+                let start = i as f32;
+                seg(start, start + 0.5, "a")
+            })
+            .collect();
+
+        unsafe {
+            std::env::remove_var("KESHA_DIARIZE_TIMEOUT_SECS");
+        }
+
+        assert_eq!(
+            diarize_timeout(&segs, Some(100_000.0)),
+            Duration::from_secs(MAX_ADAPTIVE_DIARIZE_TIMEOUT_SECS)
+        );
+    }
+
+    #[test]
+    fn adaptive_timeout_env_override_wins() {
+        let _guard = EnvLockGuard::new();
+        let segs = vec![seg(0.0, 1.0, "a")];
+        let _env = EnvGuard::set("KESHA_DIARIZE_TIMEOUT_SECS", "3600");
+
+        assert_eq!(
+            diarize_timeout(&segs, Some(1.0)),
+            Duration::from_secs(3_600)
+        );
+    }
+
+    struct EnvLockGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvLockGuard {
+        fn new() -> Self {
+            static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+            Self {
+                _guard: LOCK
+                    .get_or_init(|| std::sync::Mutex::new(()))
+                    .lock()
+                    .unwrap(),
+            }
+        }
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, val: &str) -> Self {
+            let original = std::env::var(key).ok();
+            unsafe {
+                std::env::set_var(key, val);
+            }
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(v) => unsafe {
+                    std::env::set_var(self.key, v);
+                },
+                None => unsafe {
+                    std::env::remove_var(self.key);
+                },
+            }
+        }
     }
 }
