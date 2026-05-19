@@ -15,7 +15,7 @@
 
 - **Transcribe locally** — 25 languages, up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — Kokoro (EN), Vosk-TTS (RU), macOS system voices, and SSML preview
-- **Plug into agents** — ship voice workflows as CLI commands or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill
+- **Plug into agents** — ship voice workflows as CLI commands or an <a href="https://github.com/openclaw/openclaw">OpenClaw</a> skill; setup docs: [OpenClaw](docs/openclaw.md), [Hermes](docs/hermes.md)
 - **Small Rust engine** — single ~20MB binary, no ffmpeg, no Python, no native Node addons
 
 See [Product positioning](docs/product-positioning.md) for supported workflows, non-goals, maturity labels, and the platform matrix.
