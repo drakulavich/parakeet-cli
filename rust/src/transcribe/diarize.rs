@@ -138,7 +138,7 @@ pub(crate) fn run(
                  or set KESHA_DIARIZE_TIMEOUT_SECS={} (or larger): {}",
                 timeout.as_secs(),
                 audio_secs,
-                timeout.as_secs() * 2,
+                timeout.as_secs().saturating_mul(2),
                 stderr.trim()
             );
         }
@@ -423,6 +423,7 @@ mod tests {
         let msg = format!("{err}");
 
         assert!(msg.contains("labeled 0/1 segments"));
+        assert!(msg.contains("spans end at 0.0s while transcript ends at 1.0s"));
     }
 
     #[test]
