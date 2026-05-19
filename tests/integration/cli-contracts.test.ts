@@ -51,6 +51,9 @@ if (args[0] === "--capabilities-json") {
 }
 
 if (args[0] === "detect-lang") {
+  if (process.env.KESHA_FAKE_DETECT_LANG_MARKER) {
+    await Bun.write(process.env.KESHA_FAKE_DETECT_LANG_MARKER, "called");
+  }
   console.log(JSON.stringify({ code: "ru", confidence: 0.99 }));
   process.exit(0);
 }
@@ -67,9 +70,10 @@ if (args[0] === "transcribe") {
   }
   const text = args.includes("--no-vad") ? "Привет без VAD" : "Привет с воркшопа";
   if (args.includes("--speakers")) {
+    const end = Number(process.env.KESHA_FAKE_SEGMENT_END || "1.2");
     console.log(JSON.stringify({
       text,
-      segments: [{ start: 0, end: 1.2, text, speaker: 0 }],
+      segments: [{ start: 0, end, text, speaker: 0 }],
     }));
   } else {
     console.log(text);
@@ -442,6 +446,35 @@ describe("CLI contracts", () => {
     expect(JSON.parse(noVadJson.stdout)[0].text).toBe("Привет без VAD");
   });
 
+  test("long speaker transcripts skip whole-file audio language detection", async () => {
+    const dir = makeTempDir("kesha-cli-contract-long-speakers-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "meeting.mp4");
+    const detectLangMarker = join(dir, "detect-lang-called");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_DETECT_LANG_MARKER: detectLangMarker,
+      KESHA_FAKE_SEGMENT_END: "900",
+      KESHA_DEBUG: "1",
+    };
+    installFakeDiarizeModel(env.KESHA_CACHE_DIR);
+
+    const run = await runCli(["--json", "--speakers", mediaPath], { env });
+
+    expectContract(run, {
+      exitCode: 0,
+      stdoutNotContains: ["audioLanguage"],
+      stderrContains: ["skip lang_id_audio"],
+    });
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed[0].audioLanguage).toBeUndefined();
+    expect(parsed[0].textLanguage).toEqual({ code: "ru", confidence: 0.98 });
+    expect(parsed[0].segments[0].end).toBe(900);
+    expect(existsSync(detectLangMarker)).toBe(false);
+  });
+
   test("Ctrl+C terminates helper processes below the engine", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-sigint-");
@@ -475,7 +508,7 @@ describe("CLI contracts", () => {
     expect(await waitForPidExit(helperPid)).toBe(true);
   });
 
-  test("early transcription failure cancels the concurrent audio language engine", async () => {
+  test("early transcription failure does not start audio language detection", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-sibling-cancel-");
     const langPidPath = join(dir, "lang.pid");
@@ -488,14 +521,13 @@ describe("CLI contracts", () => {
     };
 
     const run = await runCli(["--json", mediaPath], { env, timeoutMs: 4_000 });
-    const langPid = await waitForPidFile(langPidPath);
 
     expectContract(run, {
       exitCode: 1,
       stderrContains: ["transcribe failed quickly"],
     });
     expect(JSON.parse(run.stdout)).toEqual([]);
-    expect(await waitForPidExit(langPid)).toBe(true);
+    expect(existsSync(langPidPath)).toBe(false);
   });
 
   test("diagnostic and support commands return parseable/readable contracts without leaking temp home", async () => {

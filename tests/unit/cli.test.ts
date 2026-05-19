@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -210,6 +210,45 @@ describe("transcription progress reporting", () => {
         debugEnabled: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe("audio language detection routing", () => {
+  test("estimates transcript duration from segment ends", () => {
+    expect(
+      estimateTranscriptDurationSeconds([
+        { start: 0, end: 2.5, text: "short" },
+        { start: 2.5, end: 601, text: "long" },
+      ]),
+    ).toBe(601);
+    expect(estimateTranscriptDurationSeconds([])).toBeNull();
+  });
+
+  test("skips whole-file audio language detection for long ASR timelines", () => {
+    expect(
+      shouldRunAudioLanguageDetection({
+        wantsLangId: true,
+        transcriptDurationSeconds: 600,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRunAudioLanguageDetection({
+        wantsLangId: true,
+        transcriptDurationSeconds: 601,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunAudioLanguageDetection({
+        wantsLangId: false,
+        transcriptDurationSeconds: 601,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunAudioLanguageDetection({
+        wantsLangId: true,
+        transcriptDurationSeconds: null,
+      }),
+    ).toBe(true);
   });
 });
 
