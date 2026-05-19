@@ -372,12 +372,26 @@ macOS equivalent is `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`.
 
 The plugin lives in `openclaw.plugin.json` + `openclaw-plugin.cjs` (+ `package.json#openclaw.extensions`).
 
-**How audio transcription actually works in OpenClaw:** the `type: "cli"` path in `tools.media.audio.models` — NOT `registerMediaUnderstandingProvider` (that path requires API keys via `requireApiKey()` and silently fails for local CLI tools). The plugin registers a `MediaUnderstandingProvider` for discoverability (`openclaw plugins inspect` shows `Shape: plain-capability`), but the actual transcription routes through `runCliEntry`, which spawns `kesha --format transcript {{MediaPath}}` and captures stdout.
+**How audio transcription actually works in OpenClaw:** the `type: "cli"` path in `tools.media.audio.models` — NOT `registerMediaUnderstandingProvider` (that path requires API keys via `requireApiKey()` and silently fails for local CLI tools). The plugin registers a `MediaUnderstandingProvider` for discoverability (`openclaw plugins inspect` shows `Shape: plain-capability`), but the actual transcription routes through `runCliEntry`, which spawns `kesha {{MediaPath}}` and captures bare transcript stdout.
 
 Recommended user config:
-```json
-{"type":"cli","command":"kesha","args":["--format","transcript","{{MediaPath}}"],"timeoutSeconds":15}
+```json5
+{
+  tools: {
+    media: {
+      audio: {
+        enabled: true,
+        models: [
+          {"type":"cli","command":"kesha","args":["{{MediaPath}}"],"timeoutSeconds":15}
+        ],
+        echoTranscript: true,
+        echoFormat: '🦜 "{transcript}"'
+      }
+    }
+  }
+}
 ```
+This is a documented user-config default, not a plugin manifest patch.
 
 **Scanner rules:**
 - OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware.

@@ -29,7 +29,7 @@ Hermes writes each incoming voice message to `{input_path}`, runs the command
 template, then reads a `.txt` transcript from `{output_dir}`.
 
 ```bash
-export HERMES_LOCAL_STT_COMMAND='sh -c '"'"'kesha --format transcript "$1" > "$2/transcript.txt"'"'"' sh {input_path} {output_dir}'
+export HERMES_LOCAL_STT_COMMAND='sh -c '"'"'kesha "$1" > "$2/transcript.txt"'"'"' sh {input_path} {output_dir}'
 ```
 
 In `~/.hermes/config.yaml`:
@@ -39,10 +39,10 @@ stt:
   provider: local_command
 ```
 
-Use plain text output if you do not want the `[lang: ...]` footer:
+Use transcript metadata output if you want the `[lang: ...]` footer:
 
 ```bash
-export HERMES_LOCAL_STT_COMMAND='sh -c '"'"'kesha "$1" > "$2/transcript.txt"'"'"' sh {input_path} {output_dir}'
+export HERMES_LOCAL_STT_COMMAND='sh -c '"'"'kesha --format transcript "$1" > "$2/transcript.txt"'"'"' sh {input_path} {output_dir}'
 ```
 
 ## Text-to-speech
@@ -89,7 +89,7 @@ kesha status
 
 tmp="$(mktemp -d)"
 # Replace /path/to/audio.ogg with your own audio file:
-kesha --format transcript /path/to/audio.ogg > "$tmp/transcript.txt"
+kesha /path/to/audio.ogg > "$tmp/transcript.txt"
 cat "$tmp/transcript.txt"
 
 echo "Hello from Hermes" | kesha say --format ogg-opus --out "$tmp/reply.ogg"
@@ -98,8 +98,9 @@ test -s "$tmp/reply.ogg"
 
 ## Notes
 
-- `kesha --format transcript` keeps the transcript on stdout and progress or
-  warnings on stderr, which matches Hermes' command contract.
+- `kesha audio.ogg` keeps the bare transcript on stdout and progress or
+  warnings on stderr, which matches Hermes' command contract without adding
+  language metadata to the prompt surface.
 - `kesha say --format ogg-opus` emits messenger-ready OGG/Opus directly.
 - Hermes command providers run trusted local shell commands with the user's
   permissions. Keep the command template in your own config or deployment

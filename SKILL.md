@@ -34,12 +34,30 @@ Install the plugin, then explicitly route OpenClaw audio understanding through t
 bun add -g @drakulavich/kesha-voice-kit
 kesha install
 openclaw plugins install @drakulavich/kesha-voice-kit
-openclaw config set tools.media.audio.enabled true
-openclaw config set tools.media.audio.models \
-  '[{"type":"cli","command":"kesha","args":["--format","transcript","{{MediaPath}}"],"timeoutSeconds":15}]'
+openclaw config patch --stdin <<'JSON5'
+{
+  tools: {
+    media: {
+      audio: {
+        enabled: true,
+        models: [
+          {
+            type: "cli",
+            command: "kesha",
+            args: ["{{MediaPath}}"],
+            timeoutSeconds: 15,
+          },
+        ],
+        echoTranscript: true,
+        echoFormat: '🦜 "{transcript}"',
+      },
+    },
+  },
+}
+JSON5
 ```
 
-Use `--format transcript` for OpenClaw's normal voice-message path: stdout is compact text plus language metadata, while progress and errors stay off the transcript payload.
+Use Kesha's default output for OpenClaw's normal voice-message path: stdout is the bare transcript text, while progress and errors stay off the transcript payload. The default setup echoes each transcript back to chat as `🦜 "{transcript}"` before the agent responds.
 
 For agents that need timestamped segments, switch the model entry to JSON output and allow a longer timeout:
 
@@ -55,6 +73,8 @@ which kesha
 kesha status
 openclaw plugins list
 openclaw config get tools.media.audio.models
+openclaw config get tools.media.audio.echoTranscript
+openclaw config get tools.media.audio.echoFormat
 ```
 
 Do not rely on `openclaw.plugin.json` to patch `tools.media.audio.models`; OpenClaw ignores non-schema fields such as `configPatch`. Keep the CLI route in user config.
