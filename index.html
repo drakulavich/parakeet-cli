@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kesha Voice Kit — Open-source voice toolkit for Apple Silicon</title>
+    <title>Kesha Voice Kit — Open-source voice toolkit for macOS, Linux, Windows</title>
     <meta
       name="description"
-      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Speaker diarization, OGG/Opus voice notes, SSML prosody, Kokoro & Vosk-TTS. A 20MB Rust binary. No Python, no ffmpeg."
+      content="Open-source voice toolkit. Speech-to-text in 25 languages, ~19× faster than Whisper on Apple Silicon. Speaker diarization, OGG/Opus voice notes, SSML prosody, Kokoro & Vosk-TTS. A single Rust binary for macOS, Linux, and Windows. No Python, no ffmpeg."
     />
     <meta name="theme-color" content="#0b1014" />
 
@@ -15,7 +15,7 @@
     <meta property="og:title" content="Kesha Voice Kit" />
     <meta
       property="og:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. STT in 25 languages, speaker diarization for meetings, TTS with OGG/Opus voice notes and SSML prosody — all from a single 20MB Rust binary."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon, ~2.5× on Linux/Windows CPU. STT in 25 languages, speaker diarization for meetings, TTS with OGG/Opus voice notes — all from a single Rust binary."
     />
     <meta property="og:image" content="assets/logo.png" />
 
@@ -24,7 +24,7 @@
     <meta name="twitter:title" content="Kesha Voice Kit" />
     <meta
       name="twitter:description"
-      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon."
+      content="Open-source voice toolkit. ~19× faster than Whisper on Apple Silicon. macOS, Linux, Windows."
     />
     <meta name="twitter:image" content="assets/logo.png" />
 
@@ -112,7 +112,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.15 · MIT licensed · CoreML + ONNX</span>
+            <span>v1.18 · MIT licensed · macOS · Linux · Windows</span>
           </div>
 
           <h1 class="hero__title">
@@ -125,8 +125,9 @@
             Small, fast, open-source audio models — speech-to-text with timestamped segments and
             speaker diarization for meetings, text-to-speech that exports straight to
             Telegram-ready OGG/Opus voice notes, voice activity detection, and language ID. CLI
-            tools plus an OpenClaw skill for LLM agents.
-            <strong>One 20MB binary. No Python. No ffmpeg.</strong>
+            tools plus an OpenClaw skill for LLM agents. CoreML on Apple Silicon, ONNX on
+            Linux + Windows.
+            <strong>One Rust binary. No Python. No ffmpeg.</strong>
           </p>
 
           <!-- Animated waveform -->
@@ -279,10 +280,10 @@
               </div>
               <h3>Text-to-speech</h3>
               <p>
-                Kokoro-82M for English with acronym auto-expand (FBI, EPAM, JSON), Vosk-TTS for
-                Russian with stress markers and abbreviation handling, plus ~180 macOS system
-                voices. Auto-routes by detected language. SSML with
-                <code>&lt;prosody rate&gt;</code> for variable-speed playback.
+                Kokoro-82M for English (CoreML on Apple Silicon, ONNX elsewhere) with acronym
+                auto-expand (FBI, EPAM, JSON), Vosk-TTS for Russian with stress markers, plus ~180
+                macOS system voices. Auto-routes by detected language. SSML
+                <code>&lt;prosody rate&gt;</code> on RU, Linux, and Windows.
               </p>
             </article>
 
@@ -330,8 +331,8 @@
               </div>
               <h3>Language detection</h3>
               <p>
-                SpeechBrain ECAPA-TDNN identifies 107 languages from audio. Apple
-                NLLanguageRecognizer handles text. Both run locally.
+                107 languages from audio via SpeechBrain ECAPA-TDNN. Text language detection
+                runs through a precompiled Swift sidecar on macOS — 30–50 ms cold or warm.
               </p>
             </article>
 
@@ -374,8 +375,11 @@
               </div>
               <h3>Rust engine, zero deps</h3>
               <p>
-                A single 20MB binary running FluidAudio (CoreML) on Apple Silicon and ort (ONNX) on
-                everything else. Audio decoded by Symphonia: WAV, MP3, OGG/Opus, FLAC, AAC, M4A.
+                A single Rust binary for macOS arm64, Linux x64, and Windows x64. FluidAudio
+                (CoreML) on Apple Silicon via dedicated sidecars (diarization, TTS, language
+                detection); ort (ONNX) elsewhere. Symphonia decodes WAV, MP3, OGG/Opus, FLAC,
+                AAC, M4A. Linux <code>.deb</code> and <code>.rpm</code> packages signed with
+                Sigstore.
                 <strong>No ffmpeg. No Python. No native Node addons.</strong>
               </p>
             </article>
@@ -411,7 +415,8 @@
             <p class="section-sub">
               Real output from <code>kesha say</code> — Kokoro-82M for English, Vosk-TTS for Russian.
               SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds without
-              resampling artifacts.
+              resampling artifacts. English samples generated on Linux/ONNX; on Apple Silicon,
+              prosody is available for Russian today.
             </p>
           </header>
 
@@ -574,8 +579,9 @@
               <div class="step__num">02</div>
               <h3>Install Kesha</h3>
               <p>
-                Pulls the engine, base STT models, and warms the Neural Engine — first transcribe
-                runs in ~500 ms instead of a 25-second hang.
+                Pulls the engine and base STT models, then warms the Neural Engine on macOS
+                (<code>--tts</code> also warms the Kokoro CoreML cache). First transcribe runs in
+                ~500 ms instead of a 25-second hang.
               </p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
@@ -707,12 +713,12 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
           <header class="section-head">
             <p class="section-eyebrow">What's inside</p>
             <h2 class="section-title">
-              <span class="serif italic">Seven models,</span> one runtime.
+              <span class="serif italic">Eight models,</span> one runtime.
             </h2>
             <p class="section-sub">
               Each model is best-in-class for its task and runs through
-              <code>kesha-engine</code> — Rust, with CoreML on Apple Silicon and ONNX everywhere
-              else.
+              <code>kesha-engine</code> — Rust, with CoreML sidecars on Apple Silicon and ONNX
+              everywhere else.
             </p>
           </header>
 
@@ -792,6 +798,19 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               <span class="model-name">FluidAudio Sortformer v2 <em>(opt-in, darwin-arm64)</em></span>
               <span class="model-task">Speaker diarization</span>
               <span class="model-size">~245 MB</span>
+              <span>
+                <a
+                  href="https://github.com/FluidInference/FluidAudio"
+                  target="_blank"
+                  rel="noopener"
+                  >FluidInference/FluidAudio ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">FluidAudio Kokoro <em>(opt-in, darwin-arm64)</em></span>
+              <span class="model-task">Text-to-speech (CoreML)</span>
+              <span class="model-size">bundled</span>
               <span>
                 <a
                   href="https://github.com/FluidInference/FluidAudio"
