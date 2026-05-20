@@ -73,7 +73,18 @@ gh pr create --base main --head <branch>
 
 Clean up after merge: `git worktree remove .worktrees/<slug> && git worktree prune`.
 
-(jj: `jj workspace add --revision main@origin .worktrees/<slug>` — never edit the shared workspace.)
+**Using jj?** The same rules apply — the shared workspace stays on `main@origin` and is never edited; work in a separate workspace:
+
+```bash
+jj git fetch
+jj workspace add --revision main@origin .worktrees/<slug>
+cd .worktrees/<slug>
+# edit, test, jj describe -m "..."
+jj git push --named "<branch>=@"
+gh pr create --base main --head <branch>
+```
+
+Clean up after merge: `jj workspace forget <slug> && rm -rf .worktrees/<slug>`.
 
 ### RELEASE PROCESS — CLI AND ENGINE ARE VERSIONED INDEPENDENTLY
 
