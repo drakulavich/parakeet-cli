@@ -54,63 +54,37 @@ rm -rf /tmp/<spike-name>-venv      # when done
 
 If the spike persists into project work, ask which env tool the user wants (uv, poetry, requirements.txt) rather than installing system-wide as a stopgap. Past offence: 2026-04-26 spike installed `piper-tts`, `misaki`, `num2words`, `spacy`, `phonemizer-fork`, `en-core-web-sm` directly into pyenv 3.13 system site-packages — user had to flag it for cleanup.
 
-### AGENTS MUST WORK IN ISOLATED TREES FROM FRESH MAIN
+### MAIN STAYS IN THE ROOT CHECKOUT — AGENTS EDIT ONLY IN WORKTREES
 
-The shared repo checkout is coordination state, not a place for agent edits. Agents must not switch the shared checkout from `main` to a feature branch (or from one feature branch to another), because other sessions can then see unrelated files, stale branch contents, or half-finished work.
+The root checkout stays on `main`: it is shared coordination state, not an edit surface. Every feature/fix/spike runs in its own gitignored worktree at `.worktrees/<slug>/`, one branch per worktree. **Never** check out `main` in a worktree, and **never** switch the root checkout to a feature branch.
 
-Allowed in the shared checkout: `fetch`, status/log inspection, `git worktree list`, `jj workspace list`, and creating an isolated tree. Not allowed there: `git switch`, `git checkout`, `jj edit`, `jj new`, file edits, formatting, tests that write outputs, commits, or pushes.
+- **Allowed in the root checkout:** `git fetch`, status/log inspection, `git worktree list|add|remove|prune`.
+- **Not allowed there:** `git switch`/`git checkout` to a feature branch, file edits, formatting, commits, pushes.
 
-Before editing, create a fresh isolated Git worktree from the remote main bookmark:
-
-```bash
-REPO=/path/to/repo
-WT_ROOT=/path/to/worktrees/kesha-voice-kit
-TASK=short-task-slug
-BRANCH=codex/$TASK-$(date +%Y%m%d-%H%M%S)
-WT=$WT_ROOT/$TASK
-
-git -C "$REPO" fetch --prune origin main
-git -C "$REPO" worktree add -b "$BRANCH" "$WT" origin/main
-
-cd "$WT"
-git status --short --branch
-```
-
-Work only inside `$WT`: edit, test, commit, push, and open the PR from there. Use `origin/main`, not local `main`, as the base; local `main` may be stale or may not be the checked-out branch. To open a PR: `gh pr create --base main --head "$BRANCH"`.
-
-For JJ, use a separate workspace from the remote main bookmark, not the shared workspace:
+Branch off fresh `origin/main` (not local `main` — it may be stale); edit, test, and PR from inside the worktree:
 
 ```bash
-REPO=/path/to/repo
-WT_ROOT=/path/to/worktrees/kesha-voice-kit
-TASK=short-task-slug
-WT=$WT_ROOT/$TASK-jj
-
-jj --repository "$REPO" --ignore-working-copy git fetch --remote origin
-jj --repository "$REPO" --ignore-working-copy workspace add \
-  --name "$TASK" \
-  --revision 'main@origin' \
-  "$WT"
-
-cd "$WT"
-jj status
+git fetch origin main
+git worktree add .worktrees/<slug> -b <branch> origin/main
+cd .worktrees/<slug>
+# edit, test, commit
+gh pr create --base main --head <branch>
 ```
 
-Push JJ work with a task-specific bookmark:
+Clean up after merge: `git worktree remove .worktrees/<slug> && git worktree prune`.
+
+**Using jj?** The same rules apply — the shared workspace stays on `main@origin` and is never edited; work in a separate workspace:
 
 ```bash
-jj describe -m "feat: concise message"
-jj git push --named "codex/$TASK=@"
-gh pr create --base main --head "codex/$TASK"
+jj git fetch
+jj workspace add --revision main@origin .worktrees/<slug>
+cd .worktrees/<slug>
+# edit, test, jj describe -m "..."
+jj git push --named "<branch>=@"
+gh pr create --base main --head <branch>
 ```
 
-When done, remove only the isolated tree/workspace:
-
-```bash
-git -C "$REPO" worktree remove --force "$WT" && git -C "$REPO" worktree prune
-# or, for JJ:
-jj --repository "$REPO" workspace forget "$TASK" && rm -rf "$WT"
-```
+Clean up after merge: `jj workspace forget <slug> && rm -rf .worktrees/<slug>`.
 
 ### RELEASE PROCESS — CLI AND ENGINE ARE VERSIONED INDEPENDENTLY
 
