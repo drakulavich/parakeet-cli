@@ -20,12 +20,10 @@ test = false
 [features]
 default = ["onnx", "tts"]
 # ASR backend selection. Language detection always uses ONNX regardless.
-# `tempfile` is pulled in by `coreml` because the FluidAudio backend writes
-# a temp WAV per VAD segment (`fluidaudio-rs 0.1.0` lacks transcribe_samples).
 # `libc` is used by the coreml backend to silence FluidAudio's stdout during
-# transcribe_file calls — without it, the Swift-side `print("Transcribe error:
+# transcribe calls — without it, the Swift-side `print("Transcribe error:
 # invalidAudioData")` (see #259) interleaves with kesha-engine's JSON output.
-coreml = ["dep:fluidaudio-rs", "dep:tempfile", "dep:libc"]
+coreml = ["dep:fluidaudio-rs", "dep:libc"]
 onnx = []
 tts = ["dep:thiserror", "dep:ssml-parser", "dep:opus", "dep:ogg"]
 # macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
@@ -70,7 +68,7 @@ ort = { version = "2.0.0-rc.12" }
 ndarray = { version = "0.17" }
 
 # CoreML backend (macOS): FluidAudio/Apple Neural Engine for ASR.
-fluidaudio-rs = { version = "0.1", optional = true }
+fluidaudio-rs = { version = "0.14", optional = true }
 audioadapter-buffers = "3.0.0"
 
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
@@ -85,7 +83,6 @@ ssml-parser = { version = "0.1", optional = true }
 opus = { version = "0.3", optional = true }
 ogg = { version = "0.9", optional = true }
 
-tempfile = { version = "3", optional = true }
 libc = { version = "0.2", optional = true }
 # Keep G2P dependency changes explicit; intentional bumps should review the
 # source-level routing/shape smoke tests instead of relying on transitive drift.
