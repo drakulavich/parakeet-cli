@@ -20,7 +20,7 @@
 - Modify: `Package.swift` — bump `FluidAudio` pin `0.14.1 → 0.14.5`.
 - Modify: `swift/FluidAudioBridge.swift` — add Kokoro `@_cdecl` fns + a model-path diarize `@_cdecl` fn.
 - Modify: `src/ffi/bridge.rs` — add `extern "C"` decls + safe wrappers.
-- Modify: `src/lib.rs` — add `init_kokoro`, `synthesize_kokoro`, `diarize_file_with_models` public methods + `KokoroAudio` result type.
+- Modify: `src/lib.rs` — add `init_kokoro`, `synthesize_kokoro` (returns `Vec<u8>` WAV bytes), and `diarize_file_with_models` (audio, model_dir, threshold) public methods.
 - Create: `examples/kokoro.rs` — runnable smoke for the new TTS path.
 
 **kesha repo (`drakulavich/kesha-voice-kit`, branch `feat/fluidaudio-native`):**
@@ -319,6 +319,7 @@ public func fluidaudio_diarize_file_with_models(
     _ ptr: UnsafeMutableRawPointer?,
     _ audioPath: UnsafePointer<CChar>?,
     _ modelDir: UnsafePointer<CChar>?,
+    _ threshold: Double,
     _ outSpeakerIds: UnsafeMutablePointer<UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?>?,
     _ outStart: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>?,
     _ outEnd: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>?,
@@ -326,8 +327,10 @@ public func fluidaudio_diarize_file_with_models(
     _ outCount: UnsafeMutablePointer<UInt32>?
 ) -> Int32 {
     // 1. String(cString:) the two paths.
-    // 2. Instantiate DiarizerManager from modelDir + SortformerConfig.balancedV2
-    //    (EXACT init copied from kesha-diarize/main.swift per Task 0.3).
+    // 2. Instantiate DiarizerManager from modelDir with SortformerConfig.balancedV2
+    //    at `threshold` — FluidAudio's load-from-path init (EXACT init copied from
+    //    kesha-diarize/main.swift per Task 0.3). This is SELF-CONTAINED: do NOT call
+    //    downloadAndLoad() / any stock init that fetches from HuggingFace (Greptile #427).
     // 3. Run diarization on audioPath, marshal spans into the out-params exactly
     //    like fluidaudio_diarize_file does (reuse its marshalling helper).
     // Return 0 on success.
@@ -346,18 +349,23 @@ git add swift/FluidAudioBridge.swift && git commit -m "swift: add diarize_file_w
 
 **Files:** Modify `src/ffi/bridge.rs`, `src/lib.rs`; Modify `examples/diarize.rs`.
 
-- [ ] **Step 1: extern decl + safe wrapper** in `bridge.rs` — clone `diarize_file`'s body, add a `model_dir: &str` param, call `fluidaudio_diarize_file_with_models`. Returns `Vec<DiarizationSegment>` (identical marshalling).
+- [ ] **Step 1: extern decl + safe wrapper** in `bridge.rs` — clone `diarize_file`'s body, add `model_dir: &str` + `threshold: f64` params, call `fluidaudio_diarize_file_with_models`. Returns `Vec<DiarizationSegment>` (identical marshalling). The wrapper must NOT call any download/init path — the Swift side inits from `model_dir`.
 
 - [ ] **Step 2: public method** in `lib.rs`:
 
 ```rust
 /// Diarize using a pre-staged model directory (no network download).
+/// Self-contained: inits the diarizer from `model_dir`; never calls the stock
+/// `init_diarization`/`downloadAndLoad` path.
 pub fn diarize_file_with_models<P: AsRef<Path>, Q: AsRef<Path>>(
-    &self, audio: P, model_dir: Q,
+    &self, audio: P, model_dir: Q, threshold: f64,
 ) -> Result<Vec<DiarizationSegment>, FluidAudioError> {
     self.bridge
-        .diarize_file_with_models(audio.as_ref().to_str().ok_or(FluidAudioError::InvalidPath)?,
-                                  model_dir.as_ref().to_str().ok_or(FluidAudioError::InvalidPath)?)
+        .diarize_file_with_models(
+            audio.as_ref().to_str().ok_or(FluidAudioError::InvalidPath)?,
+            model_dir.as_ref().to_str().ok_or(FluidAudioError::InvalidPath)?,
+            threshold,
+        )
         .map_err(FluidAudioError::Backend)
 }
 ```
@@ -492,18 +500,22 @@ pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<Vec<f32>> {
     decode_wav_f32(&wav)
 }
 
-/// Decode a complete WAV byte buffer into mono f32 samples.
+/// Decode a complete WAV byte buffer into mono f32 samples. Kokoro always emits
+/// 32-bit float WAV; bail loudly on anything else rather than guess a
+/// normalisation divisor (avoids the wrong-divisor bug, Greptile #427).
 fn decode_wav_f32(wav: &[u8]) -> Result<Vec<f32>> {
     let mut reader = hound::WavReader::new(std::io::Cursor::new(wav)).context("parse Kokoro WAV")?;
     let spec = reader.spec();
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>()?,
-        hound::SampleFormat::Int => reader
-            .samples::<i32>()
-            .map(|s| s.map(|v| v as f32 / i32::MAX as f32))
-            .collect::<Result<_, _>>()?,
-    };
-    Ok(samples)
+    anyhow::ensure!(
+        spec.sample_format == hound::SampleFormat::Float && spec.bits_per_sample == 32,
+        "expected 32-bit float Kokoro WAV, got {:?} {}-bit",
+        spec.sample_format,
+        spec.bits_per_sample
+    );
+    reader
+        .samples::<f32>()
+        .collect::<Result<_, _>>()
+        .context("decode Kokoro WAV samples")
 }
 ```
 Keep `available_voice_ids()` (the hardcoded `en-<voice>` list) as-is. Update the caller in `tts/say.rs` if the `synthesize` signature changed (it returns `Vec<f32>` now, not raw WAV — confirm `say.rs` already expects f32 from this path, matching the ONNX Kokoro path).
@@ -549,11 +561,13 @@ Expected: FAIL.
 ```rust
 // Same FluidAudio Swift layer as ASR/Kokoro -> silence stdout for the call so
 // diagnostics can't corrupt the engine's --json output (Task 3.0 / Greptile #427).
+// Call ONLY diarize_file_with_models — it initializes the diarizer from model_path
+// internally. Do NOT call the stock init_diarization(): it triggers the ~500 MB
+// HuggingFace download the fork exists to avoid (Greptile #427).
 let segments = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
-    let audio = FluidAudio::new().context("init FluidAudio bridge")?;
-    audio.init_diarization(0.6).context("init diarization")?; // keep the current threshold constant
-    audio
-        .diarize_file_with_models(audio_path, model_path)
+    FluidAudio::new()
+        .context("init FluidAudio bridge")?
+        .diarize_file_with_models(audio_path, model_path, 0.6) // 0.6 = the current threshold
         .context("FluidAudio diarization failed")
 })?;
 // map fluidaudio_rs::DiarizationSegment { speaker_id: String, start_time, end_time, .. }

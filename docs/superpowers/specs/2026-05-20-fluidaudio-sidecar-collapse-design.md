@@ -86,21 +86,28 @@ safe wrapper) → `src/lib.rs` (public method):
    follows the underlying FluidAudio version per the crate's own AGENTS.md convention).
 2. **Add Kokoro TTS binding** — port `main.swift`'s `KokoroTtsManager` calls into the bridge:
    - Swift: `fluidaudio_kokoro_init(ptr, defaultVoice)` + `fluidaudio_kokoro_synthesize(ptr,
-     text, voice, speed, &out_samples, &out_len, &out_rate)`.
+     text, voice, speed, &out_bytes, &out_len)`.
    - Rust: `init_kokoro() -> Result<()>`, `synthesize_kokoro(text, voice, speed) ->
-     Result<KokoroAudio { samples: Vec<f32>, sample_rate: u32 }>`.
-   - The bridge returns **raw f32 PCM + sample rate** (not WAV bytes) to avoid an
-     encode/decode round-trip; the exact PCM-extraction path from `KokoroTtsManager`
-     (`AVAudioPCMBuffer` vs the WAV `Data` it returns) is **spike #1**.
+     Result<Vec<u8>>` (a complete WAV — 24 kHz mono f32).
+   - The bridge returns the **WAV bytes** that `KokoroTtsManager.synthesize` already produces;
+     kesha decodes them to f32 via the existing `hound` dep (`decode_wav_f32`). This is the
+     proven path — no uncertainty about PCM extraction. Returning raw f32 + rate to skip the
+     decode round-trip is a possible later optimization, **not** in scope (this resolves the
+     spec↔plan divergence flagged in Greptile #427: both now specify WAV bytes).
 3. **Add a model-path diarization variant** — `fluidaudio_diarize_file_with_models(ptr,
    audio_path, model_dir, …)` that loads our pre-staged Sortformer model instead of
    auto-downloading. The bridge **hardcodes `SortformerConfig.balancedV2`** to match the shipped
    `SortformerNvidiaLow_v2.mlpackage` — a mismatched config is a hard CoreML shape error at
    runtime (Greptile #427). We ship exactly one diarization model, so the config variant is
    **not** a parameter (YAGNI); if we ever ship a second model, expose it then. Rust:
-   `diarize_file_with_models(audio, model_dir) -> Result<Vec<DiarizationSegment>>`. Our current
-   `kesha-diarize/main.swift` already uses this exact path (`.balancedV2` +
+   `diarize_file_with_models(audio, model_dir, threshold) -> Result<Vec<DiarizationSegment>>`.
+   Our current `kesha-diarize/main.swift` already uses this exact path (`.balancedV2` +
    `SortformerNvidiaLow_v2.mlpackage`), so the binding is a port — confirmed by **spike #3**.
+   **Critical (Greptile #427):** this call is fully self-contained — the bridge initializes the
+   diarizer *from `model_dir`* (FluidAudio's load-from-path init) and must **NOT** call
+   `downloadAndLoad()` or the stock `init_diarization`, which would trigger the ~500 MB
+   HuggingFace download the fork exists to avoid. The kesha call site calls **only**
+   `diarize_file_with_models` — never the stock `init_diarization`.
 
 **Exit strategy:** open the same patch as an upstream PR to FluidInference/fluidaudio-rs;
 once merged + released, switch the kesha dep back to the crates.io version and retire the fork.
@@ -133,10 +140,12 @@ once merged + released, switch the kesha dep back to the crates.io version and r
 ### Data flow (after)
 
 - `kesha say --voice en-am_michael` → `tts::say` → `EngineChoice::FluidKokoro` →
-  `fluidaudio_rs::synthesize_kokoro(text, voice, speed)` → f32 PCM → existing `wav::encode_wav`.
+  `fluidaudio_rs::synthesize_kokoro(text, voice, speed)` → WAV bytes → `decode_wav_f32` → f32 PCM → existing `wav::encode_wav`.
   No subprocess.
 - `kesha transcribe --with-speakers` → ASR → `fluidaudio_rs::diarize_file_with_models(audio,
-  pinned_model_dir)` → `Vec<DiarizationSegment>` → existing coverage-validation + speaker-merge.
+  pinned_model_dir, threshold)` → `Vec<DiarizationSegment>` → existing coverage-validation +
+  speaker-merge. The call inits the diarizer from `pinned_model_dir` — no stock `init_diarization`,
+  no download.
   No subprocess.
 
 ### Build, CI & error handling
