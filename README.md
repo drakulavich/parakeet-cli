@@ -236,6 +236,50 @@ Compared against Whisper `large-v3-turbo` — all engines auto-detect language.
 
 See [BENCHMARK.md](BENCHMARK.md) for the full per-file breakdown (Russian + English).
 
+## Architecture
+
+```text
+Users / agents
+  shell | scripts | OpenClaw | Hermes | Raycast | @drakulavich/kesha-voice-kit/core
+        |
+        v
++------------------------------ Kesha CLI ------------------------------+
+| Bun + TypeScript wrapper                                               |
+| - parses commands and formats stdout/stderr                            |
+| - installs pinned engine/model assets only when explicitly requested    |
+| - keeps cache, support bundle, and local Stats lifecycle on the CLI side|
++----------------------------------+-------------------------------------+
+                                   |
+                                   | spawns one local process
+                                   v
++----------------------------- kesha-engine -----------------------------+
+| Rust binary, no cloud calls, no Python, no ffmpeg                       |
+|                                                                        |
+|  Audio input                 Text input                  Diagnostics    |
+|  WAV/MP3/OGG/FLAC/AAC/M4A   plain text / SSML           status/support |
+|       |                           |                           |         |
+|       v                           v                           v         |
+|  Symphonia decode            TTS preprocessing           runtime probes |
+|       |                           |                                     |
+|       +--> optional VAD           +--> voice routing                    |
+|       |    + diarization          |    Kokoro / Vosk / macOS voices    |
+|       |                           |                                     |
+|       +--> audio lang ID          +--> speech synthesis                 |
+|       |    SpeechBrain ONNX                                             |
+|       |                                                                 |
+|       +--> ASR backend                                                  |
+|            CoreML on Apple Silicon                                      |
+|            ONNX Runtime on Linux/Windows/fallback                       |
++----------------------------------+-------------------------------------+
+                                   |
+                                   v
+                         transcript | JSON/TOON | WAV | local diagnostics
+```
+
+Cache boundary: `kesha install` and opt-in feature installs populate the local
+cache; ordinary transcription and speech commands fail fast if required assets
+are missing.
+
 ## What's Inside
 
 | Model | Task | Size | Source |
