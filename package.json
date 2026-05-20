@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/kesha-voice-kit",
-  "version": "1.18.5",
+  "version": "1.18.6",
   "description": "Give your local tools a voice: fast STT in 25 languages (~19x faster than Whisper on Apple Silicon, ONNX CPU fallback), TTS via Kokoro/Vosk/macOS voices, VAD + 107-language detection. Rust engine, Bun CLI, OpenClaw skill.",
   "type": "module",
   "bin": {
@@ -32,7 +32,7 @@
     ]
   },
   "keshaEngine": {
-    "version": "1.18.5"
+    "version": "1.18.6"
   },
   "scripts": {
     "test": "bun test",
