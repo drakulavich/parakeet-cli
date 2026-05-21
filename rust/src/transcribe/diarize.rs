@@ -509,7 +509,7 @@ mod tests {
                 _guard: LOCK
                     .get_or_init(|| std::sync::Mutex::new(()))
                     .lock()
-                    .unwrap(),
+                    .unwrap_or_else(|e| e.into_inner()),
             }
         }
     }
