@@ -3,6 +3,7 @@ import {
   canInstallDiarizeOnPlatform,
   initInstallArgs,
   initSuggestionCommands,
+  omitUnsupportedDiarize,
   promptInitSelection,
   renderInitOverview,
   resolveInitSelection,
@@ -90,6 +91,32 @@ describe("init onboarding", () => {
     expect(commands).toContain("kesha install --no-cache --coreml --vad");
     expect(commands).toContain("kesha install --no-cache --coreml --tts --vad");
     expect(commands).toContain("kesha install --no-cache --coreml --vad --diarize");
+  });
+
+  test("--yes install selection drops unsupported diarize preselection", () => {
+    const selection = {
+      noCache: true,
+      backend: "onnx",
+      tts: true,
+      vad: true,
+      diarize: true,
+    };
+
+    expect(omitUnsupportedDiarize(selection, false)).toEqual({
+      noCache: true,
+      backend: "onnx",
+      tts: true,
+      vad: true,
+      diarize: false,
+    });
+    expect(initInstallArgs(omitUnsupportedDiarize(selection, false))).toEqual([
+      "kesha",
+      "install",
+      "--no-cache",
+      "--onnx",
+      "--tts",
+      "--vad",
+    ]);
   });
 
   test("diarization availability is darwin-arm64 only", () => {

@@ -10,6 +10,7 @@ export {
   initCommand,
   initInstallArgs,
   initSuggestionCommands,
+  omitUnsupportedDiarize,
   promptInitSelection,
   renderInitOverview,
   resolveInitSelection,

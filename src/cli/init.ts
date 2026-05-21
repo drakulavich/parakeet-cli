@@ -87,6 +87,13 @@ export function initSuggestionCommands(
   });
 }
 
+export function omitUnsupportedDiarize(
+  selection: InitSelection,
+  canDiarize = canInstallDiarizeOnPlatform(),
+): InitSelection {
+  return selection.diarize && !canDiarize ? { ...selection, diarize: false } : selection;
+}
+
 export function renderInitOverview(canDiarize = canInstallDiarizeOnPlatform()): string {
   const lines = [
     "Kesha init",
@@ -155,8 +162,7 @@ async function printPlan(selection: InitSelection): Promise<void> {
 
 async function runNonInteractive(selection: InitSelection): Promise<void> {
   const canDiarize = canInstallDiarizeOnPlatform();
-  const printableSelection =
-    selection.diarize && !canDiarize ? { ...selection, diarize: false } : selection;
+  const printableSelection = omitUnsupportedDiarize(selection, canDiarize);
   if (selection.diarize && !canDiarize) {
     log.warn("--diarize is currently darwin-arm64 only; omitting it from non-interactive examples.");
   }
@@ -227,7 +233,17 @@ export const initCommand = defineCommand({
     }
 
     if (args.yes) {
-      await performInstall(selection.noCache, selection.backend, selection.tts, selection.vad, selection.diarize);
+      const installSelection = omitUnsupportedDiarize(selection);
+      if (selection.diarize && !installSelection.diarize) {
+        log.warn("--diarize is currently darwin-arm64 only; omitting it from the --yes install.");
+      }
+      await performInstall(
+        installSelection.noCache,
+        installSelection.backend,
+        installSelection.tts,
+        installSelection.vad,
+        installSelection.diarize,
+      );
       return;
     }
 
