@@ -24,7 +24,7 @@ describe("shell artifacts (#344 P2)", () => {
   test("completions cover the command and installer commands", async () => {
     const bash = readFileSync("completions/kesha.bash", "utf8");
     expect(bash).toContain("complete -F _kesha_completion kesha");
-    expect(bash).toContain("completions doctor install manpage record say stats status support-bundle");
+    expect(bash).toContain("completions doctor init install manpage record say stats status support-bundle");
 
     const fish = readFileSync("completions/kesha.fish", "utf8");
     expect(fish).toContain("complete -c kesha");

@@ -5,6 +5,17 @@
 // public surface is unchanged.
 export { doctorCommand } from "./cli/doctor";
 export { completionsCommand } from "./cli/completions";
+export {
+  canInstallDiarizeOnPlatform,
+  initCommand,
+  initInstallArgs,
+  initSuggestionCommands,
+  omitUnsupportedDiarize,
+  promptInitSelection,
+  renderInitOverview,
+  resolveInitSelection,
+} from "./cli/init";
+export type { InitCommandArgs, InitSelection } from "./cli/init";
 export { installCommand } from "./cli/install";
 export { manpageCommand } from "./cli/manpage";
 export { recordCommand, resolveRecordArgs } from "./cli/record";

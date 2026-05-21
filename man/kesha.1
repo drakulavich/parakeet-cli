@@ -17,6 +17,9 @@ Print shell completion script for bash, zsh, or fish
 .B doctor
 Collect support diagnostics without changing local state
 .TP
+.B init
+Interactive setup guide for Kesha features
+.TP
 .B install
 Download inference engine and models
 .TP
@@ -79,6 +82,31 @@ Output diagnostics as JSON
 .TP
 .B \-\-redact
 Redact secrets and user\-home paths from diagnostic output
+.SS init
+.TP
+.B \-\-coreml
+Preselect CoreML backend (macOS arm64)
+.TP
+.B \-\-onnx
+Preselect ONNX backend
+.TP
+.B \-\-no\-cache
+Re\-download even if cached
+.TP
+.B \-\-plan
+Show the selected install plan without downloading
+.TP
+.B \-\-yes
+Accept defaults and run without prompts
+.TP
+.B \-\-tts
+Preselect TTS models (Kokoro EN + Vosk\-TTS RU, ~990MB)
+.TP
+.B \-\-vad
+Preselect Silero VAD (~2.3MB) for long\-audio preprocessing
+.TP
+.B \-\-diarize
+Preselect Sortformer speaker diarization (~245MB, darwin\-arm64 only)
 .SS install
 .TP
 .B \-\-coreml

@@ -134,6 +134,86 @@ describe("e2e-cli", () => {
     expect(stderr).not.toContain("fake engine should not have been invoked");
   });
 
+  test("install --plan honors --no-cache", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-no-cache-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stdout, exitCode } = await runCli(["install", "--plan", "--no-cache"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Run: kesha install --no-cache");
+    expect(stdout).toContain("refresh");
+  });
+
+  test("init --plan reports onboarding plan without invoking the engine", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-init-plan-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stdout, stderr, exitCode } = await runCli(["init", "--plan", "--tts", "--vad"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Kesha init");
+    expect(stdout).toContain("Text-to-speech");
+    expect(stdout).toContain("Kesha install plan");
+    expect(stdout).toContain("Run: kesha install --tts --vad");
+    expect(stderr).not.toContain("fake engine should not have been invoked");
+  });
+
+  test("init in non-TTY mode prints guidance without invoking the engine", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-init-non-tty-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stdout, stderr, exitCode } = await runCli(["init"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Kesha init");
+    expect(stdout).toContain("Nothing downloads until you confirm");
+    expect(stdout).toContain("Run one of these commands from an interactive terminal:");
+    expect(stdout).toContain("kesha install");
+    expect(stderr).not.toContain("fake engine should not have been invoked");
+  });
+
+  test("init non-TTY examples preserve explicit backend and cache flags", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-init-non-tty-flags-cli-"));
+    tempDirs.push(dir);
+    const enginePath = createFailingEngine(dir);
+
+    const { stdout, stderr, exitCode } = await runCli(["init", "--coreml", "--no-cache"], {
+      env: {
+        HOME: dir,
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("kesha install --no-cache --coreml");
+    expect(stdout).toContain("kesha install --no-cache --coreml --vad");
+    expect(stdout).toContain("kesha install --no-cache --coreml --tts --vad");
+    expect(stderr).not.toContain("fake engine should not have been invoked");
+  });
+
   test("status prints engine info and exits 0", async () => {
     const { stdout, exitCode } = await runCli(["status"]);
     expect(exitCode).toBe(0);

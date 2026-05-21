@@ -6,6 +6,7 @@ _kesha() {
   commands=(
     'completions:Print shell completion script for bash, zsh, or fish'
     'doctor:Collect support diagnostics without changing local state'
+    'init:Interactive setup guide for Kesha features'
     'install:Download inference engine and models'
     'manpage:Print the kesha(1) manpage'
     'record:Record microphone audio to a WAV file'
@@ -48,6 +49,18 @@ _kesha() {
         '-h[Show help]' \
         '--json[Output diagnostics as JSON]' \
         '--redact[Redact secrets and user-home paths from diagnostic output]'
+      ;;
+    init)
+      _arguments '--help[Show help]' \
+        '-h[Show help]' \
+        '--coreml[Preselect CoreML backend (macOS arm64)]' \
+        '--onnx[Preselect ONNX backend]' \
+        '--no-cache[Re-download even if cached]' \
+        '--plan[Show the selected install plan without downloading]' \
+        '--yes[Accept defaults and run without prompts]' \
+        '--tts[Preselect TTS models (Kokoro EN + Vosk-TTS RU, ~990MB)]' \
+        '--vad[Preselect Silero VAD (~2.3MB) for long-audio preprocessing]' \
+        '--diarize[Preselect Sortformer speaker diarization (~245MB, darwin-arm64 only)]'
       ;;
     install)
       _arguments '--help[Show help]' \

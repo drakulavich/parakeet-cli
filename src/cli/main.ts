@@ -147,6 +147,7 @@ export const mainCommand = defineCommand({
       "Commands:\n" +
       "  completions  Print shell completion script.\n" +
       "  doctor     Collect support diagnostics.\n" +
+      "  init       Interactive setup guide for Kesha features.\n" +
       "  install    Download engine and models.\n" +
       "  manpage    Print the kesha(1) manpage.\n" +
       "  record     Record microphone audio to a WAV file.\n" +

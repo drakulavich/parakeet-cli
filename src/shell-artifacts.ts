@@ -1,6 +1,7 @@
 import type { ArgDef, ArgsDef, CommandDef, CommandMeta, Resolvable } from "citty";
 import { completionsCommand } from "./cli/completions";
 import { doctorCommand } from "./cli/doctor";
+import { initCommand } from "./cli/init";
 import { installCommand } from "./cli/install";
 import { mainCommand } from "./cli/main";
 import { manpageCommand } from "./cli/manpage";
@@ -44,6 +45,7 @@ export interface ShellArtifact {
 const CLI_COMMANDS: CliCommand[] = [
   { name: "completions", command: completionsCommand },
   { name: "doctor", command: doctorCommand },
+  { name: "init", command: initCommand },
   { name: "install", command: installCommand },
   { name: "manpage", command: manpageCommand },
   { name: "record", command: recordCommand },

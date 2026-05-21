@@ -6,17 +6,31 @@ import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
 
-interface InstallCommandArgs {
+export interface InstallCommandArgs {
   coreml: boolean;
   onnx: boolean;
   "no-cache": boolean;
+  noCache?: boolean;
+  no_cache?: boolean;
   tts: boolean;
   vad: boolean;
   diarize: boolean;
   plan: boolean;
 }
 
-function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
+export function resolveNoCacheFlag(
+  args: Pick<InstallCommandArgs, "no-cache" | "noCache" | "no_cache">,
+  rawArgs: string[] = [],
+): boolean {
+  return (
+    rawArgs.includes("--no-cache") ||
+    args["no-cache"] === true ||
+    args.noCache === true ||
+    args.no_cache === true
+  );
+}
+
+export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
   if (coreml && onnx) {
     log.error('Choose only one backend: "--coreml" or "--onnx".');
     process.exit(1);
@@ -32,7 +46,7 @@ function defaultBackendForPlatform(): string | undefined {
   return undefined;
 }
 
-async function performInstall(
+export async function performInstall(
   noCache: boolean,
   backend?: string,
   tts = false,
@@ -111,8 +125,8 @@ export const installCommand = defineCommand({
       default: false,
     },
   },
-  async run({ args }: { args: InstallCommandArgs }) {
+  async run({ args, rawArgs }: { args: InstallCommandArgs; rawArgs: string[] }) {
     const backend = resolveBackendFlag(args.coreml, args.onnx);
-    await performInstall(args["no-cache"], backend, args.tts, args.vad, args.diarize, args.plan);
+    await performInstall(resolveNoCacheFlag(args, rawArgs), backend, args.tts, args.vad, args.diarize, args.plan);
   },
 });
