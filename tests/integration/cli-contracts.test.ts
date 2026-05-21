@@ -586,6 +586,18 @@ describe("CLI contracts", () => {
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
+    const initPlan = await runCli(["init", "--plan", "--tts", "--vad"], { env });
+    expectContract(initPlan, {
+      exitCode: 0,
+      stdoutContains: [
+        "Kesha init",
+        "Nothing downloads until you confirm",
+        "Kesha install plan",
+        "Run: kesha install --tts --vad",
+      ],
+      stderrNotContains: ["fake engine should not have been invoked"],
+    });
+
     const status = await runCli(["stats", "status"], { env });
     expectContract(status, {
       exitCode: 0,

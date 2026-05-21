@@ -4,6 +4,7 @@ import { log } from "../log";
 import { suggestCommand } from "../suggest-command";
 import { completionsCommand } from "./completions";
 import { doctorCommand } from "./doctor";
+import { initCommand } from "./init";
 import { installCommand } from "./install";
 import { manpageCommand } from "./manpage";
 import { recordCommand } from "./record";
@@ -15,6 +16,7 @@ import { mainCommand } from "./main";
 
 const SUBCOMMANDS = [
   "doctor",
+  "init",
   "install",
   "status",
   "record",
@@ -34,6 +36,11 @@ export async function runCli(rawArgs = process.argv.slice(2)): Promise<void> {
 
   if (firstArg === "doctor") {
     await runMain(doctorCommand, { rawArgs: restArgs });
+    return;
+  }
+
+  if (firstArg === "init") {
+    await runMain(initCommand, { rawArgs: restArgs });
     return;
   }
 

@@ -6,7 +6,7 @@ import { maybeAskForStar } from "../star";
 import { log } from "../log";
 import { packageVersion } from "../package-info";
 
-interface InstallCommandArgs {
+export interface InstallCommandArgs {
   coreml: boolean;
   onnx: boolean;
   "no-cache": boolean;
@@ -16,7 +16,7 @@ interface InstallCommandArgs {
   plan: boolean;
 }
 
-function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
+export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
   if (coreml && onnx) {
     log.error('Choose only one backend: "--coreml" or "--onnx".');
     process.exit(1);
@@ -32,7 +32,7 @@ function defaultBackendForPlatform(): string | undefined {
   return undefined;
 }
 
-async function performInstall(
+export async function performInstall(
   noCache: boolean,
   backend?: string,
   tts = false,

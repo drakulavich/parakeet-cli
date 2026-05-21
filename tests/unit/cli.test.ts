@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { mainCommand, completionsCommand, doctorCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection } from "../../src/cli";
+import { mainCommand, completionsCommand, doctorCommand, initCommand, installCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatTextOutput, formatJsonOutput, formatToonOutput, detectLanguage, checkLanguageMismatch, estimateTranscriptDurationSeconds, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection } from "../../src/cli";
 
 type MainRun = (input: { args: Record<string, unknown>; rawArgs: string[] }) => Promise<void>;
 
@@ -68,6 +68,7 @@ describe("CLI help", () => {
     expect(usage).toContain("Commands:");
     expect(usage).toContain("completions");
     expect(usage).toContain("doctor     Collect support diagnostics.");
+    expect(usage).toContain("init       Interactive setup guide for Kesha features.");
     expect(usage).toContain("install    Download engine and models.");
     expect(usage).toContain("manpage");
     expect(usage).toContain("record     Record microphone audio to a WAV file.");
@@ -83,6 +84,15 @@ describe("CLI help", () => {
     expect(usage).toContain("--onnx");
     expect(usage).toContain("--no-cache");
     expect(usage).toContain("--plan");
+  });
+
+  test("init help contains onboarding and feature options", async () => {
+    const usage = await renderUsage(initCommand);
+    expect(usage).toContain("Interactive setup guide");
+    expect(usage).toContain("--yes");
+    expect(usage).toContain("--tts");
+    expect(usage).toContain("--vad");
+    expect(usage).toContain("--diarize");
   });
 
   test("doctor help contains JSON and redaction options (#345 P0)", async () => {
@@ -297,6 +307,7 @@ describe("CLI help golden contracts (#324 P1)", () => {
 Commands:
   completions  Print shell completion script.
   doctor     Collect support diagnostics.
+  init       Interactive setup guide for Kesha features.
   install    Download engine and models.
   manpage    Print the kesha(1) manpage.
   record     Record microphone audio to a WAV file.
