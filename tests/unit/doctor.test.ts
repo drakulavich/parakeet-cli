@@ -110,11 +110,20 @@ describe("collectDoctorReport", () => {
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
 
+      // Stage a >1 KB cached model so the cache-size line exercises
+      // humanBytes' KB/MB scaling, not just the sub-1 KB "N B" branch.
+      mkdirSync(join(dir, ".cache", "kesha", "models", "silero-vad"), { recursive: true });
+      writeFileSync(
+        join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"),
+        "x".repeat(4096),
+      );
+
       const output = formatDoctorReport(await collectDoctorReport({ redact: true }));
       expect(output).toContain("Kesha Doctor");
       expect(output).toContain("Runtime:");
       expect(output).toContain("Engine:");
       expect(output).toContain("Environment:");
+      expect(output).toMatch(/Cache:.*KB/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
