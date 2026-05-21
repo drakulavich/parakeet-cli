@@ -6,6 +6,11 @@ on:
     # remains disabled here because its runner hits sparse-index curl errors.
     - cron: "17 7 1 * *"
   workflow_dispatch:
+    inputs:
+      month:
+        description: "UTC month to open, formatted YYYY-MM. Defaults to the current month."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,21 +28,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          REQUESTED_MONTH: ${{ inputs.month }}
         shell: bash
         run: |
           set -euo pipefail
 
-          month="$(date -u +'%Y-%m')"
+          if [[ -n "$REQUESTED_MONTH" ]]; then
+            if [[ ! "$REQUESTED_MONTH" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]]; then
+              echo "::error::month must use YYYY-MM format, got '$REQUESTED_MONTH'"
+              exit 1
+            fi
+            month="$REQUESTED_MONTH"
+          else
+            month="$(date -u +'%Y-%m')"
+          fi
+
           title="Cargo dependency maintenance - ${month}"
 
           existing="$(
             gh issue list \
               -R "$REPO" \
-              --state open \
+              --state all \
               --search "\"$title\" in:title" \
               --json number,title \
-              --jq ".[] | select(.title == \"$title\") | .number" |
-              head -n 1
+              --jq "map(select(.title == \"$title\")) | first | .number // \"\""
           )"
 
           if [[ -n "$existing" ]]; then
@@ -66,9 +80,15 @@ jobs:
           If `cargo update` produces no diff, close this issue with a short note.
           EOF
 
+          labels=(--label dependencies)
+          if gh label list -R "$REPO" --search rust --json name --jq '.[].name' | grep -Fxq rust; then
+            labels+=(--label rust)
+          else
+            echo "::warning::Label 'rust' does not exist; creating the checklist with only 'dependencies'."
+          fi
+
           gh issue create \
             -R "$REPO" \
             --title "$title" \
             --body-file "$body" \
-            --label dependencies \
-            --label rust
+            "${labels[@]}"
